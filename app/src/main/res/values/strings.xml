@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Accessible Studio</string>
+    <string name="tab_audio_editor">Audio Studio</string>
+    <string name="tab_video_editor">Video Studio</string>
+    <string name="tab_exported_files">Exported Files</string>
+    <string name="cd_play_audio">Play audio</string>
+    <string name="cd_pause_audio">Pause audio</string>
+    <string name="cd_play_video">Play video</string>
+    <string name="cd_pause_video">Pause video</string>
+    <string name="cd_trim_start">Set trim start marker</string>
+    <string name="cd_trim_end">Set trim end marker</string>
+    <string name="cd_nudge_back_large">Rewind 5 seconds</string>
+    <string name="cd_nudge_back_small">Rewind 0.5 seconds</string>
+    <string name="cd_nudge_forward_small">Forward 0.5 seconds</string>
+    <string name="cd_nudge_forward_large">Forward 5 seconds</string>
+    <string name="export_complete_announcement">Export completed successfully. File saved to single output file.</string>
+</resources>

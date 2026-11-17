@@ -1,0 +1,6 @@
+{
+  "name": "Accessible Studio",
+  "description": "High-accessibility Audio & Video Studio editor featuring tactile controls, screen-reader optimizations, precise trimming, multi-track audio mixing, video editing, and unified single-file export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

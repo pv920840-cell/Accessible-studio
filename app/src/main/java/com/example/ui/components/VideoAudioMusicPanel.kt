@@ -1,0 +1,393 @@
+package com.example.ui.components
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AudioFile
+import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.LibraryMusic
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.example.accessibility.AccessibilityHelper
+import com.example.ui.theme.LocalHighContrast
+import com.example.video.MusicLayerTrack
+import com.example.video.NarrationSegment
+import com.example.video.SoundEffectOverlay
+import com.example.video.SoundEffectPreset
+import com.example.video.VideoAudioOption
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun VideoAudioMusicPanel(
+    currentPositionMs: Long,
+    isRecordingNarration: Boolean,
+    recordingDurationMs: Long,
+    recordingAmplitude: Float,
+    narrations: List<NarrationSegment>,
+    onToggleRecordNarration: () -> Unit,
+    onDeleteNarration: (String) -> Unit,
+    musicTracks: List<MusicLayerTrack>,
+    smartDucking: Boolean,
+    onAddMusicTrack: (Uri) -> Unit,
+    onUpdateMusicVolume: (String, Float) -> Unit,
+    onRemoveMusicTrack: (String) -> Unit,
+    onToggleSmartDucking: (Boolean) -> Unit,
+    soundEffects: List<SoundEffectOverlay>,
+    onAddSoundEffect: (SoundEffectPreset, Uri?, Long, Boolean) -> Unit,
+    onRemoveSoundEffect: (String) -> Unit,
+    audioOption: VideoAudioOption,
+    replacedAudioUri: Uri?,
+    audioVolume: Float,
+    onSelectAudioOption: (VideoAudioOption) -> Unit,
+    onPickReplacementAudio: (Uri) -> Unit,
+    onChangeAudioVolume: (Float) -> Unit,
+    noiseReduceEnabled: Boolean,
+    noiseReduceStrength: Float,
+    onToggleNoiseReduce: (Boolean) -> Unit,
+    onChangeNoiseReduceStrength: (Float) -> Unit,
+    onExtractVideoToAudio: (format: String) -> Unit
+) {
+    val context = LocalContext.current
+    val isHighContrast = LocalHighContrast.current
+
+    var selectedPreset by remember { mutableStateOf(SoundEffectPreset.CHIME) }
+    var sfxDurationMs by remember { mutableLongStateOf(1500L) }
+    var sfxFreezeFrame by remember { mutableStateOf(false) }
+    var extractAudioFormat by remember { mutableStateOf("MP3") }
+
+    val micPermLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) onToggleRecordNarration()
+    }
+
+    val musicPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) onAddMusicTrack(uri)
+    }
+
+    val replaceAudioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) onPickReplacementAudio(uri)
+    }
+
+    val customSfxPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            onAddSoundEffect(SoundEffectPreset.CUSTOM_FILE, uri, sfxDurationMs, sfxFreezeFrame)
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
+        // 1. Narration Recorder
+        SectionToolCard(
+            title = "Narration Recorder",
+            subtitle = "Record voiceover segments directly over your video timeline",
+            isHighContrast = isHighContrast
+        ) {
+            Button(
+                onClick = {
+                    val hasPerm = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                    if (hasPerm || isRecordingNarration) {
+                        onToggleRecordNarration()
+                    } else {
+                        micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRecordingNarration) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                ),
+                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_video_record_narration")
+            ) {
+                Icon(if (isRecordingNarration) Icons.Default.Stop else Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (isRecordingNarration) "Stop Narration (${AccessibilityHelper.formatTimeVisual(recordingDurationMs)})"
+                    else "Record Narration at ${AccessibilityHelper.formatTimeVisual(currentPositionMs)}",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            if (isRecordingNarration) {
+                LinearProgressIndicator(
+                    progress = { recordingAmplitude.coerceIn(0.05f, 1f) },
+                    modifier = Modifier.fillMaxWidth().height(8.dp)
+                )
+            }
+
+            narrations.forEach { seg ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("${seg.label} • starts ${AccessibilityHelper.formatTimeVisual(seg.startMs)} (${seg.durationMs / 1000}s)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { onDeleteNarration(seg.id) }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete ${seg.label}")
+                    }
+                }
+            }
+        }
+
+        // 2. Add Multi Music with Smart Ducking
+        SectionToolCard(
+            title = "Add Multi Music",
+            subtitle = "Layer multiple background music tracks with Smart Ducking",
+            isHighContrast = isHighContrast
+        ) {
+            OutlinedButton(
+                onClick = { musicPicker.launch("audio/*") },
+                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_add_multi_music")
+            ) {
+                Icon(Icons.Default.LibraryMusic, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("+ Add Background Music Track (${musicTracks.size})", fontWeight = FontWeight.Bold)
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Smart Ducking", fontWeight = FontWeight.Bold)
+                    Text("Auto-lowers music volume when voice or narration plays", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(
+                    checked = smartDucking,
+                    onCheckedChange = onToggleSmartDucking,
+                    modifier = Modifier.testTag("switch_smart_ducking")
+                )
+            }
+
+            musicTracks.forEach { track ->
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(track.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { onRemoveMusicTrack(track.id) }, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Default.Delete, contentDescription = "Remove ${track.title}")
+                        }
+                    }
+                    AccessibleEffectSlider(
+                        title = "Track Volume",
+                        value = track.volume,
+                        onValueChange = { onUpdateMusicVolume(track.id, it) },
+                        valueRange = 0f..1.5f,
+                        step = 0.05f,
+                        displayValue = "${(track.volume * 100).toInt()}%",
+                        spokenDescription = "${track.title} volume ${(track.volume * 100).toInt()} percent",
+                        testTag = "slider_music_${track.id}"
+                    )
+                }
+            }
+        }
+
+        // 3. Sound Effects & Freeze Frame
+        SectionToolCard(
+            title = "Sound Effects & Freeze Frame",
+            subtitle = "Insert sound effects at timestamps with custom durations & optional freeze frame",
+            isHighContrast = isHighContrast
+        ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SoundEffectPreset.values().filter { it != SoundEffectPreset.CUSTOM_FILE }.forEach { preset ->
+                    FilterChip(
+                        selected = selectedPreset == preset,
+                        onClick = { selectedPreset = preset },
+                        label = { Text(preset.displayName) }
+                    )
+                }
+            }
+
+            AccessibleEffectSlider(
+                title = "Effect / Freeze Duration",
+                value = sfxDurationMs / 1000f,
+                onValueChange = { sfxDurationMs = (it * 1000L).toLong().coerceIn(500L, 5000L) },
+                valueRange = 0.5f..5.0f,
+                step = 0.5f,
+                displayValue = "${String.format("%.1f", sfxDurationMs / 1000f)}s",
+                spokenDescription = "Duration ${String.format("%.1f", sfxDurationMs / 1000f)} seconds",
+                testTag = "slider_sfx_duration"
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Freeze Frame at Timestamp", fontWeight = FontWeight.Bold)
+                Switch(checked = sfxFreezeFrame, onCheckedChange = { sfxFreezeFrame = it }, modifier = Modifier.testTag("switch_sfx_freeze_frame"))
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { onAddSoundEffect(selectedPreset, null, sfxDurationMs, sfxFreezeFrame) },
+                    modifier = Modifier.weight(1f).height(48.dp).testTag("btn_insert_sfx_preset")
+                ) {
+                    Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Insert SFX @ ${AccessibilityHelper.formatTimeVisual(currentPositionMs)}", fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(
+                    onClick = { customSfxPicker.launch("audio/*") },
+                    modifier = Modifier.height(48.dp).testTag("btn_pick_custom_sfx")
+                ) {
+                    Text("Import SFX", fontWeight = FontWeight.Bold)
+                }
+            }
+
+            soundEffects.forEach { sfx ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("${sfx.name} @ ${AccessibilityHelper.formatTimeVisual(sfx.timestampMs)} (${sfx.durationMs}ms${if (sfx.freezeFrameAtTimestamp) ", Freeze" else ""})", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { onRemoveSoundEffect(sfx.id) }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Remove ${sfx.name}")
+                    }
+                }
+            }
+        }
+
+        // 4. Audio Track Manager & Video Noise Reducer
+        SectionToolCard(
+            title = "Audio Track Manager & Noise Reducer",
+            subtitle = "Mute, replace video audio track, and remove background hiss or hum",
+            isHighContrast = isHighContrast
+        ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                VideoAudioOption.values().forEach { opt ->
+                    FilterChip(
+                        selected = audioOption == opt,
+                        onClick = { onSelectAudioOption(opt) },
+                        label = { Text(opt.label) }
+                    )
+                }
+            }
+
+            if (audioOption == VideoAudioOption.REPLACE_WITH_STUDIO_AUDIO) {
+                OutlinedButton(
+                    onClick = { replaceAudioPicker.launch("audio/*") },
+                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_replace_video_audio")
+                ) {
+                    Icon(Icons.Default.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(if (replacedAudioUri != null) "Replacement Audio Selected (Tap to Change)" else "Pick Replacement Audio File", fontWeight = FontWeight.Bold)
+                }
+            }
+
+            AccessibleEffectSlider(
+                title = "Master Audio Volume",
+                value = audioVolume,
+                onValueChange = onChangeAudioVolume,
+                valueRange = 0f..2.0f,
+                step = 0.1f,
+                displayValue = "${(audioVolume * 100).toInt()}%",
+                spokenDescription = "${(audioVolume * 100).toInt()} percent volume",
+                testTag = "slider_video_audio_volume"
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Video Noise Reducer", fontWeight = FontWeight.Bold)
+                    Text("Removes background hiss, wind, and 50/60Hz electrical hum", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = noiseReduceEnabled, onCheckedChange = onToggleNoiseReduce, modifier = Modifier.testTag("switch_video_noise_reducer"))
+            }
+
+            if (noiseReduceEnabled) {
+                AccessibleEffectSlider(
+                    title = "Noise Reduction Strength",
+                    value = noiseReduceStrength,
+                    onValueChange = onChangeNoiseReduceStrength,
+                    valueRange = 0.2f..1.0f,
+                    step = 0.1f,
+                    displayValue = "${(noiseReduceStrength * 100).toInt()}%",
+                    spokenDescription = "${(noiseReduceStrength * 100).toInt()} percent noise reduction",
+                    testTag = "slider_video_noise_strength"
+                )
+            }
+        }
+
+        // 5. Video to Audio Extractor
+        SectionToolCard(
+            title = "Video to Audio",
+            subtitle = "Extract the audio track directly into Music/Audio Studio",
+            isHighContrast = isHighContrast
+        ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("MP3", "AAC", "M4A", "WAV", "FLAC").forEach { fmt ->
+                    FilterChip(
+                        selected = extractAudioFormat == fmt,
+                        onClick = { extractAudioFormat = fmt },
+                        label = { Text(fmt) }
+                    )
+                }
+            }
+            Button(
+                onClick = { onExtractVideoToAudio(extractAudioFormat) },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_video_to_audio")
+            ) {
+                Icon(Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Extract Audio as $extractAudioFormat", fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}

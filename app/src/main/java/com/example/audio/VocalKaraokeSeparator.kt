@@ -59,7 +59,10 @@ enum class VocalKaraokeQuality(
 data class StemSeparationResult(
     val vocals: ShortArray,
     val karaoke: ShortArray,
-    val usedStereoSeparation: Boolean
+    val usedStereoSeparation: Boolean,
+    val phaseCorrected: Boolean = false,
+    val detectedCorrelation: Float = 1f,
+    val appliedLagSamples: Int = 0
 )
 
 /**
@@ -96,6 +99,98 @@ object VocalKaraokeSeparator {
         return sigSum > 0L && (diffSum.toDouble() / sigSum.toDouble()) > 0.015
     }
 
+    data class PhaseAlignmentInfo(
+        val alignedRight: FloatArray,
+        val correlationBefore: Float,
+        val polarityInverted: Boolean,
+        val lagSamples: Int
+    )
+
+    internal fun analyzeAndAlignStereoPhase(
+        left: ShortArray,
+        right: ShortArray,
+        len: Int,
+        autoAlignPhase: Boolean,
+        manualInvertRight: Boolean
+    ): PhaseAlignmentInfo {
+        val sampleCount = min(len, 16384)
+        val stride = max(1, len / sampleCount)
+        var sumLL = 0.0
+        var sumRR = 0.0
+        var sumLR = 0.0
+        var i = 0
+        while (i < len) {
+            val l = left[i].toDouble()
+            val r = right[i].toDouble()
+            sumLL += l * l
+            sumRR += r * r
+            sumLR += l * r
+            i += stride
+        }
+        val baseCorr = if (sumLL > 1e-6 && sumRR > 1e-6) {
+            (sumLR / sqrt(sumLL * sumRR)).toFloat().coerceIn(-1f, 1f)
+        } else 1f
+
+        var useSign = if (manualInvertRight) -1f else 1f
+        var bestLag = 0
+        var polarityFlipped = manualInvertRight
+
+        if (autoAlignPhase && !manualInvertRight) {
+            // Check sub-millisecond stereo comb-filtering lag (-8..+8 samples) and polarity flip
+            val probeStart = min(16, len / 4)
+            val probeEnd = min(len - 16, probeStart + 8192)
+            if (probeEnd > probeStart + 64) {
+                var bestScore = baseCorr
+                for (lag in -8..8) {
+                    var sLL = 0.0
+                    var sRR = 0.0
+                    var sLR = 0.0
+                    var idx = probeStart
+                    while (idx < probeEnd) {
+                        val l = left[idx].toDouble()
+                        val r = right[(idx + lag).coerceIn(0, len - 1)].toDouble()
+                        sLL += l * l
+                        sRR += r * r
+                        sLR += l * r
+                        idx += 2
+                    }
+                    if (sLL > 1e-6 && sRR > 1e-6) {
+                        val c = (sLR / sqrt(sLL * sRR)).toFloat()
+                        if (c > bestScore + 0.16f && lag != 0) {
+                            bestScore = c
+                            bestLag = lag
+                            useSign = 1f
+                            polarityFlipped = false
+                        }
+                        if (-c > bestScore + 0.18f && c < -0.25f) {
+                            bestScore = -c
+                            bestLag = lag
+                            useSign = -1f
+                            polarityFlipped = true
+                        }
+                    }
+                }
+                if (!polarityFlipped && baseCorr < -0.28f) {
+                    useSign = -1f
+                    bestLag = 0
+                    polarityFlipped = true
+                }
+            }
+        }
+
+        val alignedRight = FloatArray(len)
+        for (idx in 0 until len) {
+            val srcIdx = (idx + bestLag).coerceIn(0, len - 1)
+            alignedRight[idx] = (right[srcIdx].toFloat() / 32767f) * useSign
+        }
+        return PhaseAlignmentInfo(
+            alignedRight = alignedRight,
+            correlationBefore = baseCorr,
+            polarityInverted = polarityFlipped,
+            lagSamples = bestLag
+        )
+    }
+
     fun separateStereo(
         left: ShortArray,
         right: ShortArray,
@@ -103,21 +198,54 @@ object VocalKaraokeSeparator {
         separationStrength: Float = quality.separationStrength,
         bassPreserveHz: Float = quality.bassPreserveHz,
         vocalPresenceBoost: Float = quality.vocalPresenceBoost,
-        sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE
+        sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE,
+        autoAlignPhase: Boolean = true,
+        manualInvertRight: Boolean = false,
+        studioMasteringPolish: Boolean = true
     ): StemSeparationResult {
         val len = min(left.size, right.size)
         if (len < 128) {
             val safe = left.copyOf(len)
             return StemSeparationResult(safe, safe.clone(), usedStereoSeparation = false)
         }
-        if (!hasStereoContent(left, right)) {
+        if (!hasStereoContent(left, right) && !manualInvertRight) {
             return separateMono(
                 samples = left.copyOf(len),
                 quality = quality,
                 separationStrength = separationStrength,
                 bassPreserveHz = bassPreserveHz,
                 vocalPresenceBoost = vocalPresenceBoost,
-                sampleRate = sampleRate
+                sampleRate = sampleRate,
+                studioMasteringPolish = studioMasteringPolish
+            )
+        }
+
+        val phaseInfo = analyzeAndAlignStereoPhase(
+            left = left,
+            right = right,
+            len = len,
+            autoAlignPhase = autoAlignPhase,
+            manualInvertRight = manualInvertRight
+        )
+
+        // If polarity/delay correction turns an inverted dual-mono signal back into clean mono, run Mono HPSS
+        val alignedRightShort = ShortArray(len) { idx ->
+            (phaseInfo.alignedRight[idx] * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+        }
+        if (!hasStereoContent(left, alignedRightShort)) {
+            val monoResult = separateMono(
+                samples = left.copyOf(len),
+                quality = quality,
+                separationStrength = separationStrength,
+                bassPreserveHz = bassPreserveHz,
+                vocalPresenceBoost = vocalPresenceBoost,
+                sampleRate = sampleRate,
+                studioMasteringPolish = studioMasteringPolish
+            )
+            return monoResult.copy(
+                phaseCorrected = phaseInfo.polarityInverted || phaseInfo.lagSamples != 0,
+                detectedCorrelation = phaseInfo.correlationBefore,
+                appliedLagSamples = phaseInfo.lagSamples
             )
         }
 
@@ -136,7 +264,7 @@ object VocalKaraokeSeparator {
         val inR = FloatArray(totalLen)
         for (i in 0 until len) {
             inL[pad + i] = left[i].toFloat() / 32767f
-            inR[pad + i] = right[i].toFloat() / 32767f
+            inR[pad + i] = phaseInfo.alignedRight[i]
         }
 
         val vocalOutAccum = FloatArray(totalLen)
@@ -197,11 +325,14 @@ object VocalKaraokeSeparator {
             }
 
             // 3-bin spectral smoothing prevents isolated tonal chirps
+            // 5-bin spectral smoothing eliminates isolated tonal comb-filtering & ghost artifacts
             for (b in 0 until NUM_BINS) {
-                val leftBin = rawCenterScore[max(0, b - 1)]
-                val centerBin = rawCenterScore[b]
-                val rightBin = rawCenterScore[min(NUM_BINS - 1, b + 1)]
-                smoothCenter[b] = 0.22f * leftBin + 0.56f * centerBin + 0.22f * rightBin
+                val bM2 = rawCenterScore[max(0, b - 2)]
+                val bM1 = rawCenterScore[max(0, b - 1)]
+                val bC = rawCenterScore[b]
+                val bP1 = rawCenterScore[min(NUM_BINS - 1, b + 1)]
+                val bP2 = rawCenterScore[min(NUM_BINS - 1, b + 2)]
+                smoothCenter[b] = 0.10f * bM2 + 0.22f * bM1 + 0.36f * bC + 0.22f * bP1 + 0.10f * bP2
             }
 
             for (b in 0 until NUM_BINS) {
@@ -228,7 +359,7 @@ object VocalKaraokeSeparator {
                 val vRe = midRe * vGain
                 val vIm = midIm * vGain
 
-                // 2) Karaoke Maker mask: preserve sub-bass (< bassCut), strongly cancel center vocal band, boost stereo Side bed
+                // 2) Karaoke Maker mask: mono-anchor sub-bass (< bassCut), cancel center vocals cleanly, widen stereo bed
                 val suppressionBandWeight = when {
                     freq < bassCut -> 0.0f
                     freq < bassCut + 95f -> (freq - bassCut) / 95f
@@ -243,7 +374,12 @@ object VocalKaraokeSeparator {
                 val kMidKeep = prevKaraokeMidKeep[b] + kAlpha * (targetMidKeep - prevKaraokeMidKeep[b])
                 prevKaraokeMidKeep[b] = kMidKeep
 
-                val sideWeight = if (freq < bassCut) 0.85f else sideRestoreGain
+                // Low-end phase integrity: anchor Side energy near mono below bassCut; widen Side above 280 Hz
+                val sideWeight = when {
+                    freq < bassCut -> 0.12f
+                    freq < 280f -> 0.12f + (sideRestoreGain - 0.12f) * ((freq - bassCut) / (280f - bassCut).coerceAtLeast(1f))
+                    else -> sideRestoreGain
+                }
                 val kRe = midRe * kMidKeep + sideRe * sideWeight
                 val kIm = midIm * kMidKeep + sideIm * sideWeight
 
@@ -280,16 +416,24 @@ object VocalKaraokeSeparator {
             rawKaraoke[i] = ((karaokeOutAccum[pad + i] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
         }
 
-        val polishedVocals = polishExtractedVocals(rawVocals, clarity)
-        val polishedKaraoke = StudioAudioProcessor.applyTruePeakLimiter(
-            StudioAudioProcessor.removeDcOffset(rawKaraoke),
-            -0.5f
+        val polishedVocals = polishExtractedVocals(
+            rawVocals = rawVocals,
+            clarity = clarity,
+            cleanDryVocals = studioMasteringPolish,
+            sampleRate = sampleRate
+        )
+        val polishedKaraoke = polishKaraokeInstrumental(
+            rawKaraoke = rawKaraoke,
+            studioMasteringPolish = studioMasteringPolish
         )
 
         return StemSeparationResult(
             vocals = polishedVocals,
             karaoke = polishedKaraoke,
-            usedStereoSeparation = true
+            usedStereoSeparation = true,
+            phaseCorrected = phaseInfo.polarityInverted || phaseInfo.lagSamples != 0,
+            detectedCorrelation = phaseInfo.correlationBefore,
+            appliedLagSamples = phaseInfo.lagSamples
         )
     }
 
@@ -299,7 +443,8 @@ object VocalKaraokeSeparator {
         separationStrength: Float = quality.separationStrength,
         bassPreserveHz: Float = quality.bassPreserveHz,
         vocalPresenceBoost: Float = quality.vocalPresenceBoost,
-        sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE
+        sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE,
+        studioMasteringPolish: Boolean = true
     ): StemSeparationResult {
         if (samples.size < 128) {
             return StemSeparationResult(samples.clone(), samples.clone(), usedStereoSeparation = false)
@@ -451,34 +596,102 @@ object VocalKaraokeSeparator {
         }
 
         return StemSeparationResult(
-            vocals = polishExtractedVocals(rawVocals, clarity),
-            karaoke = StudioAudioProcessor.applyTruePeakLimiter(
-                StudioAudioProcessor.removeDcOffset(rawKaraoke),
-                -0.5f
+            vocals = polishExtractedVocals(
+                rawVocals = rawVocals,
+                clarity = clarity,
+                cleanDryVocals = studioMasteringPolish,
+                sampleRate = sampleRate
+            ),
+            karaoke = polishKaraokeInstrumental(
+                rawKaraoke = rawKaraoke,
+                studioMasteringPolish = studioMasteringPolish
             ),
             usedStereoSeparation = false
         )
     }
 
-    private fun polishExtractedVocals(rawVocals: ShortArray, clarity: Float): ShortArray {
-        val hp = StudioAudioProcessor.applyHighPassFilter(
-            StudioAudioProcessor.removeDcOffset(rawVocals),
-            85f
-        )
-        val eq = if (clarity > 0.04f) {
-            StudioAudioProcessor.apply7BandEq(
-                hp,
-                b60 = -2.0f * clarity,
-                b150 = 0f,
-                b400 = -0.6f * clarity,
-                b1k = 0.8f * clarity,
-                b2_5k = 1.8f * clarity,
-                b6k = 1.2f * clarity,
-                b15k = 0f
+    private fun polishExtractedVocals(
+        rawVocals: ShortArray,
+        clarity: Float,
+        cleanDryVocals: Boolean,
+        sampleRate: Int
+    ): ShortArray {
+        val noDc = StudioAudioProcessor.removeDcOffset(rawVocals)
+        val hp = StudioAudioProcessor.applyHighPassFilter(noDc, 88f)
+        val dryCleaned = if (cleanDryVocals && hp.size >= 512) {
+            // Bone-dry acapella pass: removes residual hum, background hiss & room reverb tails
+            VocalIsolationProcessor.isolateSpokenAudio(
+                samples = hp,
+                subtractionStrength = 0.45f,
+                humRemovalStrength = 0.72f,
+                vocalClarityBoost = 0.15f,
+                spectralFloorOverride = 0.16f,
+                vocalBandEmphasisOverride = 0.22f,
+                pauseGateFloorOverride = 0.24f,
+                highPassHz = 85f,
+                sampleRate = sampleRate
             )
         } else {
             hp
         }
-        return StudioAudioProcessor.applyTruePeakLimiter(eq, -0.8f)
+
+        // Corrective EQ: trim boxy low-mids (250-400 Hz), tame harsh 2-4 kHz resonance & boost clear articulation
+        val eq = if (cleanDryVocals || clarity > 0.04f) {
+            StudioAudioProcessor.apply7BandEq(
+                dryCleaned,
+                b60 = if (cleanDryVocals) -3.0f else -2.0f * clarity,
+                b150 = if (cleanDryVocals) -0.8f else 0f,
+                b400 = if (cleanDryVocals) -1.6f else -0.6f * clarity,
+                b1k = 0.8f * clarity,
+                b2_5k = (if (cleanDryVocals) -0.6f else 0f) + 1.5f * clarity,
+                b6k = 1.1f * clarity,
+                b15k = 0f
+            )
+        } else {
+            dryCleaned
+        }
+
+        val compressed = if (cleanDryVocals) {
+            StudioAudioProcessor.applyCompressor(
+                input = eq,
+                thresholdDb = -16.0f,
+                ratio = 2.6f,
+                makeupGainDb = 1.6f,
+                peakLimiter = true
+            )
+        } else {
+            eq
+        }
+
+        return StudioAudioProcessor.applyTruePeakLimiter(compressed, -0.8f)
+    }
+
+    private fun polishKaraokeInstrumental(
+        rawKaraoke: ShortArray,
+        studioMasteringPolish: Boolean
+    ): ShortArray {
+        val noDc = StudioAudioProcessor.removeDcOffset(rawKaraoke)
+        if (!studioMasteringPolish || noDc.size < 256) {
+            return StudioAudioProcessor.applyTruePeakLimiter(noDc, -0.5f)
+        }
+        // Corrective Instrumental EQ: warm punchy bass/kick, clean 250-400 Hz mud, dip residual 2-4 kHz vocal harshness
+        val eq = StudioAudioProcessor.apply7BandEq(
+            noDc,
+            b60 = 1.3f,
+            b150 = 0.7f,
+            b400 = -1.2f,
+            b1k = 0.0f,
+            b2_5k = -1.0f,
+            b6k = 0.9f,
+            b15k = 0.5f
+        )
+        val compressed = StudioAudioProcessor.applyCompressor(
+            input = eq,
+            thresholdDb = -14.0f,
+            ratio = 2.2f,
+            makeupGainDb = 1.1f,
+            peakLimiter = true
+        )
+        return StudioAudioProcessor.applyTruePeakLimiter(compressed, -0.5f)
     }
 }

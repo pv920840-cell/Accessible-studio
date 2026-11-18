@@ -1,12 +1,18 @@
 package com.example
 
 import android.content.Context
+import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertTextContains
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.example.audio.AudioPlayerManager
 import com.example.audio.AudioRecorderManager
@@ -352,5 +358,175 @@ class VocalKaraokeSeparatorTest {
         composeRule.waitForIdle()
 
         assertEquals(AudioStudioCommand.OpenVocalKaraokeDialog, receivedCommand)
+    }
+
+    @Test
+    fun separateStereo_correctsInvertedPolarityAndCombFilterLag() {
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        val total = sr * 2
+
+        // 1) Inverted polarity stereo mix: Right channel is inverted (-vocal + bass phase inverted + hard-panned right)
+        val leftPol = ShortArray(total)
+        val rightPol = ShortArray(total)
+        for (i in 0 until total) {
+            val t = i.toDouble() / sr
+            val vocal = 9000.0 * sin(2.0 * PI * 520.0 * t)
+            val bass = 6000.0 * sin(2.0 * PI * 90.0 * t)
+            val instL = 5500.0 * sin(2.0 * PI * 2400.0 * t)
+            val instR = 5500.0 * sin(2.0 * PI * 3600.0 * t)
+            leftPol[i] = (vocal + bass + instL).toInt().coerceIn(-32767, 32767).toShort()
+            rightPol[i] = (-(vocal + bass) + instR).toInt().coerceIn(-32767, 32767).toShort()
+        }
+
+        val alignedResult = VocalKaraokeSeparator.separateStereo(
+            left = leftPol,
+            right = rightPol,
+            quality = VocalKaraokeQuality.BALANCED,
+            sampleRate = sr,
+            autoAlignPhase = true,
+            studioMasteringPolish = true
+        )
+        assertTrue("Expected phase correction on inverted stereo signal", alignedResult.phaseCorrected)
+        assertTrue("Expected negative base correlation before alignment (${alignedResult.detectedCorrelation})", alignedResult.detectedCorrelation < -0.25f)
+
+        val v520 = goertzelMagnitude(alignedResult.vocals, 520.0, sr)
+        val v2400 = goertzelMagnitude(alignedResult.vocals, 2400.0, sr)
+        val k520 = goertzelMagnitude(alignedResult.karaoke, 520.0, sr)
+        val k90 = goertzelMagnitude(alignedResult.karaoke, 90.0, sr)
+        assertTrue("After phase fix, vocals should retain 520 Hz ($v520) well above side ($v2400)", v520 > v2400 * 2.5)
+        assertTrue("After phase fix, karaoke should suppress 520 Hz ($k520 vs $v520)", k520 < v520 * 0.35)
+        assertTrue("After phase fix, karaoke should retain bass 90 Hz ($k90 vs $k520)", k90 > k520 * 1.8)
+
+        // 2) Comb-filter lag stereo mix: Right delayed by 5 samples (large correlation improvement when shifted back)
+        val leftLag = ShortArray(total)
+        val rightLag = ShortArray(total)
+        val lagShift = 5
+        for (i in 0 until total) {
+            val tL = i.toDouble() / sr
+            val tR = (i - lagShift).toDouble() / sr
+            val vocalL = 9500.0 * sin(2.0 * PI * 3800.0 * tL) + 4000.0 * sin(2.0 * PI * 750.0 * tL)
+            val vocalR = 9500.0 * sin(2.0 * PI * 3800.0 * tR) + 4000.0 * sin(2.0 * PI * 750.0 * tR)
+            val sideL = 2500.0 * sin(2.0 * PI * 1900.0 * tL)
+            val sideR = 2500.0 * sin(2.0 * PI * 5100.0 * tR)
+            leftLag[i] = (vocalL + sideL).toInt().coerceIn(-32767, 32767).toShort()
+            rightLag[i] = (vocalR + sideR).toInt().coerceIn(-32767, 32767).toShort()
+        }
+        val lagInfo = VocalKaraokeSeparator.analyzeAndAlignStereoPhase(
+            left = leftLag,
+            right = rightLag,
+            len = total,
+            autoAlignPhase = true,
+            manualInvertRight = false
+        )
+        assertEquals("Expected auto lag compensation of +5 samples", lagShift, lagInfo.lagSamples)
+    }
+
+    @Test
+    fun separateStereo_manualInvertRightAndMasteringPolishProduceValidBoundedStems() {
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        val total = sr
+        val left = ShortArray(total) { i ->
+            val t = i.toDouble() / sr
+            (8500.0 * sin(2.0 * PI * 500.0 * t) + 5000.0 * sin(2.0 * PI * 2200.0 * t)).toInt().toShort()
+        }
+        val right = ShortArray(total) { i ->
+            val t = i.toDouble() / sr
+            (-8500.0 * sin(2.0 * PI * 500.0 * t) + 5000.0 * sin(2.0 * PI * 3300.0 * t)).toInt().toShort()
+        }
+
+        val manualInverted = VocalKaraokeSeparator.separateStereo(
+            left = left,
+            right = right,
+            quality = VocalKaraokeQuality.DEEP_ISOLATION,
+            sampleRate = sr,
+            autoAlignPhase = false,
+            manualInvertRight = true,
+            studioMasteringPolish = true
+        )
+        assertTrue(manualInverted.phaseCorrected)
+        assertTrue(manualInverted.usedStereoSeparation)
+        assertEquals(total, manualInverted.vocals.size)
+        assertEquals(total, manualInverted.karaoke.size)
+        assertTrue(manualInverted.vocals.all { it in Short.MIN_VALUE..Short.MAX_VALUE })
+        assertTrue(manualInverted.karaoke.all { it in Short.MIN_VALUE..Short.MAX_VALUE })
+        val v500 = goertzelMagnitude(manualInverted.vocals, 500.0, sr)
+        val k500 = goertzelMagnitude(manualInverted.karaoke, 500.0, sr)
+        assertTrue("Manual Φ flip should align vocals cleanly ($v500 vs $k500)", v500 > k500 * 2.5)
+    }
+
+    @Test
+    fun vocalKaraokeWorkspace_exposesAccessiblePhaseAndMasteringToggles() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        val samplePcm = ShortArray(sr) { i ->
+            val t = i.toDouble() / sr
+            (8000.0 * sin(2.0 * PI * 440.0 * t) + 4500.0 * sin(2.0 * PI * 100.0 * t)).toInt().toShort()
+        }
+        val session = AudioProjectSessionState(
+            projectId = "vk_phase_ui_1",
+            title = "Studio Vocals",
+            pcm = samplePcm,
+            sampleRate = sr,
+            trimStartMs = 0L,
+            trimEndMs = 1000L
+        )
+        val audioProcessor = WavAudioProcessor(context)
+        val playerManager = AudioPlayerManager(context)
+        val recorderManager = AudioRecorderManager(context)
+        val repo = MediaRepository(context)
+
+        composeRule.setContent {
+            AccessibleStudioTheme(isHighContrast = false) {
+                AudioFeatureWorkspaceScreen(
+                    tool = AudioFeatureTool.VOCAL_KARAOKE,
+                    session = session,
+                    audioProcessor = audioProcessor,
+                    playerManager = playerManager,
+                    recorderManager = recorderManager,
+                    mediaRepository = repo,
+                    hapticsEnabled = false,
+                    isHighContrast = false,
+                    defaultExportFormat = "WAV",
+                    followCursor = true,
+                    onToggleHighContrast = {},
+                    onOpenAbout = {},
+                    onOpenSettings = {},
+                    onOpenHelp = {},
+                    onOpenWhatsNew = {},
+                    onOpenBatchProcessing = {},
+                    onSaveAndReturn = {},
+                    onCancelBack = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("switch_vk_phase_correct")
+            .performScrollTo()
+            .assertIsOn()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithTag("switch_vk_phase_invert_r")
+            .performScrollTo()
+            .assertIsOff()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+            .assertIsOn()
+        composeRule.onNodeWithTag("switch_vk_master_polish")
+            .performScrollTo()
+            .assertIsOn()
+            .assertWidthIsAtLeast(48.dp)
+            .assertHeightIsAtLeast(48.dp)
+
+        composeRule.onNodeWithTag("btn_vk_process").performScrollTo().performClick()
+        composeRule.waitUntil(timeoutMillis = 6_000L) {
+            composeRule.onAllNodes(hasTestTag("txt_vk_stems_ready")).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("txt_vk_status")
+            .performScrollTo()
+            .assertTextContains("Studio EQ/Comp", substring = true)
+
+        playerManager.release()
     }
 }

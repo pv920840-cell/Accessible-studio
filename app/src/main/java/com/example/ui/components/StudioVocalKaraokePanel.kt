@@ -43,7 +43,9 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -109,6 +111,9 @@ fun VocalKaraokeMakerCard(
     var strength by remember { mutableFloatStateOf(VocalKaraokeQuality.BALANCED.separationStrength) }
     var bassPreserveHz by remember { mutableFloatStateOf(VocalKaraokeQuality.BALANCED.bassPreserveHz) }
     var vocalPresence by remember { mutableFloatStateOf(VocalKaraokeQuality.BALANCED.vocalPresenceBoost) }
+    var autoAlignPhase by remember { mutableStateOf(true) }
+    var manualInvertRight by remember { mutableStateOf(false) }
+    var studioMasteringPolish by remember { mutableStateOf(true) }
 
     var loadedStereoData by remember { mutableStateOf<StereoPcmData?>(null) }
     var loadedStereoTitle by remember { mutableStateOf<String?>(null) }
@@ -220,7 +225,7 @@ fun VocalKaraokeMakerCard(
         scope.launch {
             try {
                 val result = withContext(Dispatchers.Default) {
-                    if (stereo != null && VocalKaraokeSeparator.hasStereoContent(stereo.left, stereo.right)) {
+                    if (stereo != null && (VocalKaraokeSeparator.hasStereoContent(stereo.left, stereo.right) || manualInvertRight)) {
                         VocalKaraokeSeparator.separateStereo(
                             left = stereo.left,
                             right = stereo.right,
@@ -228,7 +233,10 @@ fun VocalKaraokeMakerCard(
                             separationStrength = strength,
                             bassPreserveHz = bassPreserveHz,
                             vocalPresenceBoost = vocalPresence,
-                            sampleRate = stereo.sampleRate
+                            sampleRate = stereo.sampleRate,
+                            autoAlignPhase = autoAlignPhase,
+                            manualInvertRight = manualInvertRight,
+                            studioMasteringPolish = studioMasteringPolish
                         )
                     } else {
                         val monoInput = stereo?.left ?: currentTrackPcm
@@ -238,15 +246,18 @@ fun VocalKaraokeMakerCard(
                             separationStrength = strength,
                             bassPreserveHz = bassPreserveHz,
                             vocalPresenceBoost = vocalPresence,
-                            sampleRate = stereo?.sampleRate ?: sampleRate
+                            sampleRate = stereo?.sampleRate ?: sampleRate,
+                            studioMasteringPolish = studioMasteringPolish
                         )
                     }
                 }
                 generatedVocals = result.vocals
                 generatedKaraoke = result.karaoke
                 usedStereoEngine = result.usedStereoSeparation
-                val engineNote = if (result.usedStereoSeparation) "Stereo Mid/Side + STFT" else "Spectral Harmonic"
-                lastStatusMessage = "Extracted Vocals & Karaoke stems ready ($engineNote)."
+                val engineNote = if (result.usedStereoSeparation) "Stereo Mid/Side + STFT" else "HPSS Spectral"
+                val phaseNote = if (result.phaseCorrected) " • Phase Aligned" else ""
+                val masterNote = if (studioMasteringPolish) " • Studio EQ/Comp" else ""
+                lastStatusMessage = "Extracted Vocals & Karaoke stems ready ($engineNote$phaseNote$masterNote)."
                 if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
                 AccessibilityHelper.announceForAccessibility(context, lastStatusMessage)
             } catch (e: Throwable) {
@@ -472,6 +483,85 @@ fun VocalKaraokeMakerCard(
                 spokenDescription = "Vocal presence clarity ${(vocalPresence * 100).toInt()} percent",
                 testTag = "slider_vk_clarity"
             )
+
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Phase Alignment & Studio Mastering",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Auto Phase Correction", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text("Align out-of-phase stereo & anchor bass mono", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = autoAlignPhase,
+                            onCheckedChange = { autoAlignPhase = it },
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("switch_vk_phase_correct")
+                                .semantics {
+                                    contentDescription = "Auto phase correction and low-end mono alignment"
+                                }
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Phase Invert Right Channel (Φ)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text("Flip Right polarity to fix inverted stereo mics", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = manualInvertRight,
+                            onCheckedChange = { manualInvertRight = it },
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("switch_vk_phase_invert_r")
+                                .semantics {
+                                    contentDescription = "Manual phase invert right channel phi"
+                                }
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Bone-Dry Cleanup + Mastering EQ/Comp", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            Text("De-hum/de-reverb acapella & corrective 250-400Hz / 2-4kHz EQ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = studioMasteringPolish,
+                            onCheckedChange = { studioMasteringPolish = it },
+                            modifier = Modifier
+                                .minimumInteractiveComponentSize()
+                                .testTag("switch_vk_master_polish")
+                                .semantics {
+                                    contentDescription = "Bone-dry vocal cleanup and studio mastering EQ and compression"
+                                }
+                        )
+                    }
+                }
+            }
 
             Button(
                 onClick = { runSeparation() },

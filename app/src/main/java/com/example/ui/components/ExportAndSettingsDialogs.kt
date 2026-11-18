@@ -22,7 +22,9 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VolumeUp
@@ -31,6 +33,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,6 +63,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.LocalHighContrast
+import com.example.update.AppUpdateChecker
+import com.example.update.UpdateCheckState
 import java.io.File
 
 @Composable
@@ -392,11 +397,18 @@ fun AccessibilitySettingsSheet(
     onSaveSettings: (highContrast: Boolean, hapticsEnabled: Boolean, exportFormat: String) -> Unit,
     onOpenUserGuide: () -> Unit = {},
     onOpenWhatsNew: () -> Unit = {},
+    autoCheckUpdates: Boolean = true,
+    updateCheckState: UpdateCheckState = UpdateCheckState.Idle,
+    lastUpdateCheckMs: Long = 0L,
+    onToggleAutoCheckUpdates: ((Boolean) -> Unit)? = null,
+    onCheckForUpdates: (() -> Unit)? = null,
+    onDownloadUpdate: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     var draftHighContrast by remember(isHighContrast) { mutableStateOf(isHighContrast) }
     var draftHapticsEnabled by remember(isHapticsEnabled) { mutableStateOf(isHapticsEnabled) }
     var draftExportFormat by remember(defaultExportFormat) { mutableStateOf(defaultExportFormat) }
+    var draftAutoCheckUpdates by remember(autoCheckUpdates) { mutableStateOf(autoCheckUpdates) }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -683,7 +695,7 @@ fun AccessibilitySettingsSheet(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "Accessible Studio v1.2 is made for everyone. It is simple, fast and easy to use. It works with TalkBack and touch. Everyone can create, edit and share easily.",
+                            text = "Accessible Studio v${com.example.BuildConfig.VERSION_NAME} is made for everyone. It is simple, fast and easy to use. It works with TalkBack and touch. Everyone can create, edit and share easily.",
                             style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -719,11 +731,194 @@ fun AccessibilitySettingsSheet(
                         color = if (draftHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Version 1.2 • 100% Free & Open Accessible Studio • 100% Offline",
+                        text = "Version ${com.example.BuildConfig.VERSION_NAME} • 100% Free & Open Accessible Studio • 100% Offline",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    // App Updates Controls (Automatic Toggle + Manual Check Button)
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("card_about_updates"),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (draftHighContrast) Color(0xFF1A1A1A) else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        border = BorderStroke(
+                            if (draftHighContrast) 1.5.dp else 1.dp,
+                            if (draftHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    modifier = Modifier.weight(1f),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.SystemUpdate,
+                                        contentDescription = null,
+                                        tint = if (draftHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Automatic Check for Updates",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (draftHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Automatically check for newer Accessible Studio builds when opening the app or About section",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Switch(
+                                    checked = draftAutoCheckUpdates,
+                                    onCheckedChange = { enabled ->
+                                        draftAutoCheckUpdates = enabled
+                                        onToggleAutoCheckUpdates?.invoke(enabled)
+                                    },
+                                    modifier = Modifier
+                                        .testTag("switch_auto_check_updates")
+                                        .semantics {
+                                            contentDescription = "Automatic Check for Updates. Currently ${if (draftAutoCheckUpdates) "enabled" else "disabled"}. Double tap to toggle."
+                                        },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.Black,
+                                        checkedTrackColor = MaterialTheme.colorScheme.secondary
+                                    )
+                                )
+                            }
+
+                            val isChecking = updateCheckState is UpdateCheckState.Checking
+                            Button(
+                                onClick = { onCheckForUpdates?.invoke() },
+                                enabled = !isChecking && onCheckForUpdates != null,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("btn_about_check_updates")
+                                    .semantics {
+                                        contentDescription = if (isChecking) {
+                                            "Checking for updates, please wait."
+                                        } else {
+                                            "Check for Updates now. Current version ${com.example.BuildConfig.VERSION_NAME}."
+                                        }
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (draftHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                    contentColor = if (draftHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                if (isChecking) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = if (draftHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Checking for Updates...", fontWeight = FontWeight.Black)
+                                } else {
+                                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Check for Updates", fontWeight = FontWeight.Black)
+                                }
+                            }
+
+                            val statusMessage = when (updateCheckState) {
+                                is UpdateCheckState.Checking -> "Checking Accessible Studio server for a newer build..."
+                                is UpdateCheckState.UpToDate -> {
+                                    val timeStr = AppUpdateChecker.formatCheckedTime(updateCheckState.checkedAtMs)
+                                    if (timeStr.isNotEmpty()) {
+                                        "You are up to date (v${updateCheckState.currentVersion}). Checked $timeStr."
+                                    } else {
+                                        "You are up to date (v${updateCheckState.currentVersion})."
+                                    }
+                                }
+                                is UpdateCheckState.UpdateAvailable -> {
+                                    "Update available: v${updateCheckState.latestVersion}. ${updateCheckState.releaseNotes}"
+                                }
+                                is UpdateCheckState.Error -> updateCheckState.message
+                                is UpdateCheckState.Idle -> {
+                                    val timeStr = AppUpdateChecker.formatCheckedTime(lastUpdateCheckMs)
+                                    if (timeStr.isNotEmpty()) {
+                                        "Last checked: $timeStr"
+                                    } else if (draftAutoCheckUpdates) {
+                                        "Automatic update checks are enabled. Tap Check for Updates anytime."
+                                    } else {
+                                        "Automatic update checks are off. Tap Check for Updates to check manually."
+                                    }
+                                }
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        color = when (updateCheckState) {
+                                            is UpdateCheckState.UpdateAvailable -> MaterialTheme.colorScheme.primaryContainer
+                                            is UpdateCheckState.Error -> MaterialTheme.colorScheme.errorContainer
+                                            else -> if (draftHighContrast) Color.Black else MaterialTheme.colorScheme.surface
+                                        },
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(10.dp)
+                                    .testTag("card_about_update_status")
+                                    .semantics {
+                                        liveRegion = LiveRegionMode.Polite
+                                        contentDescription = statusMessage
+                                    },
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = statusMessage,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = if (updateCheckState is UpdateCheckState.UpdateAvailable) FontWeight.Bold else FontWeight.Medium,
+                                    color = when (updateCheckState) {
+                                        is UpdateCheckState.UpdateAvailable -> MaterialTheme.colorScheme.onPrimaryContainer
+                                        is UpdateCheckState.Error -> MaterialTheme.colorScheme.onErrorContainer
+                                        else -> if (draftHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                                    },
+                                    modifier = Modifier.testTag("txt_about_update_status")
+                                )
+
+                                if (updateCheckState is UpdateCheckState.UpdateAvailable) {
+                                    Button(
+                                        onClick = { onDownloadUpdate?.invoke(updateCheckState.downloadUrl) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("btn_about_download_update")
+                                            .semantics {
+                                                contentDescription = "Download Accessible Studio version ${updateCheckState.latestVersion} APK update."
+                                            },
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Download Update (v${updateCheckState.latestVersion})", fontWeight = FontWeight.Black)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     Button(
                         onClick = onOpenUserGuide,
                         modifier = Modifier
@@ -746,7 +941,7 @@ fun AccessibilitySettingsSheet(
                             .height(48.dp)
                             .testTag("btn_about_whats_new")
                             .semantics {
-                                contentDescription = "What's New. Tap to view recent updates and fixes in Version 1.2."
+                                contentDescription = "What's New. Tap to view recent updates and fixes in Version ${com.example.BuildConfig.VERSION_NAME}."
                             },
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(

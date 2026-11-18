@@ -66,10 +66,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -97,6 +100,8 @@ import com.example.ui.components.StudioWhatsNewDialog
 import com.example.ui.screens.BatchProcessingDialog
 import com.example.ui.studio.StudioRootCoordinator
 import com.example.ui.theme.AccessibleStudioTheme
+import com.example.update.AppUpdateChecker
+import com.example.update.UpdateCheckState
 
 enum class StudioTab(val title: String) {
     AUDIO("Audio Studio"),
@@ -118,6 +123,12 @@ class MainActivity : ComponentActivity() {
             var isHighContrast by remember { mutableStateOf(savedPrefs.isHighContrast) }
             var isHapticsEnabled by remember { mutableStateOf(savedPrefs.isHapticsEnabled) }
             var defaultExportFormat by remember { mutableStateOf(savedPrefs.defaultExportFormat) }
+            var autoCheckUpdates by remember { mutableStateOf(savedPrefs.autoCheckUpdates) }
+            var lastUpdateCheckMs by remember {
+                mutableStateOf(StudioPreferences.loadLastUpdateCheckMs(applicationContext))
+            }
+            var updateCheckState by remember { mutableStateOf<UpdateCheckState>(UpdateCheckState.Idle) }
+            var hasAutoCheckedThisSession by remember { mutableStateOf(false) }
             var showSettingsSheet by remember { mutableStateOf(false) }
             var showHelpMenuDialog by remember { mutableStateOf(false) }
             var showWhatsNewDialog by remember { mutableStateOf(false) }
@@ -126,6 +137,44 @@ class MainActivity : ComponentActivity() {
             var followCursor by remember { mutableStateOf(true) }
 
             val activityContext = this@MainActivity
+            val appCoroutineScope = rememberCoroutineScope()
+
+            fun runUpdateCheck(isAutomatic: Boolean) {
+                if (updateCheckState is UpdateCheckState.Checking) return
+                updateCheckState = UpdateCheckState.Checking(isAutomatic = isAutomatic)
+                appCoroutineScope.launch {
+                    val result = AppUpdateChecker.checkForUpdates()
+                    updateCheckState = result
+                    when (result) {
+                        is UpdateCheckState.UpToDate -> {
+                            lastUpdateCheckMs = result.checkedAtMs
+                            StudioPreferences.saveLastUpdateCheck(applicationContext, result.checkedAtMs, result.latestVersion)
+                            if (!isAutomatic) {
+                                if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.SUCCESS)
+                                AccessibilityHelper.announceForAccessibility(
+                                    activityContext,
+                                    "Accessible Studio is up to date, version ${result.currentVersion}."
+                                )
+                            }
+                        }
+                        is UpdateCheckState.UpdateAvailable -> {
+                            lastUpdateCheckMs = result.checkedAtMs
+                            StudioPreferences.saveLastUpdateCheck(applicationContext, result.checkedAtMs, result.latestVersion)
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.DOUBLE_CLICK)
+                            AccessibilityHelper.announceForAccessibility(
+                                activityContext,
+                                "Update available: Accessible Studio version ${result.latestVersion}. Open Settings then About to download."
+                            )
+                        }
+                        is UpdateCheckState.Error -> {
+                            if (!isAutomatic) {
+                                AccessibilityHelper.announceForAccessibility(activityContext, result.message)
+                            }
+                        }
+                        else -> Unit
+                    }
+                }
+            }
 
             // Modern Storage Permission Handler adhering to Scoped Storage guidelines
             val storagePermissions = remember {
@@ -143,9 +192,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            androidx.compose.runtime.LaunchedEffect(Unit) {
+            LaunchedEffect(Unit) {
                 if (storagePermissions.isNotEmpty() && !com.example.storage.StorageExportManager.hasStoragePermissions(activityContext)) {
                     storagePermissionLauncher.launch(storagePermissions.toTypedArray())
+                }
+                if (autoCheckUpdates && !hasAutoCheckedThisSession) {
+                    hasAutoCheckedThisSession = true
+                    runUpdateCheck(isAutomatic = true)
+                }
+            }
+
+            LaunchedEffect(showSettingsSheet, autoCheckUpdates) {
+                if (showSettingsSheet && autoCheckUpdates && !hasAutoCheckedThisSession) {
+                    hasAutoCheckedThisSession = true
+                    runUpdateCheck(isAutomatic = true)
                 }
             }
 
@@ -160,7 +220,7 @@ class MainActivity : ComponentActivity() {
                         isHighContrast = !isHighContrast
                         StudioPreferences.saveSettings(
                             applicationContext,
-                            StudioSettingsState(isHighContrast, isHapticsEnabled, defaultExportFormat)
+                            StudioSettingsState(isHighContrast, isHapticsEnabled, defaultExportFormat, autoCheckUpdates)
                         )
                         if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.DOUBLE_CLICK)
                         AccessibilityHelper.announceForAccessibility(
@@ -193,6 +253,38 @@ class MainActivity : ComponentActivity() {
                         isHighContrast = isHighContrast,
                         isHapticsEnabled = isHapticsEnabled,
                         defaultExportFormat = defaultExportFormat,
+                        autoCheckUpdates = autoCheckUpdates,
+                        updateCheckState = updateCheckState,
+                        lastUpdateCheckMs = lastUpdateCheckMs,
+                        onToggleAutoCheckUpdates = { enabled ->
+                            autoCheckUpdates = enabled
+                            StudioPreferences.setAutoCheckUpdatesEnabled(applicationContext, enabled)
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            AccessibilityHelper.announceForAccessibility(
+                                activityContext,
+                                if (enabled) "Automatic update check enabled" else "Automatic update check disabled"
+                            )
+                            if (enabled) {
+                                hasAutoCheckedThisSession = true
+                                runUpdateCheck(isAutomatic = true)
+                            }
+                        },
+                        onCheckForUpdates = {
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            AccessibilityHelper.announceForAccessibility(activityContext, "Checking for updates")
+                            runUpdateCheck(isAutomatic = false)
+                        },
+                        onDownloadUpdate = { url ->
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            val opened = AppUpdateChecker.openUpdateDownload(activityContext, url)
+                            if (!opened) {
+                                android.widget.Toast.makeText(
+                                    activityContext,
+                                    "Could not open download link in browser.",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
                         onSaveSettings = { newHighContrast, newHaptics, newExportFormat ->
                             val cleanFormat = StudioPreferences.normalizeExportFormat(newExportFormat)
                             isHighContrast = newHighContrast
@@ -203,7 +295,8 @@ class MainActivity : ComponentActivity() {
                                 StudioSettingsState(
                                     isHighContrast = newHighContrast,
                                     isHapticsEnabled = newHaptics,
-                                    defaultExportFormat = cleanFormat
+                                    defaultExportFormat = cleanFormat,
+                                    autoCheckUpdates = autoCheckUpdates
                                 )
                             )
                             showSettingsSheet = false

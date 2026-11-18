@@ -83,6 +83,58 @@
             cursor: not-allowed;
             transform: none;
         }
+        .share-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 14px;
+            flex-wrap: wrap;
+        }
+        .btn-share {
+            flex: 1 1 150px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 48px;
+            padding: 12px 16px;
+            border-radius: 14px;
+            border: 2px solid #38BDF8;
+            background-color: #0F172A;
+            color: #E0F2FE;
+            font-size: 15px;
+            font-weight: 800;
+            cursor: pointer;
+            transition: background-color 0.18s ease, transform 0.15s ease;
+        }
+        .btn-share:hover {
+            background-color: #1E3A5F;
+        }
+        .btn-share:active {
+            transform: scale(0.98);
+        }
+        .btn-share:focus-visible,
+        .btn-download:focus-visible {
+            outline: 3px solid #FBBF24;
+            outline-offset: 2px;
+        }
+        .share-feedback {
+            display: none;
+            background-color: rgba(56, 189, 248, 0.14);
+            border: 1px solid #38BDF8;
+            color: #E0F2FE;
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            text-align: left;
+            word-break: break-word;
+        }
+        .share-feedback.error {
+            background-color: rgba(248, 113, 113, 0.14);
+            border-color: #F87171;
+            color: #FECACA;
+        }
 
         /* Visual Progress Container */
         .progress-box {
@@ -283,10 +335,23 @@
         </p>
 
         <!-- Main Download Button -->
-        <button id="downloadBtn" class="btn-download" onclick="startDownload()">
-            <span id="btnIcon">⬇️</span>
+        <button id="downloadBtn" type="button" class="btn-download" onclick="startDownload()">
+            <span id="btnIcon" aria-hidden="true">⬇️</span>
             <span id="btnText">Download AccessibleStudio_V1.2.apk</span>
         </button>
+
+        <!-- Web Share & Copy Link Buttons -->
+        <div class="share-row">
+            <button id="shareBtn" type="button" class="btn-share" onclick="shareApkLink()" aria-label="Share Accessible Studio APK download link via messaging apps or copy link">
+                <span aria-hidden="true">📤</span>
+                <span>Share</span>
+            </button>
+            <button id="copyLinkBtn" type="button" class="btn-share" onclick="copyApkLink()" aria-label="Copy Accessible Studio APK download link to clipboard">
+                <span aria-hidden="true">📋</span>
+                <span>Copy Link</span>
+            </button>
+        </div>
+        <div id="shareFeedback" class="share-feedback" role="status" aria-live="polite"></div>
 
         <!-- Visual Progress Box -->
         <div id="progressBox" class="progress-box" role="region" aria-label="APK Download Progress">
@@ -305,7 +370,7 @@
 
             <!-- Detailed Transfer Statistics -->
             <div class="progress-stats">
-                <span id="progressBytes">0.0 MB / 19.0 MB</span>
+                <span id="progressBytes">0.0 MB / 18.9 MB</span>
                 <span id="progressSpeed">Calculating speed...</span>
             </div>
         </div>
@@ -329,7 +394,7 @@
                 <li>प्रोग्रेस बार पूरा (100%) होते ही फ़ाइल अपने आप सेव हो जाएगी।</li>
                 <li>नोटिफिकेशन या <b>Downloads</b> फ़ोल्डर में जाकर <b>AccessibleStudio.apk</b> पर टैप करें।</li>
                 <li><b>Install</b> चुनें (अगर पहली बार कर रहे हैं, तो <i>"Install unknown apps"</i> को Allow करें)।</li>
-                <li><b>Play Protect नोट:</b> ब्राउज़र या Downloads से सीधे APK इंस्टॉल करने पर Android का Play Protect सुरक्षा के लिए एक बार <i>"Scan app"</i> पूछ सकता है — आप निश्चिंत होकर <b>Scan app</b> चुन सकते हैं। ऐप 100% ऑफ़लाइन है और इसमें कोई Internet या अनावश्यक Permission नहीं है।</li>
+                <li><b>Play Protect नोट:</b> ब्राउज़र या Downloads से सीधे APK इंस्टॉल करने पर Android का Play Protect सुरक्षा के लिए एक बार <i>"Scan app"</i> पूछ सकता है — आप निश्चिंत होकर <b>Scan app</b> चुन सकते हैं। सभी ऑडियो/वीडियो एडिटिंग 100% ऑफ़लाइन होती है और ऐप में कोई अनावश्यक Permission नहीं है।</li>
             </ol>
         </div>
 
@@ -339,10 +404,10 @@
             <ul>
                 <li>
                     <div class="changelog-ver-row">
-                        <span class="changelog-ver-title">v1.2 (Latest)</span>
+                        <span class="changelog-ver-title">v1.2.20261118.092951 (Latest)</span>
                         <a href="/AccessibleStudio_V1.2.apk" download="AccessibleStudio_V1.2.apk" class="changelog-link" aria-label="Download Accessible Studio version 1.2 APK">Download v1.2 APK</a>
                     </div>
-                    <p class="changelog-desc">Fixed Noise Reduction out-of-memory crash and Realme/ColorOS save &amp; export crash; added Vocal Extractor &amp; Karaoke Maker with Auto Phase Alignment (Φ), Bone-Dry Acapella Cleanup, and Corrective EQ.</p>
+                    <p class="changelog-desc">Added Automatic Check for Updates toggle and manual Check for Updates button in Settings &rarr; About, automatic per-build versioning, plus Vocal Remover / Noise Reduction OOM and Realme export crash fixes.</p>
                 </li>
                 <li>
                     <div class="changelog-ver-row">
@@ -367,7 +432,7 @@
 
     <script>
         const APK_URL = '/AccessibleStudio.apk';
-        const ESTIMATED_TOTAL_BYTES = 19904420; // ~19.0 MB
+        const ESTIMATED_TOTAL_BYTES = 19819037; // ~18.9 MB
 
         let isDownloading = false;
 
@@ -403,7 +468,7 @@
             progressBarFill.style.width = '0%';
             progressBar.setAttribute('aria-valuenow', '0');
             progressPercent.textContent = '0%';
-            progressBytes.textContent = '0.0 MB / 19.0 MB';
+            progressBytes.textContent = '0.0 MB / 18.9 MB';
             progressSpeed.textContent = 'Connecting...';
             progressTitleText.textContent = 'Downloading AccessibleStudio.apk...';
 
@@ -498,6 +563,90 @@
             }
 
             xhr.send();
+        }
+
+        function getApkDownloadUrl() {
+            try {
+                return new URL('/AccessibleStudio_V1.2.apk', window.location.href).href;
+            } catch (e) {
+                return window.location.href;
+            }
+        }
+
+        function showShareFeedback(message, isError) {
+            const box = document.getElementById('shareFeedback');
+            if (box) {
+                box.textContent = message;
+                box.className = isError ? 'share-feedback error' : 'share-feedback';
+                box.style.display = 'block';
+            }
+            announce(message);
+        }
+
+        async function copyTextToClipboard(text) {
+            if (navigator.clipboard && window.isSecureContext) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    return true;
+                } catch (e) {
+                    // Fall through to execCommand fallback
+                }
+            }
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                ta.style.top = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                ta.setSelectionRange(0, text.length);
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                return ok;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        async function shareApkLink() {
+            const apkUrl = getApkDownloadUrl();
+            const shareData = {
+                title: 'Accessible Studio APK (v1.2)',
+                text: 'Download Accessible Studio (v1.2) — 100% Offline TalkBack-Accessible Audio & Video Studio APK:',
+                url: apkUrl
+            };
+
+            if (typeof navigator.share === 'function') {
+                try {
+                    await navigator.share(shareData);
+                    showShareFeedback('✅ APK download link shared!', false);
+                    return;
+                } catch (err) {
+                    if (err && err.name === 'AbortError') {
+                        return;
+                    }
+                    // Fall through to clipboard copy if share is unsupported or blocked
+                }
+            }
+
+            const copied = await copyTextToClipboard(apkUrl);
+            if (copied) {
+                showShareFeedback('📋 Share sheet unavailable here — APK download link copied to clipboard: ' + apkUrl, false);
+            } else {
+                showShareFeedback('Copy this APK link to share: ' + apkUrl, true);
+            }
+        }
+
+        async function copyApkLink() {
+            const apkUrl = getApkDownloadUrl();
+            const copied = await copyTextToClipboard(apkUrl);
+            if (copied) {
+                showShareFeedback('📋 APK download link copied to clipboard!', false);
+            } else {
+                showShareFeedback('Copy this APK link: ' + apkUrl, true);
+            }
         }
     </script>
 </body>

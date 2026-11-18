@@ -7,6 +7,7 @@ import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
@@ -198,6 +199,15 @@ class WavAudioProcessor(private val context: Context? = null) {
             val ceilingByDuration = MAX_DECODE_DURATION_SECONDS * safeSr.toLong()
             val heapBudgetFrames = (Runtime.getRuntime().maxMemory() * 45L / 100L) / 2L
             val minFloor = 900L * safeSr.toLong()
+            return heapBudgetFrames.coerceAtLeast(minFloor).coerceAtMost(ceilingByDuration)
+        }
+
+        internal fun computeMaxStereoSourceFramesBudget(srcRate: Int): Long {
+            val safeSr = srcRate.coerceAtLeast(8000)
+            val ceilingByDuration = (MAX_DECODE_DURATION_SECONDS / 2L) * safeSr.toLong()
+            // Each stereo frame requires L + R shorts (4 bytes) plus resample scratch
+            val heapBudgetFrames = (Runtime.getRuntime().maxMemory() * 20L / 100L) / 2L
+            val minFloor = 240L * safeSr.toLong()
             return heapBudgetFrames.coerceAtLeast(minFloor).coerceAtMost(ceilingByDuration)
         }
 
@@ -397,7 +407,9 @@ class WavAudioProcessor(private val context: Context? = null) {
                         }
                         else -> {
                             if (pcmEncoding == AudioFormat.ENCODING_PCM_FLOAT) {
-                                (bb.float.coerceIn(-1.0f, 1.0f) * 32767.0f).toInt().coerceIn(-32767, 32767)
+                                val f = bb.float
+                                val clamped = if (f.isFinite()) f.coerceIn(-1.0f, 1.0f) else 0f
+                                (clamped * 32767.0f).toInt().coerceIn(-32767, 32767)
                             } else {
                                 (bb.int shr 16).coerceIn(-32767, 32767)
                             }
@@ -484,7 +496,7 @@ class WavAudioProcessor(private val context: Context? = null) {
                 }
 
                 val bytesPerFrame = (numChannels * (bitsPerSample / 8)).coerceAtLeast(1)
-                val maxFrames = computeMaxSourceFramesBudget(wavSampleRate) / 2L
+                val maxFrames = computeMaxStereoSourceFramesBudget(wavSampleRate)
                 val maxBytes = minOf(dataSize, maxFrames * bytesPerFrame.toLong())
                 raf.seek(dataOffset)
 
@@ -788,16 +800,18 @@ class WavAudioProcessor(private val context: Context? = null) {
                 sourceSampleRate = activeSampleRate,
                 targetSampleRate = sampleRate
             )
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (e: Throwable) {
             e.printStackTrace()
             ShortArray(0)
         } finally {
-            try { decoder?.stop() } catch (_: Exception) {}
-            try { decoder?.release() } catch (_: Exception) {}
-            try { extractor.release() } catch (_: Exception) {}
+            try { decoder?.stop() } catch (_: Throwable) {}
+            try { decoder?.release() } catch (_: Throwable) {}
+            try { extractor.release() } catch (_: Throwable) {}
             try {
                 if (tempFile.exists()) tempFile.delete()
-            } catch (_: Exception) {}
+            } catch (_: Throwable) {}
         }
     }
 
@@ -813,56 +827,60 @@ class WavAudioProcessor(private val context: Context? = null) {
             rawExt != null -> ".$rawExt"
             mimeHint == "audio/wav" || mimeHint == "audio/x-wav" -> ".wav"
             mimeHint == "audio/mpeg" -> ".mp3"
-            mimeHint == "audio/mp4" -> ".m4a"
+            mimeHint == "audio/mp4" || mimeHint == "audio/x-m4a" -> ".m4a"
+            mimeHint == "audio/aac" -> ".aac"
+            mimeHint == "audio/ogg" -> ".ogg"
+            mimeHint == "audio/flac" -> ".flac"
+            mimeHint == "audio/webm" -> ".webm"
+            mimeHint == "audio/3gpp" -> ".3gp"
+            mimeHint == "video/mp4" -> ".mp4"
             else -> ".tmp"
         }
         val tempFile = File.createTempFile("stereo_audio_", fileExt, ctx.cacheDir)
         val extractor = MediaExtractor()
         var decoder: MediaCodec? = null
         try {
-            var copiedToTemp = false
-            val inputStream = try {
-                ctx.contentResolver.openInputStream(uri)
-            } catch (_: Exception) {
-                null
-            } ?: try {
-                ctx.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
-            } catch (_: Exception) {
-                null
-            }
-
-            if (inputStream != null) {
-                inputStream.use { input ->
-                    FileOutputStream(tempFile).use { outputStream ->
-                        val buf = ByteArray(16384)
-                        var read: Int
-                        while (input.read(buf).also { read = it } != -1) {
-                            outputStream.write(buf, 0, read)
-                        }
-                        outputStream.flush()
-                    }
-                }
-                copiedToTemp = tempFile.exists() && tempFile.length() >= 44L
-            }
-
-            if (copiedToTemp) {
-                tryDecodeRiffWavDirectStereo(tempFile, sampleRate)?.let { directStereo ->
+            val directPath = if (uri.scheme == "file") uri.path?.takeIf { it.isNotBlank() } else null
+            val directLocalFile = directPath?.let { File(it) }?.takeIf { it.exists() && it.canRead() }
+            if (directLocalFile != null) {
+                tryDecodeRiffWavDirectStereo(directLocalFile, sampleRate)?.let { directStereo ->
                     if (directStereo.left.isNotEmpty()) return@withContext directStereo
                 }
-                extractor.setDataSource(tempFile.absolutePath)
-            } else if (uri.scheme == "file" && !uri.path.isNullOrBlank()) {
-                val resolvedPath = uri.path
-                if (resolvedPath != null) {
-                    val directFile = File(resolvedPath)
-                    tryDecodeRiffWavDirectStereo(directFile, sampleRate)?.let { directStereo ->
+                extractor.setDataSource(directLocalFile.absolutePath)
+            } else {
+                var copiedToTemp = false
+                val inputStream = try {
+                    ctx.contentResolver.openInputStream(uri)
+                } catch (_: Exception) {
+                    null
+                } ?: try {
+                    ctx.contentResolver.openAssetFileDescriptor(uri, "r")?.createInputStream()
+                } catch (_: Exception) {
+                    null
+                }
+
+                if (inputStream != null) {
+                    inputStream.use { input ->
+                        FileOutputStream(tempFile).use { outputStream ->
+                            val buf = ByteArray(16384)
+                            var read: Int
+                            while (input.read(buf).also { read = it } != -1) {
+                                outputStream.write(buf, 0, read)
+                            }
+                            outputStream.flush()
+                        }
+                    }
+                    copiedToTemp = tempFile.exists() && tempFile.length() >= 44L
+                }
+
+                if (copiedToTemp) {
+                    tryDecodeRiffWavDirectStereo(tempFile, sampleRate)?.let { directStereo ->
                         if (directStereo.left.isNotEmpty()) return@withContext directStereo
                     }
-                    extractor.setDataSource(directFile.absolutePath)
+                    extractor.setDataSource(tempFile.absolutePath)
                 } else {
                     extractor.setDataSource(ctx, uri, null)
                 }
-            } else {
-                extractor.setDataSource(ctx, uri, null)
             }
 
             var audioTrackIndex = -1
@@ -910,7 +928,7 @@ class WavAudioProcessor(private val context: Context? = null) {
             var totalFrames = 0L
             var emptyOutputStalls = 0
             val timeoutUs = 10000L
-            var maxSourceFrames = computeMaxSourceFramesBudget(activeSampleRate) / 2L
+            var maxSourceFrames = computeMaxStereoSourceFramesBudget(activeSampleRate)
             var reusableChunk = ByteArray(16384)
 
             while (!outputEos && totalFrames < maxSourceFrames) {
@@ -949,7 +967,7 @@ class WavAudioProcessor(private val context: Context? = null) {
                         }
                         if (newFmt.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
                             activeSampleRate = newFmt.getInteger(MediaFormat.KEY_SAMPLE_RATE).coerceAtLeast(8000)
-                            maxSourceFrames = computeMaxSourceFramesBudget(activeSampleRate) / 2L
+                            maxSourceFrames = computeMaxStereoSourceFramesBudget(activeSampleRate)
                         }
                         if (newFmt.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
                             activePcmEncoding = newFmt.getInteger(MediaFormat.KEY_PCM_ENCODING)
@@ -991,7 +1009,9 @@ class WavAudioProcessor(private val context: Context? = null) {
 
             if (leftChunks.isEmpty()) return@withContext null
             val leftResampled = assembleAndResampleMonoChunks(leftChunks, activeSampleRate, sampleRate)
+            leftChunks.clear()
             val rightResampled = assembleAndResampleMonoChunks(rightChunks, activeSampleRate, sampleRate)
+            rightChunks.clear()
             val matchedLen = minOf(leftResampled.size, rightResampled.size)
             StereoPcmData(
                 left = if (leftResampled.size == matchedLen) leftResampled else leftResampled.copyOf(matchedLen),
@@ -999,14 +1019,16 @@ class WavAudioProcessor(private val context: Context? = null) {
                 sampleRate = sampleRate,
                 channelCount = activeChannelCount
             )
+        } catch (ce: CancellationException) {
+            throw ce
         } catch (e: Throwable) {
             e.printStackTrace()
             null
         } finally {
-            try { decoder?.stop() } catch (_: Exception) {}
-            try { decoder?.release() } catch (_: Exception) {}
-            try { extractor.release() } catch (_: Exception) {}
-            try { if (tempFile.exists()) tempFile.delete() } catch (_: Exception) {}
+            try { decoder?.stop() } catch (_: Throwable) {}
+            try { decoder?.release() } catch (_: Throwable) {}
+            try { extractor.release() } catch (_: Throwable) {}
+            try { if (tempFile.exists()) tempFile.delete() } catch (_: Throwable) {}
         }
     }
 

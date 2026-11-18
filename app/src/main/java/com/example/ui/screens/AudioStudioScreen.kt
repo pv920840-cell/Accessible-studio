@@ -2140,8 +2140,10 @@ fun AudioStudioScreen(
                 saveUndoSnapshot()
                 rawOriginalPcm = stemPcm
                 currentTrackSourceUri = null
-                playerManager.loadPcmData(stemPcm, workingSampleRate)
-                val newDurMs = playerManager.durationMs.value
+                try {
+                    playerManager.loadPcmData(stemPcm, workingSampleRate)
+                } catch (_: Throwable) {}
+                val newDurMs = ((stemPcm.size.toDouble() / workingSampleRate) * 1000.0).toLong()
                 trimStartMs = 0L
                 trimEndMs = newDurMs
                 syncActiveProjectTab()
@@ -2184,7 +2186,9 @@ fun AudioStudioScreen(
                 mainTrackTitle = karaokeTitle
                 openedFileBaseName = karaokeTab.baseFileName
                 currentTrackSourceUri = null
-                playerManager.loadPcmData(karaokePcm, workingSampleRate)
+                try {
+                    playerManager.loadPcmData(karaokePcm, workingSampleRate)
+                } catch (_: Throwable) {}
                 trimStartMs = 0L
                 trimEndMs = kDur
                 viewHistoryStack.clear()

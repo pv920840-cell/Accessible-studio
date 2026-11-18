@@ -171,15 +171,10 @@ object VocalIsolationProcessor {
             pre = blended
         }
 
-        // Convert to normalized float (-1..1) with edge padding for clean OLA boundaries
+        // Convert on-the-fly to normalized float (-1..1) with edge padding for clean OLA boundaries
         val pad = HOP_SIZE
         val paddedLen = pre.size + 2 * pad
         val frameCount = (((paddedLen - FFT_SIZE + HOP_SIZE - 1) / HOP_SIZE) + 1).coerceAtLeast(1)
-        val totalLen = (frameCount - 1) * HOP_SIZE + FFT_SIZE
-        val inputFloat = FloatArray(totalLen)
-        for (i in pre.indices) {
-            inputFloat[pad + i] = pre[i].toFloat() / 32767f
-        }
 
         val sr = sampleRate.coerceIn(8000, 96000).toFloat()
         val binHz = sr / FFT_SIZE.toFloat()
@@ -198,7 +193,9 @@ object VocalIsolationProcessor {
         for (f in 0 until frameCount) {
             val offset = f * HOP_SIZE
             for (k in 0 until FFT_SIZE) {
-                re[k] = inputFloat[offset + k] * sqrtHannWindow[k]
+                val sIdx = offset + k - pad
+                val sample = if (sIdx in pre.indices) pre[sIdx].toFloat() / 32767f else 0f
+                re[k] = sample * sqrtHannWindow[k]
                 im[k] = 0f
             }
             fft(re, im, inverse = false)
@@ -218,7 +215,9 @@ object VocalIsolationProcessor {
         for (q in 0 until quietCount) {
             val offset = sortedIndices[q] * HOP_SIZE
             for (k in 0 until FFT_SIZE) {
-                re[k] = inputFloat[offset + k] * sqrtHannWindow[k]
+                val sIdx = offset + k - pad
+                val sample = if (sIdx in pre.indices) pre[sIdx].toFloat() / 32767f else 0f
+                re[k] = sample * sqrtHannWindow[k]
                 im[k] = 0f
             }
             fft(re, im, inverse = false)
@@ -249,18 +248,21 @@ object VocalIsolationProcessor {
             }
         }
 
-        // Step 3 (Pass 2): Streaming Per-Frame Spectral Subtraction + Musical Noise Smoothing + OLA
-        val outAccum = FloatArray(totalLen)
-        val olaNorm = FloatArray(totalLen)
+        // Step 3 (Pass 2): Streaming Per-Frame Spectral Subtraction + Musical Noise Smoothing + 2-hop Sliding OLA
+        val outAccum = FloatArray(FFT_SIZE)
+        val olaNorm = FloatArray(FFT_SIZE)
         val prevGain = FloatArray(NUM_BINS) { 1.0f }
         val rawBinGain = FloatArray(NUM_BINS)
         val freqSmoothedGain = FloatArray(NUM_BINS)
         var speechActivitySmoothed = 0f
+        var work = ShortArray(samples.size)
 
         for (f in 0 until frameCount) {
             val offset = f * HOP_SIZE
             for (k in 0 until FFT_SIZE) {
-                re[k] = inputFloat[offset + k] * sqrtHannWindow[k]
+                val sIdx = offset + k - pad
+                val sample = if (sIdx in pre.indices) pre[sIdx].toFloat() / 32767f else 0f
+                re[k] = sample * sqrtHannWindow[k]
                 im[k] = 0f
             }
             fft(re, im, inverse = false)
@@ -347,26 +349,39 @@ object VocalIsolationProcessor {
 
             for (k in 0 until FFT_SIZE) {
                 val w = sqrtHannWindow[k]
-                outAccum[offset + k] += re[k] * w
-                olaNorm[offset + k] += w * w
+                outAccum[k] += re[k] * w
+                olaNorm[k] += w * w
+            }
+
+            for (k in 0 until HOP_SIZE) {
+                val sigIdx = offset + k - pad
+                if (sigIdx in work.indices) {
+                    val norm = olaNorm[k].coerceAtLeast(1e-4f)
+                    val s = (outAccum[k] / norm) * 32767f
+                    work[sigIdx] = s.toInt().coerceIn(-32767, 32767).toShort()
+                }
+            }
+            System.arraycopy(outAccum, HOP_SIZE, outAccum, 0, HOP_SIZE)
+            System.arraycopy(olaNorm, HOP_SIZE, olaNorm, 0, HOP_SIZE)
+            java.util.Arrays.fill(outAccum, HOP_SIZE, FFT_SIZE, 0f)
+            java.util.Arrays.fill(olaNorm, HOP_SIZE, FFT_SIZE, 0f)
+        }
+        for (k in 0 until HOP_SIZE) {
+            val sigIdx = frameCount * HOP_SIZE + k - pad
+            if (sigIdx in work.indices) {
+                val norm = olaNorm[k].coerceAtLeast(1e-4f)
+                val s = (outAccum[k] / norm) * 32767f
+                work[sigIdx] = s.toInt().coerceIn(-32767, 32767).toShort()
             }
         }
 
-        // Normalize OLA back to ShortArray
-        val reconstructed = ShortArray(samples.size)
-        for (i in reconstructed.indices) {
-            val norm = olaNorm[pad + i].coerceAtLeast(1e-4f)
-            val s = (outAccum[pad + i] / norm) * 32767f
-            reconstructed[i] = s.toInt().coerceIn(-32767, 32767).toShort()
-        }
-
         // Step 4: Pristine vocal clarity EQ polish (gentle presence boost, warm low protection)
-        val polished = if (clarityStr > 0.05f) {
+        if (clarityStr > 0.05f) {
             val midPres = 1.0f + clarityStr * 1.8f
             val airPres = 1.0f + clarityStr * 1.2f
             val mudTrim = -0.8f * clarityStr
-            StudioAudioProcessor.apply7BandEq(
-                reconstructed,
+            work = StudioAudioProcessor.apply7BandEq(
+                work,
                 b60 = -1.2f * clarityStr,
                 b150 = 0f,
                 b400 = mudTrim,
@@ -375,11 +390,9 @@ object VocalIsolationProcessor {
                 b6k = airPres,
                 b15k = 0f
             )
-        } else {
-            reconstructed
         }
 
-        return StudioAudioProcessor.applyTruePeakLimiter(polished, -0.8f)
+        return StudioAudioProcessor.applyTruePeakLimiter(work, -0.8f)
     }
 
     internal fun fft(real: FloatArray, imag: FloatArray, inverse: Boolean) {

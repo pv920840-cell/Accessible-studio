@@ -5,7 +5,8 @@ import android.content.Context
 data class StudioSettingsState(
     val isHighContrast: Boolean = false,
     val isHapticsEnabled: Boolean = true,
-    val defaultExportFormat: String = "WAV"
+    val defaultExportFormat: String = "WAV",
+    val autoCheckUpdates: Boolean = true
 )
 
 object StudioPreferences {
@@ -14,6 +15,9 @@ object StudioPreferences {
     private const val KEY_HAPTICS_ENABLED = "haptics_enabled"
     private const val KEY_DEFAULT_EXPORT_FORMAT = "default_export_format"
     private const val KEY_HIDE_WELCOME_DIALOG = "hide_welcome_dialog"
+    private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+    private const val KEY_LAST_UPDATE_CHECK_MS = "last_update_check_ms"
+    private const val KEY_LAST_KNOWN_REMOTE_VERSION = "last_known_remote_version"
 
     val SUPPORTED_AUDIO_EXPORT_FORMATS = listOf("WAV", "MP3", "FLAC", "M4A")
 
@@ -55,7 +59,8 @@ object StudioPreferences {
         return StudioSettingsState(
             isHighContrast = prefs.getBoolean(KEY_HIGH_CONTRAST, false),
             isHapticsEnabled = prefs.getBoolean(KEY_HAPTICS_ENABLED, true),
-            defaultExportFormat = normalizeExportFormat(prefs.getString(KEY_DEFAULT_EXPORT_FORMAT, "WAV"))
+            defaultExportFormat = normalizeExportFormat(prefs.getString(KEY_DEFAULT_EXPORT_FORMAT, "WAV")),
+            autoCheckUpdates = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
         )
     }
 
@@ -65,7 +70,39 @@ object StudioPreferences {
             .putBoolean(KEY_HIGH_CONTRAST, settings.isHighContrast)
             .putBoolean(KEY_HAPTICS_ENABLED, settings.isHapticsEnabled)
             .putString(KEY_DEFAULT_EXPORT_FORMAT, normalizeExportFormat(settings.defaultExportFormat))
+            .putBoolean(KEY_AUTO_CHECK_UPDATES, settings.autoCheckUpdates)
             .apply()
+    }
+
+    fun isAutoCheckUpdatesEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
+    }
+
+    fun setAutoCheckUpdatesEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putBoolean(KEY_AUTO_CHECK_UPDATES, enabled)
+            .apply()
+    }
+
+    fun saveLastUpdateCheck(context: Context, timestampMs: Long, remoteVersion: String?) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val editor = prefs.edit().putLong(KEY_LAST_UPDATE_CHECK_MS, timestampMs)
+        if (!remoteVersion.isNullOrBlank()) {
+            editor.putString(KEY_LAST_KNOWN_REMOTE_VERSION, remoteVersion.trim())
+        }
+        editor.apply()
+    }
+
+    fun loadLastUpdateCheckMs(context: Context): Long {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getLong(KEY_LAST_UPDATE_CHECK_MS, 0L)
+    }
+
+    fun loadLastKnownRemoteVersion(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_LAST_KNOWN_REMOTE_VERSION, "").orEmpty()
     }
 
     fun isWelcomeHidden(context: Context): Boolean {

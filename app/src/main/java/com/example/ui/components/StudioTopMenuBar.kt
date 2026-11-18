@@ -138,7 +138,7 @@ fun StudioDawTopBar(
                         color = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "${currentTab.title} • v1.2 Offline",
+                        text = "${currentTab.title} • v${com.example.BuildConfig.VERSION_NAME} Offline",
                         style = MaterialTheme.typography.labelSmall,
                         color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,

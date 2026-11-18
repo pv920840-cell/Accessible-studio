@@ -348,7 +348,7 @@ fun StudioWhatsNewDialog(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "Accessible Studio v1.2 • Recent Features & Bug Fixes",
+                        text = "Accessible Studio v${com.example.BuildConfig.VERSION_NAME} • Recent Features & Bug Fixes",
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.Bold,
                         color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,

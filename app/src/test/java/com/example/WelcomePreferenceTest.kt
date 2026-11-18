@@ -141,7 +141,8 @@ class WelcomePreferenceTest {
 
         composeRule.onNodeWithTag("accessibility_settings_sheet").assertExists()
         composeRule.onNodeWithTag("card_about_accessible_studio").performScrollTo().assertExists()
-        composeRule.onNodeWithText("Version 1.2 • 100% Free & Open Accessible Studio • 100% Offline").performScrollTo().assertExists()
+        assertTrue(com.example.BuildConfig.VERSION_NAME.matches(Regex("""1\.2\.\d{8}\.\d{6}""")))
+        composeRule.onNodeWithText("Version ${com.example.BuildConfig.VERSION_NAME} • 100% Free & Open Accessible Studio • 100% Offline").performScrollTo().assertExists()
 
         // First button inside About: User Guide
         composeRule.onNodeWithTag("btn_about_user_guide").performScrollTo().assertExists().performClick()
@@ -157,7 +158,7 @@ class WelcomePreferenceTest {
         assertTrue(whatsNewOpened)
         composeRule.onNodeWithTag("whats_new_dialog_title").assertExists()
         composeRule.onNodeWithTag("whats_new_version_badge").assertExists()
-        composeRule.onNodeWithText("Accessible Studio v1.2 • Recent Features & Bug Fixes").assertExists()
+        composeRule.onNodeWithText("Accessible Studio v${com.example.BuildConfig.VERSION_NAME} • Recent Features & Bug Fixes").assertExists()
         composeRule.onNodeWithTag("btn_close_whats_new").performClick()
         composeRule.waitForIdle()
     }

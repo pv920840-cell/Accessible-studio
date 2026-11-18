@@ -1,0 +1,9 @@
+{
+  "appName": "Accessible Studio",
+  "versionCode": 16,
+  "versionName": "1.2.20261118.092951",
+  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.apk",
+  "pageUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/",
+  "apkSizeBytes": 19819037,
+  "releaseNotes": "Added Automatic Check for Updates and Check for Updates button in Settings -> About, auto-changing build version names, and Vocal Remover / Noise Reduction / Realme export crash fixes."
+}

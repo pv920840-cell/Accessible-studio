@@ -99,8 +99,30 @@ object VocalKaraokeSeparator {
         return sigSum > 0L && (diffSum.toDouble() / sigSum.toDouble()) > 0.015
     }
 
+    fun hasStereoContentAligned(
+        left: ShortArray,
+        right: ShortArray,
+        len: Int,
+        lagSamples: Int,
+        polarityInverted: Boolean
+    ): Boolean {
+        if (len < 64) return false
+        val sign = if (polarityInverted) -1 else 1
+        val step = max(1, len / 4096)
+        var diffSum = 0L
+        var sigSum = 0L
+        var i = 0
+        while (i < len) {
+            val l = left[i].toInt()
+            val r = right[(i + lagSamples).coerceIn(0, len - 1)].toInt() * sign
+            diffSum += abs(l - r)
+            sigSum += abs(l) + abs(r)
+            i += step
+        }
+        return sigSum > 0L && (diffSum.toDouble() / sigSum.toDouble()) > 0.015
+    }
+
     data class PhaseAlignmentInfo(
-        val alignedRight: FloatArray,
         val correlationBefore: Float,
         val polarityInverted: Boolean,
         val lagSamples: Int
@@ -131,7 +153,6 @@ object VocalKaraokeSeparator {
             (sumLR / sqrt(sumLL * sumRR)).toFloat().coerceIn(-1f, 1f)
         } else 1f
 
-        var useSign = if (manualInvertRight) -1f else 1f
         var bestLag = 0
         var polarityFlipped = manualInvertRight
 
@@ -171,27 +192,18 @@ object VocalKaraokeSeparator {
                 }
                 if (bestPosCorr > baseCorr + 0.16f && bestPosLag != 0 && bestPosCorr >= bestNegCorr) {
                     bestLag = bestPosLag
-                    useSign = 1f
                     polarityFlipped = false
                 } else if ((bestNegCorr > baseCorr + 0.18f || baseCorr < -0.25f) && bestNegCorr > bestPosCorr && bestNegCorr > 0.25f) {
-                    useSign = -1f
                     polarityFlipped = true
                     bestLag = if (bestNegLag != 0 && bestNegCorr > -baseCorr + 0.12f) bestNegLag else 0
                 }
             } else if (baseCorr < -0.25f) {
-                useSign = -1f
                 bestLag = 0
                 polarityFlipped = true
             }
         }
 
-        val alignedRight = FloatArray(len)
-        for (idx in 0 until len) {
-            val srcIdx = (idx + bestLag).coerceIn(0, len - 1)
-            alignedRight[idx] = (right[srcIdx].toFloat() / 32767f) * useSign
-        }
         return PhaseAlignmentInfo(
-            alignedRight = alignedRight,
             correlationBefore = baseCorr,
             polarityInverted = polarityFlipped,
             lagSamples = bestLag
@@ -217,7 +229,7 @@ object VocalKaraokeSeparator {
         }
         if (!hasStereoContent(left, right) && !manualInvertRight) {
             return separateMono(
-                samples = left.copyOf(len),
+                samples = if (left.size == len) left else left.copyOf(len),
                 quality = quality,
                 separationStrength = separationStrength,
                 bassPreserveHz = bassPreserveHz,
@@ -236,12 +248,9 @@ object VocalKaraokeSeparator {
         )
 
         // If polarity/delay correction turns an inverted dual-mono signal back into clean mono, run Mono HPSS
-        val alignedRightShort = ShortArray(len) { idx ->
-            (phaseInfo.alignedRight[idx] * 32767f).toInt().coerceIn(-32767, 32767).toShort()
-        }
-        if (!hasStereoContent(left, alignedRightShort)) {
+        if (!hasStereoContentAligned(left, right, len, phaseInfo.lagSamples, phaseInfo.polarityInverted)) {
             val monoResult = separateMono(
-                samples = left.copyOf(len),
+                samples = if (left.size == len) left else left.copyOf(len),
                 quality = quality,
                 separationStrength = separationStrength,
                 bassPreserveHz = bassPreserveHz,
@@ -265,18 +274,17 @@ object VocalKaraokeSeparator {
         val pad = HOP_SIZE
         val paddedLen = len + 2 * pad
         val frameCount = (((paddedLen - FFT_SIZE + HOP_SIZE - 1) / HOP_SIZE) + 1).coerceAtLeast(1)
-        val totalLen = (frameCount - 1) * HOP_SIZE + FFT_SIZE
 
-        val inL = FloatArray(totalLen)
-        val inR = FloatArray(totalLen)
-        for (i in 0 until len) {
-            inL[pad + i] = left[i].toFloat() / 32767f
-            inR[pad + i] = phaseInfo.alignedRight[i]
-        }
+        val lag = phaseInfo.lagSamples
+        val rightSign = if (phaseInfo.polarityInverted) -1f else 1f
 
-        val vocalOutAccum = FloatArray(totalLen)
-        val karaokeOutAccum = FloatArray(totalLen)
-        val olaNorm = FloatArray(totalLen)
+        // 2-hop sliding OLA accumulators (12 KB total instead of full-track FloatArrays)
+        val vocalOutAccum = FloatArray(FFT_SIZE)
+        val karaokeOutAccum = FloatArray(FFT_SIZE)
+        val olaNorm = FloatArray(FFT_SIZE)
+
+        val rawVocals = ShortArray(len)
+        val rawKaraoke = ShortArray(len)
 
         val reL = FloatArray(FFT_SIZE)
         val imL = FloatArray(FFT_SIZE)
@@ -301,9 +309,16 @@ object VocalKaraokeSeparator {
             val offset = f * HOP_SIZE
             for (k in 0 until FFT_SIZE) {
                 val w = sqrtHannWindow[k]
-                reL[k] = inL[offset + k] * w
+                val sIdx = offset + k - pad
+                if (sIdx in 0 until len) {
+                    reL[k] = (left[sIdx].toFloat() / 32767f) * w
+                    val rIdx = (sIdx + lag).coerceIn(0, len - 1)
+                    reR[k] = ((right[rIdx].toFloat() / 32767f) * rightSign) * w
+                } else {
+                    reL[k] = 0f
+                    reR[k] = 0f
+                }
                 imL[k] = 0f
-                reR[k] = inR[offset + k] * w
                 imR[k] = 0f
             }
             VocalIsolationProcessor.fft(reL, imL, inverse = false)
@@ -331,7 +346,6 @@ object VocalKaraokeSeparator {
                 rawCenterScore[b] = combinedScore.coerceIn(0f, 1f)
             }
 
-            // 3-bin spectral smoothing prevents isolated tonal chirps
             // 5-bin spectral smoothing eliminates isolated tonal comb-filtering & ghost artifacts
             for (b in 0 until NUM_BINS) {
                 val bM2 = rawCenterScore[max(0, b - 2)]
@@ -406,21 +420,35 @@ object VocalKaraokeSeparator {
             VocalIsolationProcessor.fft(reV, imV, inverse = true)
             VocalIsolationProcessor.fft(reK, imK, inverse = true)
 
-            val offsetOut = f * HOP_SIZE
             for (k in 0 until FFT_SIZE) {
                 val w = sqrtHannWindow[k]
-                vocalOutAccum[offsetOut + k] += reV[k] * w
-                karaokeOutAccum[offsetOut + k] += reK[k] * w
-                olaNorm[offsetOut + k] += w * w
+                vocalOutAccum[k] += reV[k] * w
+                karaokeOutAccum[k] += reK[k] * w
+                olaNorm[k] += w * w
             }
-        }
 
-        val rawVocals = ShortArray(len)
-        val rawKaraoke = ShortArray(len)
-        for (i in 0 until len) {
-            val norm = olaNorm[pad + i].coerceAtLeast(1e-4f)
-            rawVocals[i] = ((vocalOutAccum[pad + i] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
-            rawKaraoke[i] = ((karaokeOutAccum[pad + i] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+            for (k in 0 until HOP_SIZE) {
+                val sigIdx = offset + k - pad
+                if (sigIdx in 0 until len) {
+                    val norm = olaNorm[k].coerceAtLeast(1e-4f)
+                    rawVocals[sigIdx] = ((vocalOutAccum[k] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+                    rawKaraoke[sigIdx] = ((karaokeOutAccum[k] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+                }
+            }
+            System.arraycopy(vocalOutAccum, HOP_SIZE, vocalOutAccum, 0, HOP_SIZE)
+            System.arraycopy(karaokeOutAccum, HOP_SIZE, karaokeOutAccum, 0, HOP_SIZE)
+            System.arraycopy(olaNorm, HOP_SIZE, olaNorm, 0, HOP_SIZE)
+            java.util.Arrays.fill(vocalOutAccum, HOP_SIZE, FFT_SIZE, 0f)
+            java.util.Arrays.fill(karaokeOutAccum, HOP_SIZE, FFT_SIZE, 0f)
+            java.util.Arrays.fill(olaNorm, HOP_SIZE, FFT_SIZE, 0f)
+        }
+        for (k in 0 until HOP_SIZE) {
+            val sigIdx = frameCount * HOP_SIZE + k - pad
+            if (sigIdx in 0 until len) {
+                val norm = olaNorm[k].coerceAtLeast(1e-4f)
+                rawVocals[sigIdx] = ((vocalOutAccum[k] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+                rawKaraoke[sigIdx] = ((karaokeOutAccum[k] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+            }
         }
 
         val polishedVocals = polishExtractedVocals(
@@ -466,12 +494,6 @@ object VocalKaraokeSeparator {
         val pad = HOP_SIZE
         val paddedLen = samples.size + 2 * pad
         val frameCount = (((paddedLen - FFT_SIZE + HOP_SIZE - 1) / HOP_SIZE) + 1).coerceAtLeast(1)
-        val totalLen = (frameCount - 1) * HOP_SIZE + FFT_SIZE
-
-        val inputFloat = FloatArray(totalLen)
-        for (i in samples.indices) {
-            inputFloat[pad + i] = samples[i].toFloat() / 32767f
-        }
 
         // O(1) STFT heap: 7-slot circular ring buffer (~84 KB regardless of song length)
         val ringSize = 7
@@ -479,9 +501,13 @@ object VocalKaraokeSeparator {
         val ringRe = Array(ringSize) { FloatArray(FFT_SIZE) }
         val ringIm = Array(ringSize) { FloatArray(FFT_SIZE) }
 
-        val vocalOutAccum = FloatArray(totalLen)
-        val karaokeOutAccum = FloatArray(totalLen)
-        val olaNorm = FloatArray(totalLen)
+        // 2-hop sliding OLA accumulators (12 KB total instead of full-track FloatArrays)
+        val vocalOutAccum = FloatArray(FFT_SIZE)
+        val karaokeOutAccum = FloatArray(FFT_SIZE)
+        val olaNorm = FloatArray(FFT_SIZE)
+
+        val rawVocals = ShortArray(samples.size)
+        val rawKaraoke = ShortArray(samples.size)
 
         val reV = FloatArray(FFT_SIZE)
         val imV = FloatArray(FFT_SIZE)
@@ -503,7 +529,9 @@ object VocalKaraokeSeparator {
                 val re = ringRe[slot]
                 val im = ringIm[slot]
                 for (k in 0 until FFT_SIZE) {
-                    re[k] = inputFloat[offset + k] * sqrtHannWindow[k]
+                    val sIdx = offset + k - pad
+                    val sample = if (sIdx in samples.indices) samples[sIdx].toFloat() / 32767f else 0f
+                    re[k] = sample * sqrtHannWindow[k]
                     im[k] = 0f
                 }
                 VocalIsolationProcessor.fft(re, im, inverse = false)
@@ -595,18 +623,33 @@ object VocalKaraokeSeparator {
             val offset = f * HOP_SIZE
             for (k in 0 until FFT_SIZE) {
                 val w = sqrtHannWindow[k]
-                vocalOutAccum[offset + k] += reV[k] * w
-                karaokeOutAccum[offset + k] += reK[k] * w
-                olaNorm[offset + k] += w * w
+                vocalOutAccum[k] += reV[k] * w
+                karaokeOutAccum[k] += reK[k] * w
+                olaNorm[k] += w * w
             }
-        }
 
-        val rawVocals = ShortArray(samples.size)
-        val rawKaraoke = ShortArray(samples.size)
-        for (i in samples.indices) {
-            val norm = olaNorm[pad + i].coerceAtLeast(1e-4f)
-            rawVocals[i] = ((vocalOutAccum[pad + i] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
-            rawKaraoke[i] = ((karaokeOutAccum[pad + i] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+            for (k in 0 until HOP_SIZE) {
+                val sigIdx = offset + k - pad
+                if (sigIdx in rawVocals.indices) {
+                    val norm = olaNorm[k].coerceAtLeast(1e-4f)
+                    rawVocals[sigIdx] = ((vocalOutAccum[k] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+                    rawKaraoke[sigIdx] = ((karaokeOutAccum[k] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+                }
+            }
+            System.arraycopy(vocalOutAccum, HOP_SIZE, vocalOutAccum, 0, HOP_SIZE)
+            System.arraycopy(karaokeOutAccum, HOP_SIZE, karaokeOutAccum, 0, HOP_SIZE)
+            System.arraycopy(olaNorm, HOP_SIZE, olaNorm, 0, HOP_SIZE)
+            java.util.Arrays.fill(vocalOutAccum, HOP_SIZE, FFT_SIZE, 0f)
+            java.util.Arrays.fill(karaokeOutAccum, HOP_SIZE, FFT_SIZE, 0f)
+            java.util.Arrays.fill(olaNorm, HOP_SIZE, FFT_SIZE, 0f)
+        }
+        for (k in 0 until HOP_SIZE) {
+            val sigIdx = frameCount * HOP_SIZE + k - pad
+            if (sigIdx in rawVocals.indices) {
+                val norm = olaNorm[k].coerceAtLeast(1e-4f)
+                rawVocals[sigIdx] = ((vocalOutAccum[k] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+                rawKaraoke[sigIdx] = ((karaokeOutAccum[k] / norm) * 32767f).toInt().coerceIn(-32767, 32767).toShort()
+            }
         }
 
         return StemSeparationResult(
@@ -630,12 +673,12 @@ object VocalKaraokeSeparator {
         cleanDryVocals: Boolean,
         sampleRate: Int
     ): ShortArray {
-        val noDc = StudioAudioProcessor.removeDcOffset(rawVocals)
-        val hp = StudioAudioProcessor.applyHighPassFilter(noDc, 88f)
+        var work = StudioAudioProcessor.removeDcOffset(rawVocals)
+        work = StudioAudioProcessor.applyHighPassFilter(work, 88f)
         // Only apply spectral hum/reverb cleanup when genuine ambient gaps exist so steady sung notes stay intact
-        val dryCleaned = if (cleanDryVocals && hp.size >= 2048 && VocalIsolationProcessor.hasDistinctQuietFloor(hp)) {
-            VocalIsolationProcessor.isolateSpokenAudio(
-                samples = hp,
+        if (cleanDryVocals && work.size >= 2048 && VocalIsolationProcessor.hasDistinctQuietFloor(work)) {
+            work = VocalIsolationProcessor.isolateSpokenAudio(
+                samples = work,
                 subtractionStrength = 0.42f,
                 humRemovalStrength = 0.72f,
                 vocalClarityBoost = 0.15f,
@@ -645,14 +688,12 @@ object VocalKaraokeSeparator {
                 highPassHz = 85f,
                 sampleRate = sampleRate
             )
-        } else {
-            hp
         }
 
         // Corrective EQ: trim boxy low-mids (250-400 Hz), tame harsh 2-4 kHz resonance & boost clear articulation
-        val eq = if (cleanDryVocals || clarity > 0.04f) {
-            StudioAudioProcessor.apply7BandEq(
-                dryCleaned,
+        if (cleanDryVocals || clarity > 0.04f) {
+            work = StudioAudioProcessor.apply7BandEq(
+                work,
                 b60 = if (cleanDryVocals) -3.0f else -2.0f * clarity,
                 b150 = if (cleanDryVocals) -0.8f else 0f,
                 b400 = if (cleanDryVocals) -1.5f else -0.6f * clarity,
@@ -661,37 +702,33 @@ object VocalKaraokeSeparator {
                 b6k = 1.1f * clarity,
                 b15k = 0f
             )
-        } else {
-            dryCleaned
         }
 
-        val compressed = if (cleanDryVocals) {
-            StudioAudioProcessor.applyCompressor(
-                input = eq,
+        if (cleanDryVocals) {
+            work = StudioAudioProcessor.applyCompressor(
+                input = work,
                 thresholdDb = -16.0f,
                 ratio = 2.4f,
                 makeupGainDb = 0.8f,
                 peakLimiter = true
             )
-        } else {
-            eq
         }
 
-        return StudioAudioProcessor.applyTruePeakLimiter(compressed, -0.8f)
+        return StudioAudioProcessor.applyTruePeakLimiter(work, -0.8f)
     }
 
     private fun polishKaraokeInstrumental(
         rawKaraoke: ShortArray,
         studioMasteringPolish: Boolean
     ): ShortArray {
-        val noDc = StudioAudioProcessor.removeDcOffset(rawKaraoke)
-        if (!studioMasteringPolish || noDc.size < 256) {
-            return StudioAudioProcessor.applyTruePeakLimiter(noDc, -0.5f)
+        var work = StudioAudioProcessor.removeDcOffset(rawKaraoke)
+        if (!studioMasteringPolish || work.size < 256) {
+            return StudioAudioProcessor.applyTruePeakLimiter(work, -0.5f)
         }
         // Corrective Instrumental EQ without boosting suppressed mid vocal residuals:
         // keep punchy bass/kick, clean 250-400 Hz boxiness, and dip 2-4 kHz residual harshness
-        val eq = StudioAudioProcessor.apply7BandEq(
-            noDc,
+        work = StudioAudioProcessor.apply7BandEq(
+            work,
             b60 = 1.0f,
             b150 = 0.4f,
             b400 = -1.6f,
@@ -700,13 +737,13 @@ object VocalKaraokeSeparator {
             b6k = 0.6f,
             b15k = 0.3f
         )
-        val compressed = StudioAudioProcessor.applyCompressor(
-            input = eq,
+        work = StudioAudioProcessor.applyCompressor(
+            input = work,
             thresholdDb = -10.0f,
             ratio = 1.8f,
             makeupGainDb = 0.0f,
             peakLimiter = true
         )
-        return StudioAudioProcessor.applyTruePeakLimiter(compressed, -0.5f)
+        return StudioAudioProcessor.applyTruePeakLimiter(work, -0.5f)
     }
 }

@@ -529,4 +529,123 @@ class VocalKaraokeSeparatorTest {
 
         playerManager.release()
     }
+
+    @Test
+    fun separateStereoAndMono_nonAlignedLengthsAndLongTracksProduceBoundedExactSamplesWithoutOom() {
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        // Non-hop-aligned edge sizes around 512/1024 boundaries
+        val oddSizes = intArrayOf(128, 511, 512, 513, 1023, 1024, 1025, 2500)
+        for (len in oddSizes) {
+            val left = ShortArray(len) { i ->
+                (7000.0 * sin(2.0 * PI * 500.0 * i / sr) + 4000.0 * sin(2.0 * PI * 2200.0 * i / sr)).toInt().toShort()
+            }
+            val right = ShortArray(len) { i ->
+                (7000.0 * sin(2.0 * PI * 500.0 * i / sr) - 4000.0 * sin(2.0 * PI * 3200.0 * i / sr)).toInt().toShort()
+            }
+            val stereoRes = VocalKaraokeSeparator.separateStereo(left, right, sampleRate = sr)
+            assertEquals("Stereo vocals length mismatch for $len", len, stereoRes.vocals.size)
+            assertEquals("Stereo karaoke length mismatch for $len", len, stereoRes.karaoke.size)
+
+            val monoRes = VocalKaraokeSeparator.separateMono(left, sampleRate = sr)
+            assertEquals("Mono vocals length mismatch for $len", len, monoRes.vocals.size)
+            assertEquals("Mono karaoke length mismatch for $len", len, monoRes.karaoke.size)
+        }
+
+        // 90 seconds stereo (~3.97M samples/channel) to verify low-heap sliding OLA stability
+        val longLen = sr * 90
+        val longL = ShortArray(longLen) { i ->
+            val v = 6000.0 * sin(2.0 * PI * 440.0 * (i % 1000) / sr)
+            val s = 4000.0 * sin(2.0 * PI * 1800.0 * (i % 1000) / sr)
+            (v + s).toInt().toShort()
+        }
+        val longR = ShortArray(longLen) { i ->
+            val v = 6000.0 * sin(2.0 * PI * 440.0 * (i % 1000) / sr)
+            val s = -4000.0 * sin(2.0 * PI * 1800.0 * (i % 1000) / sr)
+            (v + s).toInt().toShort()
+        }
+        val longRes = VocalKaraokeSeparator.separateStereo(longL, longR, sampleRate = sr)
+        assertEquals(longLen, longRes.vocals.size)
+        assertEquals(longLen, longRes.karaoke.size)
+        assertTrue(longRes.usedStereoSeparation)
+    }
+
+    @Test
+    fun splitPcmBytesToStereo_handlesFloatNonFiniteValuesAndMonoChannel() {
+        val bb = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)
+        bb.putFloat(0.5f)
+        bb.putFloat(-0.5f)
+        bb.putFloat(Float.NaN)
+        bb.putFloat(Float.POSITIVE_INFINITY)
+        val (l, r) = WavAudioProcessor.splitPcmBytesToStereo(
+            pcmBytes = bb.array(),
+            byteCount = 16,
+            channelCount = 2,
+            pcmEncoding = android.media.AudioFormat.ENCODING_PCM_FLOAT
+        )
+        assertEquals(2, l.size)
+        assertEquals(16383.toShort(), l[0])
+        assertEquals((-16383).toShort(), r[0])
+        assertEquals(0.toShort(), l[1])
+        assertEquals(0.toShort(), r[1])
+
+        // Mono input should duplicate to both left & right channels
+        val monoBb = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN)
+        monoBb.putShort(4200)
+        monoBb.putShort(-7100)
+        val (ml, mr) = WavAudioProcessor.splitPcmBytesToStereo(monoBb.array(), 4, channelCount = 1)
+        assertArrayEquals(shortArrayOf(4200, -7100), ml)
+        assertArrayEquals(shortArrayOf(4200, -7100), mr)
+    }
+
+    @Test
+    fun vocalKaraokeWorkspace_emptyTrackDisplaysClearNonNullStatusMessage() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val emptySession = AudioProjectSessionState(
+            projectId = "vk_empty_1",
+            title = "Empty Song",
+            pcm = ShortArray(0),
+            sampleRate = StudioAudioProcessor.SAMPLE_RATE,
+            trimStartMs = 0L,
+            trimEndMs = 0L
+        )
+        val audioProcessor = WavAudioProcessor(context)
+        val playerManager = AudioPlayerManager(context)
+        val recorderManager = AudioRecorderManager(context)
+        val repo = MediaRepository(context)
+
+        composeRule.setContent {
+            AccessibleStudioTheme(isHighContrast = false) {
+                AudioFeatureWorkspaceScreen(
+                    tool = AudioFeatureTool.VOCAL_KARAOKE,
+                    session = emptySession,
+                    audioProcessor = audioProcessor,
+                    playerManager = playerManager,
+                    recorderManager = recorderManager,
+                    mediaRepository = repo,
+                    hapticsEnabled = false,
+                    isHighContrast = false,
+                    defaultExportFormat = "WAV",
+                    followCursor = true,
+                    onToggleHighContrast = {},
+                    onOpenAbout = {},
+                    onOpenSettings = {},
+                    onOpenHelp = {},
+                    onOpenWhatsNew = {},
+                    onOpenBatchProcessing = {},
+                    onSaveAndReturn = {},
+                    onCancelBack = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("btn_vk_process").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("txt_vk_status")
+            .performScrollTo()
+            .assertTextContains("empty", substring = true, ignoreCase = true)
+
+        playerManager.release()
+    }
 }

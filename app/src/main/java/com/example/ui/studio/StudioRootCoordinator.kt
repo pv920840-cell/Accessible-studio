@@ -350,7 +350,7 @@ fun StudioRootCoordinator(
                                     fontWeight = FontWeight.Black
                                 )
                                 Text(
-                                    text = "v1.2 Offline Audio & Video Studio",
+                                    text = "v${com.example.BuildConfig.VERSION_NAME} Offline Audio & Video Studio",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary
                                 )

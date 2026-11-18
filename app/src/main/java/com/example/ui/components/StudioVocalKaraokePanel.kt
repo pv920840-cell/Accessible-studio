@@ -87,6 +87,7 @@ import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
 import com.example.ui.theme.LocalHighContrast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -145,8 +146,10 @@ fun VocalKaraokeMakerCard(
     DisposableEffect(Unit) {
         onDispose {
             if (didPreviewStem && !didApplyOrSwitch && currentTrackPcm.isNotEmpty()) {
-                playerManager.stop()
-                playerManager.loadPcmData(currentTrackPcm, sampleRate)
+                try {
+                    playerManager.stop()
+                    playerManager.loadPcmData(currentTrackPcm, sampleRate)
+                } catch (_: Throwable) {}
             }
         }
     }
@@ -167,9 +170,12 @@ fun VocalKaraokeMakerCard(
                 } else if (decoded != null && lastStatusMessage.isBlank()) {
                     lastStatusMessage = "Loaded Mono audio ($name) — HPSS Spectral Vocal Engine ready."
                 }
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (e: Throwable) {
                 if (lastStatusMessage.isBlank()) {
-                    lastStatusMessage = "Could not inspect stereo source (${e.localizedMessage ?: "using active track"})."
+                    val reason = e.localizedMessage?.takeIf { it.isNotBlank() } ?: "using active track"
+                    lastStatusMessage = "Could not inspect stereo source ($reason)."
                 }
             } finally {
                 isDecodingStereo = false
@@ -188,9 +194,17 @@ fun VocalKaraokeMakerCard(
             isDecodingStereo = true
             scope.launch {
                 try {
+                    val pickedName = audioProcessor.queryAudioDisplayName(uri) ?: "Selected Song"
                     val stereo = audioProcessor.decodeUriToStereoPcm(uri)
+                        ?: audioProcessor.decodeUriToPcm(uri).takeIf { it.isNotEmpty() }?.let { monoFallback ->
+                            StereoPcmData(
+                                left = monoFallback,
+                                right = monoFallback,
+                                sampleRate = sampleRate,
+                                channelCount = 1
+                            )
+                        }
                     if (stereo != null && stereo.left.isNotEmpty()) {
-                        val pickedName = audioProcessor.queryAudioDisplayName(uri) ?: "Selected Song"
                         loadedStereoData = stereo
                         loadedStereoTitle = pickedName
                         generatedVocals = null
@@ -205,10 +219,15 @@ fun VocalKaraokeMakerCard(
                         AccessibilityHelper.announceForAccessibility(context, lastStatusMessage)
                     } else {
                         lastStatusMessage = "Could not decode selected audio file. Try MP3, WAV, or M4A."
+                        AccessibilityHelper.announceForAccessibility(context, lastStatusMessage)
                         Toast.makeText(context, lastStatusMessage, Toast.LENGTH_SHORT).show()
                     }
+                } catch (ce: CancellationException) {
+                    throw ce
                 } catch (e: Throwable) {
-                    lastStatusMessage = "File error: ${e.localizedMessage ?: "Cannot read audio"}"
+                    val reason = e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Cannot read audio"
+                    lastStatusMessage = "File error: $reason"
+                    AccessibilityHelper.announceForAccessibility(context, lastStatusMessage)
                     Toast.makeText(context, lastStatusMessage, Toast.LENGTH_SHORT).show()
                 } finally {
                     isDecodingStereo = false
@@ -221,38 +240,59 @@ fun VocalKaraokeMakerCard(
     val hasTrueStereo = loadedStereoData?.let { VocalKaraokeSeparator.hasStereoContent(it.left, it.right) } ?: false
 
     fun runSeparation() {
+        if (isProcessing || isDecodingStereo) return
         val stereo = loadedStereoData
         if (stereo == null && currentTrackPcm.isEmpty()) {
-            Toast.makeText(context, "Audio track is empty. Open or pick a song first.", Toast.LENGTH_SHORT).show()
+            val emptyMsg = "Audio track is empty. Open or pick a song first."
+            lastStatusMessage = emptyMsg
+            AccessibilityHelper.announceForAccessibility(context, emptyMsg)
+            Toast.makeText(context, emptyMsg, Toast.LENGTH_SHORT).show()
             return
         }
         isProcessing = true
         scope.launch {
             try {
-                val result = withContext(Dispatchers.Default) {
-                    if (stereo != null && (VocalKaraokeSeparator.hasStereoContent(stereo.left, stereo.right) || manualInvertRight)) {
-                        VocalKaraokeSeparator.separateStereo(
-                            left = stereo.left,
-                            right = stereo.right,
-                            quality = selectedQuality,
-                            separationStrength = strength,
-                            bassPreserveHz = bassPreserveHz,
-                            vocalPresenceBoost = vocalPresence,
-                            sampleRate = stereo.sampleRate,
-                            autoAlignPhase = autoAlignPhase,
-                            manualInvertRight = manualInvertRight,
-                            studioMasteringPolish = studioMasteringPolish
-                        )
-                    } else {
-                        val monoInput = stereo?.left ?: currentTrackPcm
+                val result = try {
+                    withContext(Dispatchers.Default) {
+                        if (stereo != null && (VocalKaraokeSeparator.hasStereoContent(stereo.left, stereo.right) || manualInvertRight)) {
+                            VocalKaraokeSeparator.separateStereo(
+                                left = stereo.left,
+                                right = stereo.right,
+                                quality = selectedQuality,
+                                separationStrength = strength,
+                                bassPreserveHz = bassPreserveHz,
+                                vocalPresenceBoost = vocalPresence,
+                                sampleRate = stereo.sampleRate,
+                                autoAlignPhase = autoAlignPhase,
+                                manualInvertRight = manualInvertRight,
+                                studioMasteringPolish = studioMasteringPolish
+                            )
+                        } else {
+                            val monoInput = stereo?.left ?: currentTrackPcm
+                            VocalKaraokeSeparator.separateMono(
+                                samples = monoInput,
+                                quality = selectedQuality,
+                                separationStrength = strength,
+                                bassPreserveHz = bassPreserveHz,
+                                vocalPresenceBoost = vocalPresence,
+                                sampleRate = stereo?.sampleRate ?: sampleRate,
+                                studioMasteringPolish = studioMasteringPolish
+                            )
+                        }
+                    }
+                } catch (_: OutOfMemoryError) {
+                    // Graceful low-memory fallback: release transient buffers & retry lightweight mono path
+                    System.gc()
+                    withContext(Dispatchers.Default) {
+                        val fallbackPcm = stereo?.left ?: currentTrackPcm
                         VocalKaraokeSeparator.separateMono(
-                            samples = monoInput,
+                            samples = fallbackPcm,
                             quality = selectedQuality,
                             separationStrength = strength,
                             bassPreserveHz = bassPreserveHz,
                             vocalPresenceBoost = vocalPresence,
                             sampleRate = stereo?.sampleRate ?: sampleRate,
-                            studioMasteringPolish = studioMasteringPolish
+                            studioMasteringPolish = false
                         )
                     }
                 }
@@ -265,8 +305,21 @@ fun VocalKaraokeMakerCard(
                 lastStatusMessage = "Extracted Vocals & Karaoke stems ready ($engineNote$phaseNote$masterNote)."
                 if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
                 AccessibilityHelper.announceForAccessibility(context, lastStatusMessage)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (_: OutOfMemoryError) {
+                val msg = "Separation failed: Device memory low for this track length. Try trimming the audio first."
+                lastStatusMessage = msg
+                AccessibilityHelper.announceForAccessibility(context, msg)
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             } catch (e: Throwable) {
-                Toast.makeText(context, "Separation failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
+                    ?: e::class.java.simpleName
+                    ?: "Unexpected separation error"
+                val msg = "Separation failed: $reason"
+                lastStatusMessage = msg
+                AccessibilityHelper.announceForAccessibility(context, msg)
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             } finally {
                 isProcessing = false
             }
@@ -279,8 +332,9 @@ fun VocalKaraokeMakerCard(
         scope.launch {
             try {
                 val cleanBase = StudioPreferences.extractBaseFileName(activeSourceTitle)
+                    .replace(Regex("[^\\p{L}\\p{N}_\\- ]"), "_")
+                    .trim('_', ' ')
                     .ifBlank { "Track" }
-                    .replace(Regex("[^A-Za-z0-9_\\- ]"), "_")
                 val outName = "${cleanBase}_$suffix"
                 val outFile = audioProcessor.exportSingleAudioFile(
                     mainPcm = stemPcm,
@@ -297,8 +351,16 @@ fun VocalKaraokeMakerCard(
                 lastStatusMessage = msg
                 AccessibilityHelper.announceForAccessibility(context, msg)
                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+            } catch (ce: CancellationException) {
+                throw ce
             } catch (e: Throwable) {
-                Toast.makeText(context, "Export failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                val reason = e.localizedMessage?.takeIf { it.isNotBlank() }
+                    ?: e::class.java.simpleName
+                    ?: "Could not write file"
+                val msg = "Export failed: $reason"
+                lastStatusMessage = msg
+                AccessibilityHelper.announceForAccessibility(context, msg)
+                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
             } finally {
                 isExportingStem = false
             }
@@ -623,11 +685,16 @@ fun VocalKaraokeMakerCard(
             }
 
             if (lastStatusMessage.isNotBlank()) {
+                val isErrorStatus = lastStatusMessage.startsWith("Separation failed") ||
+                    lastStatusMessage.startsWith("Export failed") ||
+                    lastStatusMessage.startsWith("File error") ||
+                    lastStatusMessage.startsWith("Preview error") ||
+                    lastStatusMessage.startsWith("Could not decode")
                 Text(
                     text = lastStatusMessage,
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = if (isErrorStatus) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     modifier = Modifier.testTag("txt_vk_status")
                 )
             }
@@ -661,15 +728,22 @@ fun VocalKaraokeMakerCard(
                                 val isPreviewingVocals = playerIsPlaying && activePreviewTag == "vocals"
                                 OutlinedButton(
                                     onClick = {
-                                        if (isPreviewingVocals) {
-                                            playerManager.stop()
+                                        try {
+                                            if (isPreviewingVocals) {
+                                                playerManager.stop()
+                                                activePreviewTag = null
+                                            } else {
+                                                didPreviewStem = true
+                                                activePreviewTag = "vocals"
+                                                playerManager.stop()
+                                                playerManager.loadPcmData(vocalsStem, sampleRate)
+                                                playerManager.play()
+                                            }
+                                        } catch (t: Throwable) {
                                             activePreviewTag = null
-                                        } else {
-                                            didPreviewStem = true
-                                            activePreviewTag = "vocals"
-                                            playerManager.stop()
-                                            playerManager.loadPcmData(vocalsStem, sampleRate)
-                                            playerManager.play()
+                                            val msg = "Preview error: ${t.localizedMessage ?: "Audio playback unavailable"}"
+                                            lastStatusMessage = msg
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                         }
                                     },
                                     modifier = Modifier.heightIn(min = 48.dp).testTag("btn_vk_preview_vocals")
@@ -681,7 +755,7 @@ fun VocalKaraokeMakerCard(
                                 Button(
                                     onClick = {
                                         didApplyOrSwitch = true
-                                        playerManager.stop()
+                                        try { playerManager.stop() } catch (_: Throwable) {}
                                         onApplySingleStemToTrack("Applied Extracted Vocals to track", vocalsStem)
                                     },
                                     modifier = Modifier.heightIn(min = 48.dp).testTag("btn_vk_apply_vocals")
@@ -722,15 +796,22 @@ fun VocalKaraokeMakerCard(
                                 val isPreviewingKaraoke = playerIsPlaying && activePreviewTag == "karaoke"
                                 OutlinedButton(
                                     onClick = {
-                                        if (isPreviewingKaraoke) {
-                                            playerManager.stop()
+                                        try {
+                                            if (isPreviewingKaraoke) {
+                                                playerManager.stop()
+                                                activePreviewTag = null
+                                            } else {
+                                                didPreviewStem = true
+                                                activePreviewTag = "karaoke"
+                                                playerManager.stop()
+                                                playerManager.loadPcmData(karaokeStem, sampleRate)
+                                                playerManager.play()
+                                            }
+                                        } catch (t: Throwable) {
                                             activePreviewTag = null
-                                        } else {
-                                            didPreviewStem = true
-                                            activePreviewTag = "karaoke"
-                                            playerManager.stop()
-                                            playerManager.loadPcmData(karaokeStem, sampleRate)
-                                            playerManager.play()
+                                            val msg = "Preview error: ${t.localizedMessage ?: "Audio playback unavailable"}"
+                                            lastStatusMessage = msg
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                         }
                                     },
                                     modifier = Modifier.heightIn(min = 48.dp).testTag("btn_vk_preview_karaoke")
@@ -742,7 +823,7 @@ fun VocalKaraokeMakerCard(
                                 Button(
                                     onClick = {
                                         didApplyOrSwitch = true
-                                        playerManager.stop()
+                                        try { playerManager.stop() } catch (_: Throwable) {}
                                         onApplySingleStemToTrack("Applied Karaoke Instrumental (Vocals Removed) to track", karaokeStem)
                                     },
                                     modifier = Modifier.heightIn(min = 48.dp).testTag("btn_vk_apply_karaoke")
@@ -770,7 +851,7 @@ fun VocalKaraokeMakerCard(
                     Button(
                         onClick = {
                             didApplyOrSwitch = true
-                            playerManager.stop()
+                            try { playerManager.stop() } catch (_: Throwable) {}
                             onOpenBothStemsAsTabs(
                                 "$base (Vocals)",
                                 vocalsStem,

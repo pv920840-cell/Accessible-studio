@@ -193,9 +193,12 @@ class VideoToolkitProcessor(private val context: Context) {
     suspend fun extractSingleFrame(videoUri: Uri, timestampMs: Long, outputName: String): File =
         withContext(Dispatchers.IO) {
             val retriever = MediaMetadataRetriever()
-            retriever.setDataSource(context, videoUri)
-            val bmp = retriever.getFrameAtTime(timestampMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
-            retriever.release()
+            val bmp = try {
+                retriever.setDataSource(context, videoUri)
+                retriever.getFrameAtTime(timestampMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST)
+            } finally {
+                try { retriever.release() } catch (_: Throwable) {}
+            }
 
             val targetName = if (outputName.endsWith(".jpg", true)) outputName else "$outputName.jpg"
             val tempFile = File(context.cacheDir, targetName)
@@ -216,29 +219,32 @@ class VideoToolkitProcessor(private val context: Context) {
         onProgress: (Float) -> Unit
     ): List<File> = withContext(Dispatchers.IO) {
         val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(context, videoUri)
-        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 5000L
-        val stepMs = (intervalSec.coerceIn(1, 60) * 1000L)
         val exported = mutableListOf<File>()
-        val total = ((durationMs / stepMs) + 1).toInt().coerceAtLeast(1)
+        try {
+            retriever.setDataSource(context, videoUri)
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 5000L
+            val stepMs = (intervalSec.coerceIn(1, 60) * 1000L)
+            val total = ((durationMs / stepMs) + 1).toInt().coerceAtLeast(1)
 
-        var idx = 0
-        var t = 0L
-        while (t <= durationMs) {
-            val bmp = retriever.getFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-            if (bmp != null) {
-                val fileName = "${baseName}_frame_${String.format("%03d", idx + 1)}.jpg"
-                val temp = File(context.cacheDir, fileName)
-                FileOutputStream(temp).use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
-                bmp.recycle()
-                exported.add(StorageExportManager.saveImageOrGifFile(context, temp, fileName, "image/jpeg"))
-                temp.delete()
+            var idx = 0
+            var t = 0L
+            while (t <= durationMs) {
+                val bmp = retriever.getFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                if (bmp != null) {
+                    val fileName = "${baseName}_frame_${String.format("%03d", idx + 1)}.jpg"
+                    val temp = File(context.cacheDir, fileName)
+                    FileOutputStream(temp).use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+                    bmp.recycle()
+                    exported.add(StorageExportManager.saveImageOrGifFile(context, temp, fileName, "image/jpeg"))
+                    temp.delete()
+                }
+                idx++
+                onProgress((idx.toFloat() / total).coerceIn(0.05f, 1f))
+                t += stepMs
             }
-            idx++
-            onProgress((idx.toFloat() / total).coerceIn(0.05f, 1f))
-            t += stepMs
+        } finally {
+            try { retriever.release() } catch (_: Throwable) {}
         }
-        retriever.release()
         onProgress(1.0f)
         exported
     }
@@ -253,25 +259,28 @@ class VideoToolkitProcessor(private val context: Context) {
     ): File = withContext(Dispatchers.IO) {
         onProgress(0.05f)
         val retriever = MediaMetadataRetriever()
-        retriever.setDataSource(context, videoUri)
         val duration = (endMs - startMs).coerceIn(500L, 12000L)
         val frameStepMs = (1000L / fps.coerceIn(4, 15)).coerceAtLeast(66L)
         val frames = mutableListOf<Bitmap>()
 
-        var t = startMs
-        while (t <= startMs + duration && frames.size < 80) {
-            val raw = retriever.getFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-            if (raw != null) {
-                val targetW = 360
-                val targetH = ((raw.height.toFloat() / raw.width.toFloat().coerceAtLeast(1f)) * targetW).toInt().coerceIn(120, 480)
-                val scaled = Bitmap.createScaledBitmap(raw, targetW, targetH, true)
-                raw.recycle()
-                frames.add(scaled)
+        try {
+            retriever.setDataSource(context, videoUri)
+            var t = startMs
+            while (t <= startMs + duration && frames.size < 80) {
+                val raw = retriever.getFrameAtTime(t * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                if (raw != null) {
+                    val targetW = 360
+                    val targetH = ((raw.height.toFloat() / raw.width.toFloat().coerceAtLeast(1f)) * targetW).toInt().coerceIn(120, 480)
+                    val scaled = Bitmap.createScaledBitmap(raw, targetW, targetH, true)
+                    raw.recycle()
+                    frames.add(scaled)
+                }
+                t += frameStepMs
+                onProgress(0.1f + (frames.size / 80f) * 0.45f)
             }
-            t += frameStepMs
-            onProgress(0.1f + (frames.size / 80f) * 0.45f)
+        } finally {
+            try { retriever.release() } catch (_: Throwable) {}
         }
-        retriever.release()
 
         val targetName = if (outputName.endsWith(".gif", true)) outputName else "$outputName.gif"
         val tempGif = File(context.cacheDir, targetName)
@@ -297,7 +306,8 @@ class VideoToolkitProcessor(private val context: Context) {
         titleText: String = "Blank Studio Clip",
         fileName: String = "blank_clip_${System.currentTimeMillis()}.mp4"
     ): File = withContext(Dispatchers.IO) {
-        val dir = File(context.getExternalFilesDir(null), "DemoMedia")
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val dir = File(baseDir, "DemoMedia")
         if (!dir.exists()) dir.mkdirs()
         val outFile = File(dir, fileName)
         val fps = 20
@@ -503,70 +513,72 @@ class VideoToolkitProcessor(private val context: Context) {
         val cleanName = "${outputFileName.substringBeforeLast('.')}.${formatOption.extension}"
         val tempOut = File(context.cacheDir, "stream_$cleanName")
         val extractor = MediaExtractor()
-        extractor.setDataSource(context, sourceUri, null)
+        var muxer: MediaMuxer? = null
+        var muxerStarted = false
+        try {
+            extractor.setDataSource(context, sourceUri, null)
 
-        var vTrack = -1
-        var aTrack = -1
-        for (i in 0 until extractor.trackCount) {
-            val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: ""
-            if (mime.startsWith("video/") && vTrack < 0) vTrack = i
-            else if (mime.startsWith("audio/") && aTrack < 0 && !muteAudio) aTrack = i
-        }
-
-        val muxerFormat = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && formatOption == VideoFormatOption.WEBM) {
-            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
-        } else {
-            MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
-        }
-        val muxer = MediaMuxer(tempOut.absolutePath, muxerFormat)
-        val muxV = if (vTrack >= 0) muxer.addTrack(extractor.getTrackFormat(vTrack)) else -1
-        val muxA = if (aTrack >= 0) muxer.addTrack(extractor.getTrackFormat(aTrack)) else -1
-        muxer.start()
-
-        val buf = ByteBuffer.allocate(512 * 1024)
-        val info = MediaCodec.BufferInfo()
-        var ptsBaseOffsetUs = 0L
-
-        for ((rangeIdx, range) in keepRangesMs.withIndex()) {
-            val startUs = range.first * 1000L
-            val endUs = range.second * 1000L
-            val rangeDurUs = (endUs - startUs).coerceAtLeast(10_000L)
-
-            if (vTrack >= 0) {
-                extractor.selectTrack(vTrack)
-                extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                while (true) {
-                    val sampleTime = extractor.sampleTime
-                    if (sampleTime < 0 || sampleTime > endUs) break
-                    val size = extractor.readSampleData(buf, 0)
-                    if (size < 0) break
-                    info.set(0, size, ptsBaseOffsetUs + (sampleTime - startUs).coerceAtLeast(0L), extractor.sampleFlags)
-                    muxer.writeSampleData(muxV, buf, info)
-                    extractor.advance()
-                }
-                extractor.unselectTrack(vTrack)
+            var vTrack = -1
+            var aTrack = -1
+            for (i in 0 until extractor.trackCount) {
+                val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: ""
+                if (mime.startsWith("video/") && vTrack < 0) vTrack = i
+                else if (mime.startsWith("audio/") && aTrack < 0 && !muteAudio) aTrack = i
             }
 
-            if (aTrack >= 0) {
-                extractor.selectTrack(aTrack)
-                extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
-                while (true) {
-                    val sampleTime = extractor.sampleTime
-                    if (sampleTime < 0 || sampleTime > endUs) break
-                    val size = extractor.readSampleData(buf, 0)
-                    if (size < 0) break
-                    info.set(0, size, ptsBaseOffsetUs + (sampleTime - startUs).coerceAtLeast(0L), extractor.sampleFlags)
-                    muxer.writeSampleData(muxA, buf, info)
-                    extractor.advance()
-                }
-                extractor.unselectTrack(aTrack)
-            }
-            ptsBaseOffsetUs += rangeDurUs
-            onProgress(0.15f + ((rangeIdx + 1f) / keepRangesMs.size) * 0.75f)
-        }
+            val muxerFormat = MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+            val activeMuxer = MediaMuxer(tempOut.absolutePath, muxerFormat).also { muxer = it }
+            val muxV = if (vTrack >= 0) activeMuxer.addTrack(extractor.getTrackFormat(vTrack)) else -1
+            val muxA = if (aTrack >= 0) activeMuxer.addTrack(extractor.getTrackFormat(aTrack)) else -1
+            activeMuxer.start()
+            muxerStarted = true
 
-        try { muxer.stop(); muxer.release() } catch (_: Exception) {}
-        try { extractor.release() } catch (_: Exception) {}
+            val buf = ByteBuffer.allocate(512 * 1024)
+            val info = MediaCodec.BufferInfo()
+            var ptsBaseOffsetUs = 0L
+
+            for ((rangeIdx, range) in keepRangesMs.withIndex()) {
+                val startUs = range.first * 1000L
+                val endUs = range.second * 1000L
+                val rangeDurUs = (endUs - startUs).coerceAtLeast(10_000L)
+
+                if (vTrack >= 0) {
+                    extractor.selectTrack(vTrack)
+                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    while (true) {
+                        val sampleTime = extractor.sampleTime
+                        if (sampleTime < 0 || sampleTime > endUs) break
+                        val size = extractor.readSampleData(buf, 0)
+                        if (size < 0) break
+                        info.set(0, size, ptsBaseOffsetUs + (sampleTime - startUs).coerceAtLeast(0L), extractor.sampleFlags)
+                        activeMuxer.writeSampleData(muxV, buf, info)
+                        extractor.advance()
+                    }
+                    extractor.unselectTrack(vTrack)
+                }
+
+                if (aTrack >= 0) {
+                    extractor.selectTrack(aTrack)
+                    extractor.seekTo(startUs, MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                    while (true) {
+                        val sampleTime = extractor.sampleTime
+                        if (sampleTime < 0 || sampleTime > endUs) break
+                        val size = extractor.readSampleData(buf, 0)
+                        if (size < 0) break
+                        info.set(0, size, ptsBaseOffsetUs + (sampleTime - startUs).coerceAtLeast(0L), extractor.sampleFlags)
+                        activeMuxer.writeSampleData(muxA, buf, info)
+                        extractor.advance()
+                    }
+                    extractor.unselectTrack(aTrack)
+                }
+                ptsBaseOffsetUs += rangeDurUs
+                onProgress(0.15f + ((rangeIdx + 1f) / keepRangesMs.size) * 0.75f)
+            }
+        } finally {
+            try { if (muxerStarted) muxer?.stop() } catch (_: Throwable) {}
+            try { muxer?.release() } catch (_: Throwable) {}
+            try { extractor.release() } catch (_: Throwable) {}
+        }
 
         val saved = StorageExportManager.saveVideoFile(context, tempOut, cleanName, formatOption.mimeType)
         tempOut.delete()

@@ -305,7 +305,7 @@
 
             <!-- Detailed Transfer Statistics -->
             <div class="progress-stats">
-                <span id="progressBytes">0.0 MB / 24.4 MB</span>
+                <span id="progressBytes">0.0 MB / 19.0 MB</span>
                 <span id="progressSpeed">Calculating speed...</span>
             </div>
         </div>
@@ -342,7 +342,7 @@
                         <span class="changelog-ver-title">v1.2 (Latest)</span>
                         <a href="/AccessibleStudio_V1.2.apk" download="AccessibleStudio_V1.2.apk" class="changelog-link" aria-label="Download Accessible Studio version 1.2 APK">Download v1.2 APK</a>
                     </div>
-                    <p class="changelog-desc">Vocal Extractor &amp; Karaoke Maker with Auto Phase Alignment (Φ), Bone-Dry Acapella Cleanup, Corrective EQ (250–400Hz / 2–4kHz) &amp; Compressor, plus Adaptive Spectral Noise Reduction.</p>
+                    <p class="changelog-desc">Fixed Noise Reduction out-of-memory crash and Realme/ColorOS save &amp; export crash; added Vocal Extractor &amp; Karaoke Maker with Auto Phase Alignment (Φ), Bone-Dry Acapella Cleanup, and Corrective EQ.</p>
                 </li>
                 <li>
                     <div class="changelog-ver-row">
@@ -367,7 +367,7 @@
 
     <script>
         const APK_URL = '/AccessibleStudio.apk';
-        const ESTIMATED_TOTAL_BYTES = 25568166; // ~24.4 MB
+        const ESTIMATED_TOTAL_BYTES = 19904420; // ~19.0 MB
 
         let isDownloading = false;
 
@@ -403,7 +403,7 @@
             progressBarFill.style.width = '0%';
             progressBar.setAttribute('aria-valuenow', '0');
             progressPercent.textContent = '0%';
-            progressBytes.textContent = '0.0 MB / 24.4 MB';
+            progressBytes.textContent = '0.0 MB / 19.0 MB';
             progressSpeed.textContent = 'Connecting...';
             progressTitleText.textContent = 'Downloading AccessibleStudio.apk...';
 

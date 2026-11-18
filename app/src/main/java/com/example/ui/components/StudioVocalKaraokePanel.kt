@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -17,8 +18,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -61,6 +64,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -509,16 +514,26 @@ fun VocalKaraokeMakerCard(
                             Text("Auto Phase Correction", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                             Text("Align out-of-phase stereo & anchor bass mono", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(
-                            checked = autoAlignPhase,
-                            onCheckedChange = { autoAlignPhase = it },
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .minimumInteractiveComponentSize()
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                 .testTag("switch_vk_phase_correct")
+                                .toggleable(
+                                    value = autoAlignPhase,
+                                    role = Role.Switch,
+                                    onValueChange = { autoAlignPhase = it }
+                                )
                                 .semantics {
                                     contentDescription = "Auto phase correction and low-end mono alignment"
                                 }
-                        )
+                        ) {
+                            Switch(
+                                checked = autoAlignPhase,
+                                onCheckedChange = null,
+                                modifier = Modifier.clearAndSetSemantics {}
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -529,16 +544,26 @@ fun VocalKaraokeMakerCard(
                             Text("Phase Invert Right Channel (Φ)", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                             Text("Flip Right polarity to fix inverted stereo mics", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(
-                            checked = manualInvertRight,
-                            onCheckedChange = { manualInvertRight = it },
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .minimumInteractiveComponentSize()
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                 .testTag("switch_vk_phase_invert_r")
+                                .toggleable(
+                                    value = manualInvertRight,
+                                    role = Role.Switch,
+                                    onValueChange = { manualInvertRight = it }
+                                )
                                 .semantics {
                                     contentDescription = "Manual phase invert right channel phi"
                                 }
-                        )
+                        ) {
+                            Switch(
+                                checked = manualInvertRight,
+                                onCheckedChange = null,
+                                modifier = Modifier.clearAndSetSemantics {}
+                            )
+                        }
                     }
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -549,16 +574,26 @@ fun VocalKaraokeMakerCard(
                             Text("Bone-Dry Cleanup + Mastering EQ/Comp", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
                             Text("De-hum/de-reverb acapella & corrective 250-400Hz / 2-4kHz EQ", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Switch(
-                            checked = studioMasteringPolish,
-                            onCheckedChange = { studioMasteringPolish = it },
+                        Box(
+                            contentAlignment = Alignment.Center,
                             modifier = Modifier
-                                .minimumInteractiveComponentSize()
+                                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                 .testTag("switch_vk_master_polish")
+                                .toggleable(
+                                    value = studioMasteringPolish,
+                                    role = Role.Switch,
+                                    onValueChange = { studioMasteringPolish = it }
+                                )
                                 .semantics {
                                     contentDescription = "Bone-dry vocal cleanup and studio mastering EQ and compression"
                                 }
-                        )
+                        ) {
+                            Switch(
+                                checked = studioMasteringPolish,
+                                onCheckedChange = null,
+                                modifier = Modifier.clearAndSetSemantics {}
+                            )
+                        }
                     }
                 }
             }

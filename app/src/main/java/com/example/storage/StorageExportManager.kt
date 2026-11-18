@@ -55,67 +55,86 @@ object StorageExportManager {
         }
     }
 
+    private fun resolveWritableDirectory(candidates: List<File?>): File {
+        for (dir in candidates) {
+            if (dir == null) continue
+            try {
+                if (!dir.exists()) dir.mkdirs()
+                if (dir.exists() && dir.isDirectory && dir.canWrite()) {
+                    return dir
+                }
+            } catch (_: Throwable) {}
+        }
+        val ultimateFallback = File(candidates.lastOrNull()?.parentFile ?: File("."), "Exports")
+        try {
+            if (!ultimateFallback.exists()) ultimateFallback.mkdirs()
+        } catch (_: Throwable) {}
+        return ultimateFallback
+    }
+
     /**
      * Returns the physical File folder for Audio exports:
-     * Public Music / Audio Studio
+     * Public Music / Audio Studio (with safe app-external and internal fallbacks on Realme/ColorOS)
      */
     fun getAudioExportDirectory(context: Context): File {
-        val musicBase = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-        val audioDir = File(musicBase, AUDIO_SUBDIRECTORY)
-        return try {
-            if (!audioDir.exists()) audioDir.mkdirs()
-            if (audioDir.canWrite()) audioDir else {
-                val appMusic = File(context.getExternalFilesDir(Environment.DIRECTORY_MUSIC), AUDIO_SUBDIRECTORY)
-                if (!appMusic.exists()) appMusic.mkdirs()
-                appMusic
-            }
-        } catch (_: Exception) {
-            val fallback = File(context.getExternalFilesDir(null), "Exports/Audio")
-            if (!fallback.exists()) fallback.mkdirs()
-            fallback
-        }
+        val publicDir = try {
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), AUDIO_SUBDIRECTORY)
+        } catch (_: Throwable) { null }
+        val appExtMusic = try {
+            context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)?.let { File(it, AUDIO_SUBDIRECTORY) }
+        } catch (_: Throwable) { null }
+        val appExtRoot = try {
+            context.getExternalFilesDir(null)?.let { File(it, "Exports/Audio") }
+        } catch (_: Throwable) { null }
+        val appInternal = File(context.filesDir, "Exports/Audio")
+        return resolveWritableDirectory(listOf(publicDir, appExtMusic, appExtRoot, appInternal))
     }
 
     /**
      * Returns the physical File folder for Video exports:
-     * Public Movies / Accessible Studio
+     * Public Movies / Accessible Studio (with safe app-external and internal fallbacks on Realme/ColorOS)
      */
     fun getVideoExportDirectory(context: Context): File {
-        val moviesBase = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
-        val videoDir = File(moviesBase, VIDEO_SUBDIRECTORY)
-        return try {
-            if (!videoDir.exists()) videoDir.mkdirs()
-            if (videoDir.canWrite()) videoDir else {
-                val appMovies = File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), VIDEO_SUBDIRECTORY)
-                if (!appMovies.exists()) appMovies.mkdirs()
-                appMovies
-            }
-        } catch (_: Exception) {
-            val fallback = File(context.getExternalFilesDir(null), "Exports/Video")
-            if (!fallback.exists()) fallback.mkdirs()
-            fallback
-        }
+        val publicDir = try {
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), VIDEO_SUBDIRECTORY)
+        } catch (_: Throwable) { null }
+        val appExtMovies = try {
+            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)?.let { File(it, VIDEO_SUBDIRECTORY) }
+        } catch (_: Throwable) { null }
+        val appExtRoot = try {
+            context.getExternalFilesDir(null)?.let { File(it, "Exports/Video") }
+        } catch (_: Throwable) { null }
+        val appInternal = File(context.filesDir, "Exports/Video")
+        return resolveWritableDirectory(listOf(publicDir, appExtMovies, appExtRoot, appInternal))
     }
 
     /**
      * Returns the physical File folder for Frame Extractor & Video-to-GIF exports:
-     * Public Pictures / Accessible Studio
+     * Public Pictures / Accessible Studio (with safe app-external and internal fallbacks on Realme/ColorOS)
      */
     fun getImageExportDirectory(context: Context): File {
-        val picsBase = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
-        val imageDir = File(picsBase, IMAGE_SUBDIRECTORY)
-        return try {
-            if (!imageDir.exists()) imageDir.mkdirs()
-            if (imageDir.canWrite()) imageDir else {
-                val appPics = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), IMAGE_SUBDIRECTORY)
-                if (!appPics.exists()) appPics.mkdirs()
-                appPics
-            }
-        } catch (_: Exception) {
-            val fallback = File(context.getExternalFilesDir(null), "Exports/Images")
-            if (!fallback.exists()) fallback.mkdirs()
-            fallback
-        }
+        val publicDir = try {
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), IMAGE_SUBDIRECTORY)
+        } catch (_: Throwable) { null }
+        val appExtPics = try {
+            context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)?.let { File(it, IMAGE_SUBDIRECTORY) }
+        } catch (_: Throwable) { null }
+        val appExtRoot = try {
+            context.getExternalFilesDir(null)?.let { File(it, "Exports/Images") }
+        } catch (_: Throwable) { null }
+        val appInternal = File(context.filesDir, "Exports/Images")
+        return resolveWritableDirectory(listOf(publicDir, appExtPics, appExtRoot, appInternal))
+    }
+
+    private fun getAppPrivateFallbackDir(context: Context, envType: String, subDir: String, fallbackSubDir: String): File {
+        val appExtTyped = try {
+            context.getExternalFilesDir(envType)?.let { File(it, subDir) }
+        } catch (_: Throwable) { null }
+        val appExtRoot = try {
+            context.getExternalFilesDir(null)?.let { File(it, "Exports/$fallbackSubDir") }
+        } catch (_: Throwable) { null }
+        val appInternal = File(context.filesDir, "Exports/$fallbackSubDir")
+        return resolveWritableDirectory(listOf(appExtTyped, appExtRoot, appInternal))
     }
 
     /**
@@ -159,6 +178,101 @@ object StorageExportManager {
         }
     }
 
+    private fun saveViaMediaStoreQ(
+        context: Context,
+        collectionUri: Uri,
+        sourceFile: File,
+        targetFileName: String,
+        mimeType: String,
+        relativePath: String,
+        subDirForDelete: String,
+        extraValues: ContentValues.() -> Unit = {}
+    ): String? {
+        if (!sourceFile.exists() || sourceFile.length() <= 0L) return null
+        val resolver = context.contentResolver
+        try {
+            resolver.delete(
+                collectionUri,
+                "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} LIKE ?",
+                arrayOf(targetFileName, "%$subDirForDelete%")
+            )
+        } catch (_: Throwable) {}
+
+        var pendingUri: Uri? = null
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, targetFileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+                extraValues()
+            }
+            val uri = resolver.insert(collectionUri, values) ?: return null
+            pendingUri = uri
+            val wrote = resolver.openOutputStream(uri)?.use { out ->
+                FileInputStream(sourceFile).use { input ->
+                    input.copyTo(out)
+                }
+                true
+            } ?: false
+            if (!wrote) {
+                try { resolver.delete(uri, null, null) } catch (_: Throwable) {}
+                return null
+            }
+            values.clear()
+            values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            resolver.update(uri, values, null, null)
+            pendingUri = null
+
+            var resolvedPath: String? = null
+            try {
+                resolver.query(uri, arrayOf(MediaStore.MediaColumns.DATA), null, null, null)?.use { c ->
+                    if (c.moveToFirst()) {
+                        val idx = c.getColumnIndex(MediaStore.MediaColumns.DATA)
+                        if (idx >= 0) resolvedPath = c.getString(idx)
+                    }
+                }
+            } catch (_: Throwable) {}
+            resolvedPath ?: ""
+        } catch (_: Throwable) {
+            pendingUri?.let { uri ->
+                try { resolver.delete(uri, null, null) } catch (_: Throwable) {}
+            }
+            null
+        }
+    }
+
+    private fun ensureReadableDestinationFile(
+        context: Context,
+        sourceFile: File,
+        preferredFile: File,
+        mediaStoreDataPath: String?,
+        envType: String,
+        subDir: String,
+        fallbackSubDir: String,
+        targetFileName: String
+    ): File {
+        if (!mediaStoreDataPath.isNullOrBlank()) {
+            val msFile = File(mediaStoreDataPath)
+            if (msFile.exists() && msFile.length() > 0L) return msFile
+        }
+        if (preferredFile.exists() && preferredFile.length() > 0L) return preferredFile
+
+        try {
+            copyFile(sourceFile, preferredFile)
+            if (preferredFile.exists() && preferredFile.length() > 0L) return preferredFile
+        } catch (_: Throwable) {}
+
+        val privateDir = getAppPrivateFallbackDir(context, envType, subDir, fallbackSubDir)
+        val privateFile = File(privateDir, targetFileName)
+        try {
+            copyFile(sourceFile, privateFile)
+            if (privateFile.exists() && privateFile.length() > 0L) return privateFile
+        } catch (_: Throwable) {}
+
+        return if (preferredFile.exists()) preferredFile else privateFile
+    }
+
     /**
      * Saves or copies an audio file into public Music / Audio Studio
      * using MediaStore on Android 10+ (API 29+) or direct public File I/O + MediaScanner.
@@ -172,59 +286,38 @@ object StorageExportManager {
         val targetDir = getAudioExportDirectory(context)
         val destinationFile = File(targetDir, targetFileName)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            var mediaStoreSaved = false
-            try {
-                val resolver = context.contentResolver
-                try {
-                    resolver.delete(
-                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                        "${MediaStore.Audio.Media.DISPLAY_NAME} = ? AND ${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?",
-                        arrayOf(targetFileName, "%$AUDIO_SUBDIRECTORY%")
-                    )
-                } catch (_: Exception) {}
-
-                if (destinationFile.exists() && sourceFile.absolutePath != destinationFile.absolutePath) {
-                    try {
-                        destinationFile.delete()
-                    } catch (_: Exception) {}
-                }
-
-                val values = ContentValues().apply {
-                    put(MediaStore.Audio.Media.DISPLAY_NAME, targetFileName)
-                    put(MediaStore.Audio.Media.TITLE, targetFileName.substringBeforeLast('.'))
-                    put(MediaStore.Audio.Media.ALBUM, "Audio Studio")
-                    put(MediaStore.Audio.Media.MIME_TYPE, mimeType)
-                    put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/$AUDIO_SUBDIRECTORY")
-                    put(MediaStore.Audio.Media.IS_PENDING, 1)
-                }
-                val uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, values)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { out ->
-                        FileInputStream(sourceFile).use { input ->
-                            input.copyTo(out)
-                        }
-                    }
-                    values.clear()
-                    values.put(MediaStore.Audio.Media.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                    mediaStoreSaved = true
-                }
-            } catch (_: Exception) {}
-
-            if (!mediaStoreSaved || !destinationFile.exists()) {
-                try {
-                    copyFile(sourceFile, destinationFile)
-                } catch (_: Exception) {}
-            }
-        } else {
-            try {
-                copyFile(sourceFile, destinationFile)
-            } catch (_: Exception) {}
+        if (destinationFile.exists() && sourceFile.absolutePath != destinationFile.absolutePath) {
+            try { destinationFile.delete() } catch (_: Throwable) {}
         }
 
-        scanFile(context, destinationFile, mimeType)
-        return destinationFile
+        val mediaStorePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            saveViaMediaStoreQ(
+                context = context,
+                collectionUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                sourceFile = sourceFile,
+                targetFileName = targetFileName,
+                mimeType = mimeType,
+                relativePath = "${Environment.DIRECTORY_MUSIC}/$AUDIO_SUBDIRECTORY",
+                subDirForDelete = AUDIO_SUBDIRECTORY
+            ) {
+                put(MediaStore.Audio.Media.TITLE, targetFileName.substringBeforeLast('.'))
+                put(MediaStore.Audio.Media.ALBUM, "Audio Studio")
+            }
+        } else null
+
+        val resultFile = ensureReadableDestinationFile(
+            context = context,
+            sourceFile = sourceFile,
+            preferredFile = destinationFile,
+            mediaStoreDataPath = mediaStorePath,
+            envType = Environment.DIRECTORY_MUSIC,
+            subDir = AUDIO_SUBDIRECTORY,
+            fallbackSubDir = "Audio",
+            targetFileName = targetFileName
+        )
+
+        scanFile(context, resultFile, mimeType)
+        return resultFile
     }
 
     /**
@@ -243,38 +336,39 @@ object StorageExportManager {
         val targetDir = getVideoExportDirectory(context)
         val destinationFile = File(targetDir, targetFileName)
 
-        try {
-            copyFile(sourceFile, destinationFile)
-        } catch (_: Exception) {}
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
-                val resolver = context.contentResolver
-                val values = ContentValues().apply {
-                    put(MediaStore.Video.Media.DISPLAY_NAME, targetFileName)
-                    put(MediaStore.Video.Media.MIME_TYPE, mimeType)
-                    put(MediaStore.Video.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MOVIES}/$VIDEO_SUBDIRECTORY")
-                    if (!titleTag.isNullOrBlank()) put(MediaStore.Video.Media.TITLE, titleTag)
-                    if (!artistTag.isNullOrBlank()) put(MediaStore.Video.Media.ARTIST, artistTag)
-                    if (!albumTag.isNullOrBlank()) put(MediaStore.Video.Media.ALBUM, albumTag)
-                    put(MediaStore.Video.Media.IS_PENDING, 1)
-                }
-                val uri = resolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { out ->
-                        FileInputStream(destinationFile).use { input ->
-                            input.copyTo(out)
-                        }
-                    }
-                    values.clear()
-                    values.put(MediaStore.Video.Media.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                }
-            } catch (_: Exception) {}
+        if (destinationFile.exists() && sourceFile.absolutePath != destinationFile.absolutePath) {
+            try { destinationFile.delete() } catch (_: Throwable) {}
         }
 
-        scanFile(context, destinationFile, mimeType)
-        return destinationFile
+        val mediaStorePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            saveViaMediaStoreQ(
+                context = context,
+                collectionUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                sourceFile = sourceFile,
+                targetFileName = targetFileName,
+                mimeType = mimeType,
+                relativePath = "${Environment.DIRECTORY_MOVIES}/$VIDEO_SUBDIRECTORY",
+                subDirForDelete = VIDEO_SUBDIRECTORY
+            ) {
+                if (!titleTag.isNullOrBlank()) put(MediaStore.Video.Media.TITLE, titleTag)
+                if (!artistTag.isNullOrBlank()) put(MediaStore.Video.Media.ARTIST, artistTag)
+                if (!albumTag.isNullOrBlank()) put(MediaStore.Video.Media.ALBUM, albumTag)
+            }
+        } else null
+
+        val resultFile = ensureReadableDestinationFile(
+            context = context,
+            sourceFile = sourceFile,
+            preferredFile = destinationFile,
+            mediaStoreDataPath = mediaStorePath,
+            envType = Environment.DIRECTORY_MOVIES,
+            subDir = VIDEO_SUBDIRECTORY,
+            fallbackSubDir = "Video",
+            targetFileName = targetFileName
+        )
+
+        scanFile(context, resultFile, mimeType)
+        return resultFile
     }
 
     /**
@@ -289,35 +383,35 @@ object StorageExportManager {
         val targetDir = getImageExportDirectory(context)
         val destinationFile = File(targetDir, targetFileName)
 
-        try {
-            copyFile(sourceFile, destinationFile)
-        } catch (_: Exception) {}
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            try {
-                val resolver = context.contentResolver
-                val values = ContentValues().apply {
-                    put(MediaStore.Images.Media.DISPLAY_NAME, targetFileName)
-                    put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                    put(MediaStore.Images.Media.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$IMAGE_SUBDIRECTORY")
-                    put(MediaStore.Images.Media.IS_PENDING, 1)
-                }
-                val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-                if (uri != null) {
-                    resolver.openOutputStream(uri)?.use { out ->
-                        FileInputStream(destinationFile).use { input ->
-                            input.copyTo(out)
-                        }
-                    }
-                    values.clear()
-                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                    resolver.update(uri, values, null, null)
-                }
-            } catch (_: Exception) {}
+        if (destinationFile.exists() && sourceFile.absolutePath != destinationFile.absolutePath) {
+            try { destinationFile.delete() } catch (_: Throwable) {}
         }
 
-        scanFile(context, destinationFile, mimeType)
-        return destinationFile
+        val mediaStorePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            saveViaMediaStoreQ(
+                context = context,
+                collectionUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                sourceFile = sourceFile,
+                targetFileName = targetFileName,
+                mimeType = mimeType,
+                relativePath = "${Environment.DIRECTORY_PICTURES}/$IMAGE_SUBDIRECTORY",
+                subDirForDelete = IMAGE_SUBDIRECTORY
+            )
+        } else null
+
+        val resultFile = ensureReadableDestinationFile(
+            context = context,
+            sourceFile = sourceFile,
+            preferredFile = destinationFile,
+            mediaStoreDataPath = mediaStorePath,
+            envType = Environment.DIRECTORY_PICTURES,
+            subDir = IMAGE_SUBDIRECTORY,
+            fallbackSubDir = "Images",
+            targetFileName = targetFileName
+        )
+
+        scanFile(context, resultFile, mimeType)
+        return resultFile
     }
 
     /**
@@ -331,7 +425,7 @@ object StorageExportManager {
                 if (mimeType != null) arrayOf(mimeType) else null,
                 null
             )
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
     }
 
     private fun copyFile(source: File, destination: File) {

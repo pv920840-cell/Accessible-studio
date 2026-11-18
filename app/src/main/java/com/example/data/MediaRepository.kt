@@ -3,9 +3,9 @@ package com.example.data
 import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadataRetriever
-import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Environment
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,34 +19,18 @@ class MediaRepository(private val context: Context) {
     private val _exportedFiles = MutableStateFlow<List<ExportedMedia>>(emptyList())
     val exportedFiles: StateFlow<List<ExportedMedia>> = _exportedFiles.asStateFlow()
 
-    /**
-     * Dedicated storage directory for exported Audio files:
-     * Internal Storage / Music / Accessible Studio/Audio
-     */
     fun getAudioExportDirectory(): File {
         return com.example.storage.StorageExportManager.getAudioExportDirectory(context)
     }
 
-    /**
-     * Dedicated storage directory for exported Video files:
-     * Internal Storage / Movies / Accessible Video Studio
-     */
     fun getVideoExportDirectory(): File {
         return com.example.storage.StorageExportManager.getVideoExportDirectory(context)
     }
 
-    /**
-     * Generic fallback export directory
-     */
     fun getExportDirectory(): File = getAudioExportDirectory()
 
-    /**
-     * Notifies Android media scanner so files appear immediately in user's system libraries
-     */
     fun scanMediaFile(file: File, mimeType: String? = null) {
-        if (context != null) {
-            com.example.storage.StorageExportManager.scanFile(context, file, mimeType)
-        }
+        com.example.storage.StorageExportManager.scanFile(context, file, mimeType)
     }
 
     suspend fun refreshExports() = withContext(Dispatchers.IO) {
@@ -56,17 +40,37 @@ class MediaRepository(private val context: Context) {
         val legacyAudioDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "Accessible Studio")
         val legacySubAudioDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC), "Accessible Studio/Audio")
         val altVideoDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES), "Accessible Video Studio")
-        val appExportsDir = File(context.getExternalFilesDir(null), "Exports")
+        val appExtRoot = try { context.getExternalFilesDir(null) } catch (_: Throwable) { null }
+        val appExportsDir = appExtRoot?.let { File(it, "Exports") }
+        val internalExportsDir = File(context.filesDir, "Exports")
 
-        val directoriesToScan = listOf(audioDir, videoDir, imageDir, legacyAudioDir, legacySubAudioDir, altVideoDir, appExportsDir).distinctBy { it.absolutePath }
+        val directoriesToScan = listOfNotNull(
+            audioDir,
+            videoDir,
+            imageDir,
+            legacyAudioDir,
+            legacySubAudioDir,
+            altVideoDir,
+            appExportsDir,
+            appExtRoot?.let { File(it, "Exports/Audio") },
+            appExtRoot?.let { File(it, "Exports/Video") },
+            appExtRoot?.let { File(it, "Exports/Images") },
+            internalExportsDir,
+            File(internalExportsDir, "Audio"),
+            File(internalExportsDir, "Video"),
+            File(internalExportsDir, "Images")
+        ).distinctBy { it.absolutePath }
+
         val allFiles = mutableListOf<File>()
 
         for (dir in directoriesToScan) {
-            if (dir.exists() && dir.isDirectory) {
-                dir.listFiles()?.let { files ->
-                    allFiles.addAll(files.filter { it.isFile && isSupportedMediaFile(it.name) })
+            try {
+                if (dir.exists() && dir.isDirectory) {
+                    dir.listFiles()?.let { files ->
+                        allFiles.addAll(files.filter { it.isFile && it.length() > 0L && isSupportedMediaFile(it.name) })
+                    }
                 }
-            }
+            } catch (_: Throwable) {}
         }
 
         val list = allFiles.distinctBy { it.absolutePath }
@@ -81,13 +85,15 @@ class MediaRepository(private val context: Context) {
                 if (isVideo || file.name.endsWith(".wav", true) || file.name.endsWith(".mp3", true) ||
                     file.name.endsWith(".m4a", true) || file.name.endsWith(".aac", true) || file.name.endsWith(".flac", true)
                 ) {
+                    val retriever = MediaMetadataRetriever()
                     try {
-                        val retriever = MediaMetadataRetriever()
                         retriever.setDataSource(file.absolutePath)
                         val durStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                         duration = durStr?.toLongOrNull() ?: 0L
-                        retriever.release()
-                    } catch (_: Exception) {}
+                    } catch (_: Throwable) {
+                    } finally {
+                        try { retriever.release() } catch (_: Throwable) {}
+                    }
                 }
 
                 val uri: Uri? = try {
@@ -96,7 +102,7 @@ class MediaRepository(private val context: Context) {
                         "${context.packageName}.fileprovider",
                         file
                     )
-                } catch (_: Exception) {
+                } catch (_: Throwable) {
                     null
                 }
 
@@ -127,32 +133,44 @@ class MediaRepository(private val context: Context) {
     }
 
     suspend fun deleteExport(media: ExportedMedia): Boolean = withContext(Dispatchers.IO) {
-        val file = File(media.filePath)
-        val deleted = if (file.exists()) file.delete() else false
+        val deleted = try {
+            val file = File(media.filePath)
+            if (file.exists()) file.delete() else false
+        } catch (_: Throwable) {
+            false
+        }
         refreshExports()
         deleted
     }
 
     fun shareExport(media: ExportedMedia) {
-        val uri = media.contentUri ?: run {
+        try {
             val file = File(media.filePath)
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val uri = media.contentUri ?: FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val lower = media.title.lowercase()
+            val mimeType = when {
+                lower.endsWith(".gif") -> "image/gif"
+                lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") -> "image/*"
+                media.isVideo -> "video/*"
+                else -> "audio/*"
+            }
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = Intent.createChooser(shareIntent, "Share exported media").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(chooser)
+        } catch (t: Throwable) {
+            try {
+                Toast.makeText(
+                    context,
+                    "Unable to share file: ${t.localizedMessage ?: "saved in ${media.filePath}"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } catch (_: Throwable) {}
         }
-        val lower = media.title.lowercase()
-        val mimeType = when {
-            lower.endsWith(".gif") -> "image/gif"
-            lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".png") -> "image/*"
-            media.isVideo -> "video/*"
-            else -> "audio/*"
-        }
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = mimeType
-            putExtra(Intent.EXTRA_STREAM, uri)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        val chooser = Intent.createChooser(shareIntent, "Share exported media").apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-        context.startActivity(chooser)
     }
 }

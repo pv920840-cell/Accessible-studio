@@ -234,7 +234,7 @@ fun VideoStudioScreen(
     }
 
     fun buildRenderRequest(keepRanges: List<Pair<Long, Long>> = listOf(trimStartMs to trimEndMs)): FullRenderRequest {
-        val uri = currentVideoUri!!
+        val uri = currentVideoUri ?: throw IllegalStateException("Select or create a video clip first.")
         return FullRenderRequest(
             sourceUri = uri,
             keepRangesMs = keepRanges,
@@ -301,9 +301,10 @@ fun VideoStudioScreen(
                         showExportDialog = true
                     }
                 }
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
                 statusMessage = null
-                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Error: ${t.localizedMessage ?: "Video operation failed"}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -753,14 +754,26 @@ fun VideoStudioScreen(
                 imageOverlay = imageOverlay,
                 onPickOverlayImage = { uri ->
                     scope.launch {
-                        val (iw, ih, warning) = toolkit.inspectOverlayImage(uri, videoMeta.width.coerceAtLeast(1), videoMeta.height.coerceAtLeast(1))
-                        imageOverlay = imageOverlay.copy(uri = uri, imageWidth = iw, imageHeight = ih, mismatchWarning = warning, endMs = durationMs.coerceAtLeast(3000L))
+                        try {
+                            val (iw, ih, warning) = toolkit.inspectOverlayImage(uri, videoMeta.width.coerceAtLeast(1), videoMeta.height.coerceAtLeast(1))
+                            imageOverlay = imageOverlay.copy(uri = uri, imageWidth = iw, imageHeight = ih, mismatchWarning = warning, endMs = durationMs.coerceAtLeast(3000L))
+                        } catch (t: Throwable) {
+                            if (t is kotlinx.coroutines.CancellationException) throw t
+                            Toast.makeText(context, "Overlay image error: ${t.localizedMessage ?: "Unsupported image"}", Toast.LENGTH_LONG).show()
+                        }
                     }
                 },
                 onUpdateImageOverlay = { imageOverlay = it },
                 subtitleCues = subtitleCues,
                 onImportSubtitleFile = { uri ->
-                    scope.launch { subtitleCues = toolkit.parseSubtitleUri(uri) }
+                    scope.launch {
+                        try {
+                            subtitleCues = toolkit.parseSubtitleUri(uri)
+                        } catch (t: Throwable) {
+                            if (t is kotlinx.coroutines.CancellationException) throw t
+                            Toast.makeText(context, "Subtitle import error: ${t.localizedMessage ?: "Unsupported file"}", Toast.LENGTH_LONG).show()
+                        }
+                    }
                 },
                 onLoadInlineSrtText = { raw -> subtitleCues = toolkit.parseSubtitleText(raw) },
                 onClearSubtitles = { subtitleCues = emptyList() },
@@ -885,19 +898,40 @@ fun VideoStudioScreen(
                         isExporting = false
                         mediaRepository.refreshExports()
                         if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                    } catch (e: Exception) {
+                    } catch (t: Throwable) {
+                        if (t is kotlinx.coroutines.CancellationException) throw t
                         isExporting = false
-                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Export error: ${t.localizedMessage ?: "Encoding or storage error"}", Toast.LENGTH_LONG).show()
                     }
                 }
             },
             onPlayExported = { file ->
-                videoPlayer.loadUri(Uri.fromFile(file)) { videoPlayer.play() }
-                showExportDialog = false
+                try {
+                    videoPlayer.loadUri(Uri.fromFile(file)) { videoPlayer.play() }
+                    showExportDialog = false
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Playback error: ${t.localizedMessage ?: "Cannot play file"}", Toast.LENGTH_LONG).show()
+                }
             },
             onShareExported = { file ->
-                val media = mediaRepository.exportedFiles.value.find { it.filePath == file.absolutePath }
-                if (media != null) mediaRepository.shareExport(media)
+                try {
+                    val media = mediaRepository.exportedFiles.value.find { it.filePath == file.absolutePath }
+                    if (media != null) {
+                        mediaRepository.shareExport(media)
+                    } else {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "video/*"
+                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(android.content.Intent.createChooser(share, "Share Exported Video").apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+                    }
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Could not share video: ${t.localizedMessage ?: "File location restricted"}", Toast.LENGTH_LONG).show()
+                }
             }
         )
     }

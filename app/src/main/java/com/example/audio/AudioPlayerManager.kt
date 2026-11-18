@@ -29,7 +29,9 @@ enum class ScrubDirection {
 class AudioPlayerManager(private val context: Context) {
 
     private val scope = CoroutineScope(Dispatchers.Main)
+    private val trackLock = Any()
     private var mediaPlayer: MediaPlayer? = null
+    @Volatile
     private var customAudioTrack: AudioTrack? = null
     private var playbackJob: Job? = null
     private var pcmData: ShortArray? = null
@@ -400,10 +402,16 @@ class AudioPlayerManager(private val context: Context) {
                             val activeLimit = if (scrubActivated) samples.size else endSample
                             if (currentIdx >= activeLimit) break
                             val writeCount = Math.min(normalChunkSize, activeLimit - currentIdx)
-                            val written = try {
-                                track.write(samples, currentIdx, writeCount)
-                            } catch (_: Throwable) {
-                                -1
+                            val written = synchronized(trackLock) {
+                                if (customAudioTrack === track && playbackGeneration.get() == myGen) {
+                                    try {
+                                        track.write(samples, currentIdx, writeCount)
+                                    } catch (_: Throwable) {
+                                        -1
+                                    }
+                                } else {
+                                    -1
+                                }
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
                                 currentIdx += written
@@ -430,10 +438,16 @@ class AudioPlayerManager(private val context: Context) {
                                 }
                                 scrubBuf[k] = (samples[pos] * edge).toInt().toShort()
                             }
-                            val written = try {
-                                track.write(scrubBuf, 0, scrubChunkSize)
-                            } catch (_: Throwable) {
-                                -1
+                            val written = synchronized(trackLock) {
+                                if (customAudioTrack === track && playbackGeneration.get() == myGen) {
+                                    try {
+                                        track.write(scrubBuf, 0, scrubChunkSize)
+                                    } catch (_: Throwable) {
+                                        -1
+                                    }
+                                } else {
+                                    -1
+                                }
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
                                 currentIdx = (currentIdx + (scrubChunkSize * speed).toInt()).coerceAtMost(samples.size)
@@ -447,11 +461,18 @@ class AudioPlayerManager(private val context: Context) {
                             if (currentIdx <= 0) {
                                 _currentPositionMs.value = 0L
                                 scrubBuf.fill(0)
-                                try {
-                                    track.write(scrubBuf, 0, scrubChunkSize)
-                                } catch (_: Throwable) {
-                                    break
+                                val written = synchronized(trackLock) {
+                                    if (customAudioTrack === track && playbackGeneration.get() == myGen) {
+                                        try {
+                                            track.write(scrubBuf, 0, scrubChunkSize)
+                                        } catch (_: Throwable) {
+                                            -1
+                                        }
+                                    } else {
+                                        -1
+                                    }
                                 }
+                                if (written <= 0) break
                                 continue
                             }
                             val pitchStep = 1.45f // Audible backwards tape rewind
@@ -465,10 +486,16 @@ class AudioPlayerManager(private val context: Context) {
                                 }
                                 scrubBuf[k] = (samples[pos] * edge).toInt().toShort()
                             }
-                            val written = try {
-                                track.write(scrubBuf, 0, scrubChunkSize)
-                            } catch (_: Throwable) {
-                                -1
+                            val written = synchronized(trackLock) {
+                                if (customAudioTrack === track && playbackGeneration.get() == myGen) {
+                                    try {
+                                        track.write(scrubBuf, 0, scrubChunkSize)
+                                    } catch (_: Throwable) {
+                                        -1
+                                    }
+                                } else {
+                                    -1
+                                }
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
                                 currentIdx = (currentIdx - (scrubChunkSize * speed).toInt()).coerceAtLeast(0)
@@ -623,13 +650,15 @@ class AudioPlayerManager(private val context: Context) {
     }
 
     private fun stopAudioTrack() {
-        val track = customAudioTrack
-        customAudioTrack = null
-        if (track != null) {
-            try { track.pause() } catch (_: Throwable) {}
-            try { track.flush() } catch (_: Throwable) {}
-            try { track.stop() } catch (_: Throwable) {}
-            try { track.release() } catch (_: Throwable) {}
+        synchronized(trackLock) {
+            val track = customAudioTrack
+            customAudioTrack = null
+            if (track != null) {
+                try { track.pause() } catch (_: Throwable) {}
+                try { track.flush() } catch (_: Throwable) {}
+                try { track.stop() } catch (_: Throwable) {}
+                try { track.release() } catch (_: Throwable) {}
+            }
         }
     }
 

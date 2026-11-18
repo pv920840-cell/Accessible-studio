@@ -851,11 +851,16 @@ class WavAudioProcessor(private val context: Context? = null) {
                 }
                 extractor.setDataSource(tempFile.absolutePath)
             } else if (uri.scheme == "file" && !uri.path.isNullOrBlank()) {
-                val directFile = File(uri.path!!)
-                tryDecodeRiffWavDirectStereo(directFile, sampleRate)?.let { directStereo ->
-                    if (directStereo.left.isNotEmpty()) return@withContext directStereo
+                val resolvedPath = uri.path
+                if (resolvedPath != null) {
+                    val directFile = File(resolvedPath)
+                    tryDecodeRiffWavDirectStereo(directFile, sampleRate)?.let { directStereo ->
+                        if (directStereo.left.isNotEmpty()) return@withContext directStereo
+                    }
+                    extractor.setDataSource(directFile.absolutePath)
+                } else {
+                    extractor.setDataSource(ctx, uri, null)
                 }
-                extractor.setDataSource(directFile.absolutePath)
             } else {
                 extractor.setDataSource(ctx, uri, null)
             }

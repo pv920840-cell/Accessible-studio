@@ -39,7 +39,7 @@ object AccessibilityHelper {
                     VibrationType.SUCCESS -> vibrator?.vibrate(longArrayOf(0, 50, 40, 100), -1)
                 }
             }
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             // Safe fallback if device does not support vibrator or permission
         }
     }
@@ -59,7 +59,7 @@ object AccessibilityHelper {
                 }
                 accessibilityManager.sendAccessibilityEvent(event)
             }
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             // Ignore
         }
     }

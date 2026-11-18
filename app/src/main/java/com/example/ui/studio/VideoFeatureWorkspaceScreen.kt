@@ -75,6 +75,7 @@ import com.example.video.VideoAudioOption
 import com.example.video.VideoPlayerManager
 import com.example.video.VideoRenderEngine
 import com.example.video.VideoToolkitProcessor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -117,8 +118,9 @@ fun VideoFeatureWorkspaceScreen(
     val timestamp = remember { SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) }
 
     fun buildRenderRequest(keepRanges: List<Pair<Long, Long>> = listOf(draft.trimStartMs to draft.trimEndMs)): FullRenderRequest {
+        val uri = draft.sourceUri ?: throw IllegalStateException("Select or create a video clip first.")
         return FullRenderRequest(
-            sourceUri = draft.sourceUri!!,
+            sourceUri = uri,
             keepRangesMs = keepRanges,
             speed = draft.selectedSpeed,
             pitchCorrect = draft.pitchCorrect,
@@ -170,9 +172,10 @@ fun VideoFeatureWorkspaceScreen(
                     Toast.makeText(context, "Saved: ${out.name}", Toast.LENGTH_LONG).show()
                     AccessibilityHelper.announceForAccessibility(context, "Completed $label. Saved ${out.name}")
                 }
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
                 statusMessage = null
-                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "Error: ${t.localizedMessage ?: "Processing failed"}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -476,17 +479,29 @@ fun VideoFeatureWorkspaceScreen(
                     imageOverlay = draft.imageOverlay,
                     onPickOverlayImage = { uri ->
                         scope.launch {
-                            val (iw, ih, warning) = toolkit.inspectOverlayImage(uri, draft.metadata.width.coerceAtLeast(1), draft.metadata.height.coerceAtLeast(1))
-                            draft = draft.copy(
-                                imageOverlay = draft.imageOverlay.copy(uri = uri, imageWidth = iw, imageHeight = ih, mismatchWarning = warning, endMs = effectiveDuration.coerceAtLeast(3000L)),
-                                hasUnsavedChanges = true
-                            )
+                            try {
+                                val (iw, ih, warning) = toolkit.inspectOverlayImage(uri, draft.metadata.width.coerceAtLeast(1), draft.metadata.height.coerceAtLeast(1))
+                                draft = draft.copy(
+                                    imageOverlay = draft.imageOverlay.copy(uri = uri, imageWidth = iw, imageHeight = ih, mismatchWarning = warning, endMs = effectiveDuration.coerceAtLeast(3000L)),
+                                    hasUnsavedChanges = true
+                                )
+                            } catch (t: Throwable) {
+                                if (t is CancellationException) throw t
+                                Toast.makeText(context, "Could not inspect overlay image: ${t.localizedMessage ?: "Invalid image"}", Toast.LENGTH_LONG).show()
+                            }
                         }
                     },
                     onUpdateImageOverlay = { draft = draft.copy(imageOverlay = it, hasUnsavedChanges = true) },
                     subtitleCues = draft.subtitleCues,
                     onImportSubtitleFile = { uri ->
-                        scope.launch { draft = draft.copy(subtitleCues = toolkit.parseSubtitleUri(uri), hasUnsavedChanges = true) }
+                        scope.launch {
+                            try {
+                                draft = draft.copy(subtitleCues = toolkit.parseSubtitleUri(uri), hasUnsavedChanges = true)
+                            } catch (t: Throwable) {
+                                if (t is CancellationException) throw t
+                                Toast.makeText(context, "Could not import subtitles: ${t.localizedMessage ?: "Unsupported file"}", Toast.LENGTH_LONG).show()
+                            }
+                        }
                     },
                     onLoadInlineSrtText = { raw -> draft = draft.copy(subtitleCues = toolkit.parseSubtitleText(raw), hasUnsavedChanges = true) },
                     onClearSubtitles = { draft = draft.copy(subtitleCues = emptyList(), hasUnsavedChanges = true) },

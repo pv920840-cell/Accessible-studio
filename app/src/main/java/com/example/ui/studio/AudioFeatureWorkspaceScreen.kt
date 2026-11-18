@@ -97,6 +97,7 @@ import com.example.ui.components.StudioDawTopBar
 import com.example.ui.components.VocalKaraokeMakerCard
 import com.example.ui.screens.AudioStudioScreen
 import com.example.ui.theme.LocalHighContrast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -142,6 +143,7 @@ fun AudioFeatureWorkspaceScreen(
     }
 
     val undoHistory = remember(session.projectId, tool) { mutableStateListOf<ShortArray>() }
+    var isApplyingTransform by remember(session.projectId, tool) { mutableStateOf(false) }
 
     val isPlaying by playerManager.isPlaying.collectAsState()
     val currentPositionMs by playerManager.currentPositionMs.collectAsState()
@@ -149,40 +151,74 @@ fun AudioFeatureWorkspaceScreen(
     val sampleRate = session.sampleRate.coerceAtLeast(8000)
 
     LaunchedEffect(workingPcm) {
-        playerManager.loadPcmData(workingPcm, sampleRate)
-        val dur = playerManager.durationMs.value
-        if (trimEndMs <= 0L || trimEndMs > dur) trimEndMs = dur
-        if (trimStartMs > trimEndMs) trimStartMs = 0L
+        try {
+            playerManager.loadPcmData(workingPcm, sampleRate)
+            val dur = playerManager.durationMs.value
+            if (trimEndMs <= 0L || trimEndMs > dur) trimEndMs = dur
+            if (trimStartMs > trimEndMs) trimStartMs = 0L
+        } catch (_: Throwable) {}
+    }
+
+    fun pushUndoSnapshotSafely(snapshot: ShortArray) {
+        try {
+            val maxTotalSamples = 40_000_000L
+            while (undoHistory.size >= 6 || (undoHistory.isNotEmpty() && undoHistory.sumOf { it.size.toLong() } + snapshot.size.toLong() > maxTotalSamples)) {
+                undoHistory.removeAt(0)
+            }
+            if (snapshot.size.toLong() <= maxTotalSamples) {
+                undoHistory.add(snapshot.clone())
+            }
+        } catch (_: OutOfMemoryError) {
+            undoHistory.clear()
+        }
     }
 
     fun pushUndoAndApply(label: String, preserveSelection: Boolean = false, transform: (ShortArray) -> ShortArray) {
+        if (isApplyingTransform) {
+            Toast.makeText(context, "Processing in progress, please wait...", Toast.LENGTH_SHORT).show()
+            return
+        }
         val current = workingPcm
         if (current.isEmpty()) {
             Toast.makeText(context, "Audio track is empty.", Toast.LENGTH_SHORT).show()
             return
         }
+        isApplyingTransform = true
         scope.launch(Dispatchers.Main) {
-            val updated = withContext(Dispatchers.Default) { transform(current) }
-            if (undoHistory.size >= 6) undoHistory.removeAt(0)
-            undoHistory.add(current.clone())
-            workingPcm = updated
-            localModified = true
-            val newDur = ((updated.size.toDouble() / sampleRate) * 1000.0).toLong()
-            if (!preserveSelection) {
-                trimStartMs = 0L
-                trimEndMs = newDur
-            } else {
-                trimStartMs = trimStartMs.coerceIn(0L, newDur)
-                trimEndMs = trimEndMs.coerceIn(trimStartMs, newDur)
+            try {
+                playerManager.stop()
+                val updated = withContext(Dispatchers.Default) { transform(current) }
+                pushUndoSnapshotSafely(current)
+                workingPcm = updated
+                localModified = true
+                val newDur = ((updated.size.toDouble() / sampleRate) * 1000.0).toLong()
+                if (!preserveSelection) {
+                    trimStartMs = 0L
+                    trimEndMs = newDur
+                } else {
+                    trimStartMs = trimStartMs.coerceIn(0L, newDur)
+                    trimEndMs = trimEndMs.coerceIn(trimStartMs, newDur)
+                }
+                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                AccessibilityHelper.announceForAccessibility(context, label)
+                Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Toast.makeText(
+                    context,
+                    "Could not apply effect: ${t.localizedMessage ?: "Audio too long for available memory"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                isApplyingTransform = false
             }
-            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-            AccessibilityHelper.announceForAccessibility(context, label)
-            Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
         }
     }
 
     fun commitAndSave() {
-        playerManager.stop()
+        try {
+            playerManager.stop()
+        } catch (_: Throwable) {}
         val totalDurMs = ((workingPcm.size.toDouble() / sampleRate) * 1000.0).toLong()
         val shouldMaterializeTrim =
             hasPendingTrimRange &&
@@ -190,29 +226,23 @@ fun AudioFeatureWorkspaceScreen(
                 trimEndMs > trimStartMs &&
                 (trimStartMs > 0L || trimEndMs < totalDurMs)
 
-        val finalPcm: ShortArray
-        val finalTrimStart: Long
-        val finalTrimEnd: Long
-        val finalModified: Boolean
+        var finalPcm: ShortArray = workingPcm
+        var finalTrimStart: Long = trimStartMs
+        var finalTrimEnd: Long = trimEndMs
+        var finalModified: Boolean = localModified
 
         if (shouldMaterializeTrim) {
-            val cropped = StudioAudioProcessor.cropToSelection(workingPcm, trimStartMs, trimEndMs, sampleRate)
-            if (cropped.isNotEmpty()) {
-                finalPcm = cropped
-                finalTrimStart = 0L
-                finalTrimEnd = ((cropped.size.toDouble() / sampleRate) * 1000.0).toLong()
-                finalModified = true
-            } else {
-                finalPcm = workingPcm
-                finalTrimStart = trimStartMs
-                finalTrimEnd = trimEndMs
-                finalModified = localModified
+            try {
+                val cropped = StudioAudioProcessor.cropToSelection(workingPcm, trimStartMs, trimEndMs, sampleRate)
+                if (cropped.isNotEmpty()) {
+                    finalPcm = cropped
+                    finalTrimStart = 0L
+                    finalTrimEnd = ((cropped.size.toDouble() / sampleRate) * 1000.0).toLong()
+                    finalModified = true
+                }
+            } catch (t: Throwable) {
+                Toast.makeText(context, "Trim could not be finalized (${t.localizedMessage ?: "Memory limit"}). Saving full track.", Toast.LENGTH_SHORT).show()
             }
-        } else {
-            finalPcm = workingPcm
-            finalTrimStart = trimStartMs
-            finalTrimEnd = trimEndMs
-            finalModified = localModified
         }
 
         onSaveAndReturn(
@@ -328,6 +358,10 @@ fun AudioFeatureWorkspaceScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (isApplyingTransform) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth().testTag("progress_workspace_processing"))
+            }
+
             AccessibleTimeReadout(
                 currentMs = currentPositionMs,
                 durationMs = durationMs,
@@ -481,12 +515,17 @@ fun AudioFeatureWorkspaceScreen(
                     val mixPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
                         if (uri != null) {
                             scope.launch {
-                                val decoded = audioProcessor.decodeUriToPcm(uri)
-                                if (decoded.isNotEmpty()) {
-                                    mixOverlayPcm = decoded
-                                    mixOverlayTitle = audioProcessor.queryAudioDisplayName(uri) ?: "Overlay Track"
-                                } else {
-                                    Toast.makeText(context, "Could not decode selected mix file.", Toast.LENGTH_SHORT).show()
+                                try {
+                                    val decoded = audioProcessor.decodeUriToPcm(uri)
+                                    if (decoded.isNotEmpty()) {
+                                        mixOverlayPcm = decoded
+                                        mixOverlayTitle = audioProcessor.queryAudioDisplayName(uri) ?: "Overlay Track"
+                                    } else {
+                                        Toast.makeText(context, "Could not decode selected mix file.", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (t: Throwable) {
+                                    if (t is CancellationException) throw t
+                                    Toast.makeText(context, "Mix load error: ${t.localizedMessage ?: "Unsupported file"}", Toast.LENGTH_LONG).show()
                                 }
                             }
                         }
@@ -780,8 +819,7 @@ fun AudioFeatureWorkspaceScreen(
                                         val recorded = recorderManager.stopRecording()
                                         if (recorded != null && recorded.isNotEmpty()) {
                                             val cleaned = StudioAudioProcessor.gentleCleanup(recorded)
-                                            if (undoHistory.size >= 6) undoHistory.removeAt(0)
-                                            undoHistory.add(workingPcm.clone())
+                                            pushUndoSnapshotSafely(workingPcm)
                                             workingPcm = cleaned
                                             workingTitle = "Voice Recording (${AccessibilityHelper.formatTimeVisual(recDurMs)})"
                                             localModified = true
@@ -827,8 +865,7 @@ fun AudioFeatureWorkspaceScreen(
                         defaultExportFormat = defaultExportFormat,
                         hapticsEnabled = hapticsEnabled,
                         onApplySingleStemToTrack = { label, stemPcm ->
-                            if (undoHistory.size >= 6) undoHistory.removeAt(0)
-                            undoHistory.add(workingPcm.clone())
+                            pushUndoSnapshotSafely(workingPcm)
                             workingPcm = stemPcm
                             localModified = true
                             val newDur = ((stemPcm.size.toDouble() / sampleRate) * 1000.0).toLong()

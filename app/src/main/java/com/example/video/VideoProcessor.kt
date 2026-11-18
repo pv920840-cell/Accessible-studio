@@ -160,8 +160,9 @@ class VideoProcessor(private val context: Context) {
                 audioFormat != null
 
         var muxerAudioTrack = -1
-        if (shouldIncludeOriginalAudio) {
-            muxerAudioTrack = muxer.addTrack(audioFormat!!)
+        val resolvedAudioFormat = audioFormat
+        if (shouldIncludeOriginalAudio && resolvedAudioFormat != null) {
+            muxerAudioTrack = muxer.addTrack(resolvedAudioFormat)
         }
 
         muxer.start()
@@ -245,13 +246,13 @@ class VideoProcessor(private val context: Context) {
         try {
             muxer.stop()
             muxer.release()
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
 
         try {
             videoExtractor.release()
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
 
-        com.example.storage.StorageExportManager.saveVideoFile(
+        val savedFile = com.example.storage.StorageExportManager.saveVideoFile(
             context = context,
             sourceFile = outputFile,
             targetFileName = cleanName,
@@ -259,7 +260,7 @@ class VideoProcessor(private val context: Context) {
         )
 
         onProgress(1.0f)
-        outputFile
+        savedFile
     }
 
     /**
@@ -272,7 +273,8 @@ class VideoProcessor(private val context: Context) {
         settings: VideoEditSettings = VideoEditSettings(),
         onProgress: (Float) -> Unit
     ): File = withContext(Dispatchers.IO) {
-        val exportDir = File(context.getExternalFilesDir(null), "DemoMedia")
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val exportDir = File(baseDir, "DemoMedia")
         if (!exportDir.exists()) exportDir.mkdirs()
         val file = File(exportDir, fileName)
 
@@ -489,14 +491,14 @@ class VideoProcessor(private val context: Context) {
             codec.stop()
             codec.release()
             surface.release()
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
 
         try {
             if (muxerStarted) {
                 muxer.stop()
-                muxer.release()
             }
-        } catch (_: Exception) {}
+            muxer.release()
+        } catch (_: Throwable) {}
 
         onProgress(1.0f)
         file

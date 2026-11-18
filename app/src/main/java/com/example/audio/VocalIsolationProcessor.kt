@@ -105,6 +105,28 @@ object VocalIsolationProcessor {
         )
     }
 
+    internal fun hasDistinctQuietFloor(samples: ShortArray): Boolean {
+        if (samples.size < 2048) return false
+        val windows = 24
+        val step = max(1, samples.size / windows)
+        var minRms = Double.MAX_VALUE
+        var maxRms = 0.0
+        for (w in 0 until windows) {
+            val start = w * step
+            val end = min(samples.size, start + step)
+            if (end <= start) continue
+            var sumSq = 0.0
+            for (i in start until end) {
+                val s = samples[i].toDouble()
+                sumSq += s * s
+            }
+            val rms = sqrt(sumSq / (end - start).toDouble())
+            if (rms < minRms) minRms = rms
+            if (rms > maxRms) maxRms = rms
+        }
+        return maxRms > 1.0 && (minRms / maxRms) < 0.45
+    }
+
     fun isolateSpokenAudio(
         samples: ShortArray,
         subtractionStrength: Float,
@@ -166,42 +188,42 @@ object VocalIsolationProcessor {
         val lowCutBin = max(1, (85f / binHz).toInt())
         val consonantMaxBin = min(NUM_BINS - 1, (7800f / binHz).toInt())
 
-        // Precompute STFT magnitudes & phases across frames for minimum-statistics noise estimation
-        val frameMags = Array(frameCount) { FloatArray(NUM_BINS) }
-        val frameReals = Array(frameCount) { FloatArray(FFT_SIZE) }
-        val frameImags = Array(frameCount) { FloatArray(FFT_SIZE) }
+        // Streaming 2-pass STFT: single reusable FFT buffers (O(1) STFT heap instead of O(frames * FFT_SIZE))
+        val re = FloatArray(FFT_SIZE)
+        val im = FloatArray(FFT_SIZE)
+        val mags = FloatArray(NUM_BINS)
         val frameSpeechBandPower = FloatArray(frameCount)
 
+        // Pass 1: Measure per-frame speech-band energy only (1 float per frame)
         for (f in 0 until frameCount) {
             val offset = f * HOP_SIZE
-            val re = frameReals[f]
-            val im = frameImags[f]
             for (k in 0 until FFT_SIZE) {
                 re[k] = inputFloat[offset + k] * sqrtHannWindow[k]
                 im[k] = 0f
             }
             fft(re, im, inverse = false)
 
-            val mags = frameMags[f]
             var speechPow = 0f
-            for (b in 0 until NUM_BINS) {
-                val mag = sqrt(re[b] * re[b] + im[b] * im[b])
-                mags[b] = mag
-                if (b in speechMinBin..speechMaxBin) {
-                    speechPow += mag * mag
-                }
+            for (b in speechMinBin..speechMaxBin) {
+                val p = re[b] * re[b] + im[b] * im[b]
+                speechPow += p
             }
             frameSpeechBandPower[f] = speechPow / max(1, speechMaxBin - speechMinBin + 1)
         }
 
-        // Step 2: Initial Ambient Noise Profile from lowest-energy 20% frames
+        // Step 2: Initial Ambient Noise Profile from lowest-energy 20% frames (re-compute FFT only for <= 24 frames)
         val sortedIndices = frameSpeechBandPower.indices.sortedBy { frameSpeechBandPower[it] }
         val quietCount = max(1, (frameCount * 0.20f).toInt().coerceAtMost(min(frameCount, 24)))
         val noiseMag = FloatArray(NUM_BINS)
         for (q in 0 until quietCount) {
-            val mags = frameMags[sortedIndices[q]]
+            val offset = sortedIndices[q] * HOP_SIZE
+            for (k in 0 until FFT_SIZE) {
+                re[k] = inputFloat[offset + k] * sqrtHannWindow[k]
+                im[k] = 0f
+            }
+            fft(re, im, inverse = false)
             for (b in 0 until NUM_BINS) {
-                noiseMag[b] += mags[b]
+                noiseMag[b] += sqrt(re[b] * re[b] + im[b] * im[b])
             }
         }
         val invQuiet = 1f / quietCount.toFloat()
@@ -227,7 +249,7 @@ object VocalIsolationProcessor {
             }
         }
 
-        // Step 3: Adaptive Per-Frame Spectral Subtraction + Musical Noise Smoothing + OLA
+        // Step 3 (Pass 2): Streaming Per-Frame Spectral Subtraction + Musical Noise Smoothing + OLA
         val outAccum = FloatArray(totalLen)
         val olaNorm = FloatArray(totalLen)
         val prevGain = FloatArray(NUM_BINS) { 1.0f }
@@ -236,9 +258,16 @@ object VocalIsolationProcessor {
         var speechActivitySmoothed = 0f
 
         for (f in 0 until frameCount) {
-            val mags = frameMags[f]
-            val re = frameReals[f]
-            val im = frameImags[f]
+            val offset = f * HOP_SIZE
+            for (k in 0 until FFT_SIZE) {
+                re[k] = inputFloat[offset + k] * sqrtHannWindow[k]
+                im[k] = 0f
+            }
+            fft(re, im, inverse = false)
+
+            for (b in 0 until NUM_BINS) {
+                mags[b] = sqrt(re[b] * re[b] + im[b] * im[b])
+            }
 
             // Estimate instantaneous speech SNR across vocal formant band
             var speechSignalSum = 0f
@@ -262,10 +291,8 @@ object VocalIsolationProcessor {
             for (b in 0 until NUM_BINS) {
                 val cur = mags[b]
                 if (cur < noiseMag[b]) {
-                    // Track quieter floor downward quickly
                     noiseMag[b] = 0.82f * noiseMag[b] + 0.18f * cur
                 } else if (speechActivitySmoothed < 0.28f && cur < noiseMag[b] * 2.2f) {
-                    // Track shifting ambient noise upward slowly during pauses
                     noiseMag[b] = 0.94f * noiseMag[b] + 0.06f * cur
                 }
             }
@@ -278,13 +305,10 @@ object VocalIsolationProcessor {
                 val sub = 1.0f - adaptiveAlpha * (nMag / (mag + 1e-7f))
                 val wiener = if (sub > spectralFloor) sub else spectralFloor
 
-                // Band shaping: protect speech formants & consonants during active speech,
-                // trim out-of-band sub-bass rumble and ultrasonic hiss
                 val freqWeight = when {
                     b < lowCutBin -> 1.0f - vocalEmphasis * 0.85f
                     b in lowCutBin..speechMaxBin -> 1.0f
                     b in (speechMaxBin + 1)..consonantMaxBin ->
-                        // Keep crisp vocal sibilance during speech, suppress steady hiss during silence
                         (1.0f - vocalEmphasis * 0.25f) + (vocalEmphasis * 0.25f * speechActivitySmoothed)
                     else -> 1.0f - vocalEmphasis * 0.75f
                 }
@@ -321,7 +345,6 @@ object VocalIsolationProcessor {
 
             fft(re, im, inverse = true)
 
-            val offset = f * HOP_SIZE
             for (k in 0 until FFT_SIZE) {
                 val w = sqrtHannWindow[k]
                 outAccum[offset + k] += re[k] * w
@@ -339,9 +362,9 @@ object VocalIsolationProcessor {
 
         // Step 4: Pristine vocal clarity EQ polish (gentle presence boost, warm low protection)
         val polished = if (clarityStr > 0.05f) {
-            val midPres = 1.0f + clarityStr * 1.8f   // ~2.5 kHz articulation
-            val airPres = 1.0f + clarityStr * 1.2f   // ~6 kHz crispness
-            val mudTrim = -0.8f * clarityStr         // ~400 Hz boxiness cleanup
+            val midPres = 1.0f + clarityStr * 1.8f
+            val airPres = 1.0f + clarityStr * 1.2f
+            val mudTrim = -0.8f * clarityStr
             StudioAudioProcessor.apply7BandEq(
                 reconstructed,
                 b60 = -1.2f * clarityStr,

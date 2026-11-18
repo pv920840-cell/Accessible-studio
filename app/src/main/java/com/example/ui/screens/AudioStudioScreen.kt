@@ -361,12 +361,19 @@ fun AudioStudioScreen(
 
     val saveUndoSnapshot: () -> Unit = {
         rawOriginalPcm?.let { current ->
-            val maxTotalSamples = 60_000_000L
-            while (undoStack.size >= 8 || (undoStack.size >= 1 && undoStack.sumOf { it.size.toLong() } + current.size.toLong() > maxTotalSamples)) {
-                undoStack.removeAt(0)
+            try {
+                val maxTotalSamples = 40_000_000L
+                while (undoStack.size >= 6 || (undoStack.isNotEmpty() && undoStack.sumOf { it.size.toLong() } + current.size.toLong() > maxTotalSamples)) {
+                    undoStack.removeAt(0)
+                }
+                if (current.size.toLong() <= maxTotalSamples) {
+                    undoStack.add(current.clone())
+                }
+                redoStack.clear()
+            } catch (_: OutOfMemoryError) {
+                undoStack.clear()
+                redoStack.clear()
             }
-            undoStack.add(current.clone())
-            redoStack.clear()
         }
     }
 
@@ -517,6 +524,7 @@ fun AudioStudioScreen(
             val prevTrimEnd = trimEndMs
             scope.launch {
                 try {
+                    playerManager.stop()
                     saveUndoSnapshot()
                     val updated = withContext(Dispatchers.Default) { transform(current) }
                     rawOriginalPcm = updated
@@ -535,6 +543,13 @@ fun AudioStudioScreen(
                     if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
                     AccessibilityHelper.announceForAccessibility(context, announcement)
                     Toast.makeText(context, announcement, Toast.LENGTH_SHORT).show()
+                } catch (t: Throwable) {
+                    if (t is kotlinx.coroutines.CancellationException) throw t
+                    Toast.makeText(
+                        context,
+                        "Effect error: ${t.localizedMessage ?: "Not enough memory for this track"}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 } finally {
                     isApplyingProFx = false
                 }
@@ -585,16 +600,30 @@ fun AudioStudioScreen(
             Toast.makeText(context, "Track is empty. Add or record audio to audition effects.", Toast.LENGTH_SHORT).show()
             return
         }
+        if (isApplyingProFx) return
         val snapshotSettings = currentSettings()
+        isApplyingProFx = true
         scope.launch {
-            val processed = withContext(Dispatchers.Default) {
-                audioProcessor.processPcm(orig, snapshotSettings)
-            }
-            if (processed.isNotEmpty()) {
-                playerManager.loadPcmData(processed, workingSampleRate)
-                playerManager.play()
-                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                AccessibilityHelper.announceForAccessibility(context, "Applied live effects preview. Playing updated audio.")
+            try {
+                playerManager.stop()
+                val processed = withContext(Dispatchers.Default) {
+                    audioProcessor.processPcm(orig, snapshotSettings)
+                }
+                if (processed.isNotEmpty()) {
+                    playerManager.loadPcmData(processed, workingSampleRate)
+                    playerManager.play()
+                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                    AccessibilityHelper.announceForAccessibility(context, "Applied live effects preview. Playing updated audio.")
+                }
+            } catch (t: Throwable) {
+                if (t is kotlinx.coroutines.CancellationException) throw t
+                Toast.makeText(
+                    context,
+                    "Preview error: ${t.localizedMessage ?: "Audio processing failed"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                isApplyingProFx = false
             }
         }
     }
@@ -888,7 +917,11 @@ fun AudioStudioScreen(
             AudioStudioCommand.Undo -> {
                 if (undoStack.isNotEmpty()) {
                     val prev = undoStack.removeAt(undoStack.size - 1)
-                    current?.let { redoStack.add(it.clone()) }
+                    try {
+                        current?.let { redoStack.add(it.clone()) }
+                    } catch (_: OutOfMemoryError) {
+                        redoStack.clear()
+                    }
                     rawOriginalPcm = prev
                     playerManager.loadPcmData(prev, workingSampleRate)
                     val newDurMs = playerManager.durationMs.value
@@ -901,7 +934,11 @@ fun AudioStudioScreen(
             AudioStudioCommand.Redo -> {
                 if (redoStack.isNotEmpty()) {
                     val next = redoStack.removeAt(redoStack.size - 1)
-                    current?.let { undoStack.add(it.clone()) }
+                    try {
+                        current?.let { undoStack.add(it.clone()) }
+                    } catch (_: OutOfMemoryError) {
+                        undoStack.clear()
+                    }
                     rawOriginalPcm = next
                     playerManager.loadPcmData(next, workingSampleRate)
                     val newDurMs = playerManager.durationMs.value
@@ -1822,31 +1859,40 @@ fun AudioStudioScreen(
                         mediaRepository.refreshExports()
                         if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
                         AccessibilityHelper.announceForAccessibility(context, "Export finished! Audio saved as ${file.name}")
-                    } catch (e: Exception) {
+                    } catch (t: Throwable) {
+                        if (t is kotlinx.coroutines.CancellationException) throw t
                         isExporting = false
-                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Export error: ${t.localizedMessage ?: "Storage or processing error"}", Toast.LENGTH_LONG).show()
                     }
                 }
             },
             onPlayExported = { file ->
-                playerManager.loadUri(Uri.fromFile(file))
-                playerManager.play()
-                showExportDialog = false
+                try {
+                    playerManager.loadUri(Uri.fromFile(file))
+                    playerManager.play()
+                    showExportDialog = false
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Playback error: ${t.localizedMessage ?: "Cannot play file"}", Toast.LENGTH_LONG).show()
+                }
             },
             onShareExported = { file ->
-                val media = mediaRepository.exportedFiles.value.find { it.filePath == file.absolutePath }
-                if (media != null) {
-                    mediaRepository.shareExport(media)
-                } else {
-                    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                    val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "audio/*"
-                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                try {
+                    val media = mediaRepository.exportedFiles.value.find { it.filePath == file.absolutePath }
+                    if (media != null) {
+                        mediaRepository.shareExport(media)
+                    } else {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "audio/*"
+                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(android.content.Intent.createChooser(share, "Share Exported Audio").apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
                     }
-                    context.startActivity(android.content.Intent.createChooser(share, "Share Exported Audio").apply {
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    })
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Could not share file: ${t.localizedMessage ?: "File location restricted"}", Toast.LENGTH_LONG).show()
                 }
             }
         )

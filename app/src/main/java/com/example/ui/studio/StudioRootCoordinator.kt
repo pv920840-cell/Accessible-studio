@@ -68,6 +68,7 @@ import com.example.video.VideoPlayerManager
 import com.example.video.VideoProcessor
 import com.example.video.VideoRenderEngine
 import com.example.video.VideoToolkitProcessor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.io.File
 import java.text.SimpleDateFormat
@@ -169,55 +170,73 @@ fun StudioRootCoordinator(
 
     fun openAudioProjectIntoHub(project: StudioProjectSummary, preloadedPcm: ShortArray? = null) {
         scope.launch {
-            audioPlayer.stop()
-            videoPlayer.pause()
-            val pcm = preloadedPcm ?: run {
-                val uri = project.sourceUri ?: project.filePath?.let { Uri.fromFile(File(it)) }
-                if (uri != null) audioProcessor.decodeUriToPcm(uri) else ShortArray(0)
+            try {
+                audioPlayer.stop()
+                videoPlayer.pause()
+                val pcm = preloadedPcm ?: run {
+                    val uri = project.sourceUri ?: project.filePath?.let { Uri.fromFile(File(it)) }
+                    if (uri != null) audioProcessor.decodeUriToPcm(uri) else ShortArray(0)
+                }
+                val sr = StudioAudioProcessor.SAMPLE_RATE
+                val durMs = ((pcm.size.toDouble() / sr) * 1000.0).toLong()
+                val baseName = StudioPreferences.extractBaseFileName(project.title).takeIf { it.isNotBlank() }
+                audioPlayer.loadPcmData(pcm, sr)
+                activeAudioSession = AudioProjectSessionState(
+                    projectId = project.id,
+                    title = project.title,
+                    baseFileName = baseName,
+                    pcm = pcm,
+                    sampleRate = sr,
+                    trimStartMs = 0L,
+                    trimEndMs = durMs,
+                    hasUnsavedChanges = false
+                )
+                activeVideoSession = null
+                upsertSessionProject(project.copy(durationMillis = durMs))
+                destination = StudioRootDestination.PROJECT_HUB
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Toast.makeText(
+                    context,
+                    "Could not open audio project: ${t.localizedMessage ?: "Unsupported or unreadable file"}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
-            val sr = StudioAudioProcessor.SAMPLE_RATE
-            val durMs = ((pcm.size.toDouble() / sr) * 1000.0).toLong()
-            val baseName = StudioPreferences.extractBaseFileName(project.title).takeIf { it.isNotBlank() }
-            audioPlayer.loadPcmData(pcm, sr)
-            activeAudioSession = AudioProjectSessionState(
-                projectId = project.id,
-                title = project.title,
-                baseFileName = baseName,
-                pcm = pcm,
-                sampleRate = sr,
-                trimStartMs = 0L,
-                trimEndMs = durMs,
-                hasUnsavedChanges = false
-            )
-            activeVideoSession = null
-            upsertSessionProject(project.copy(durationMillis = durMs))
-            destination = StudioRootDestination.PROJECT_HUB
         }
     }
 
     fun openVideoProjectIntoHub(project: StudioProjectSummary) {
         scope.launch {
-            audioPlayer.stop()
-            val uri = project.sourceUri ?: project.filePath?.let { Uri.fromFile(File(it)) }
-            val baseName = StudioPreferences.extractBaseFileName(project.title).takeIf { it.isNotBlank() }
-            val meta = if (uri != null) videoToolkit.inspectDetailedMetadata(uri) else com.example.video.VideoMetadataDetails()
-            val resolvedDur = meta.durationMs.takeIf { it > 0L } ?: project.durationMillis
-            if (uri != null) {
-                videoPlayer.loadUri(uri) {}
+            try {
+                audioPlayer.stop()
+                val uri = project.sourceUri ?: project.filePath?.let { Uri.fromFile(File(it)) }
+                val baseName = StudioPreferences.extractBaseFileName(project.title).takeIf { it.isNotBlank() }
+                val meta = if (uri != null) videoToolkit.inspectDetailedMetadata(uri) else com.example.video.VideoMetadataDetails()
+                val resolvedDur = meta.durationMs.takeIf { it > 0L } ?: project.durationMillis
+                if (uri != null) {
+                    videoPlayer.loadUri(uri) {}
+                }
+                activeVideoSession = VideoProjectSessionState(
+                    projectId = project.id,
+                    title = project.title,
+                    baseFileName = baseName,
+                    sourceUri = uri,
+                    durationMs = resolvedDur,
+                    metadata = meta,
+                    trimStartMs = 0L,
+                    trimEndMs = resolvedDur.coerceAtLeast(1000L)
+                )
+                activeAudioSession = null
+                upsertSessionProject(project.copy(durationMillis = resolvedDur))
+                destination = StudioRootDestination.PROJECT_HUB
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Toast.makeText(
+                    context,
+                    "Could not open video project: ${t.localizedMessage ?: "Unsupported or unreadable file"}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
-            activeVideoSession = VideoProjectSessionState(
-                projectId = project.id,
-                title = project.title,
-                baseFileName = baseName,
-                sourceUri = uri,
-                durationMs = resolvedDur,
-                metadata = meta,
-                trimStartMs = 0L,
-                trimEndMs = resolvedDur.coerceAtLeast(1000L)
-            )
-            activeAudioSession = null
-            upsertSessionProject(project.copy(durationMillis = resolvedDur))
-            destination = StudioRootDestination.PROJECT_HUB
         }
     }
 
@@ -230,30 +249,41 @@ fun StudioRootCoordinator(
                 )
             } catch (_: Throwable) {}
             scope.launch {
-                isCreateLoading = true
-                val displayName = audioProcessor.queryAudioDisplayName(uri) ?: "Imported Audio"
-                createLoadingMsg = "Decoding $displayName..."
-                val pcm = audioProcessor.decodeUriToPcm(uri)
-                isCreateLoading = false
-                createLoadingMsg = ""
-                if (pcm.isNotEmpty()) {
-                    val chosenTitle = createNameDraft.trim().ifBlank { displayName }
-                    val durMs = ((pcm.size.toDouble() / StudioAudioProcessor.SAMPLE_RATE) * 1000.0).toLong()
-                    val summary = StudioProjectSummary(
-                        id = "audio_${UUID.randomUUID()}",
-                        title = chosenTitle,
-                        mediaType = ProjectMediaType.AUDIO,
-                        sourceUri = uri,
-                        filePath = null,
-                        durationMillis = durMs,
-                        fileSizeBytes = pcm.size * 2L,
-                        lastModifiedMillis = System.currentTimeMillis(),
-                        statusBadge = "Active"
-                    )
-                    createNameDraft = ""
-                    openAudioProjectIntoHub(summary, preloadedPcm = pcm)
-                } else {
-                    Toast.makeText(context, "Could not decode selected audio file.", Toast.LENGTH_LONG).show()
+                try {
+                    isCreateLoading = true
+                    val displayName = audioProcessor.queryAudioDisplayName(uri) ?: "Imported Audio"
+                    createLoadingMsg = "Decoding $displayName..."
+                    val pcm = audioProcessor.decodeUriToPcm(uri)
+                    isCreateLoading = false
+                    createLoadingMsg = ""
+                    if (pcm.isNotEmpty()) {
+                        val chosenTitle = createNameDraft.trim().ifBlank { displayName }
+                        val durMs = ((pcm.size.toDouble() / StudioAudioProcessor.SAMPLE_RATE) * 1000.0).toLong()
+                        val summary = StudioProjectSummary(
+                            id = "audio_${UUID.randomUUID()}",
+                            title = chosenTitle,
+                            mediaType = ProjectMediaType.AUDIO,
+                            sourceUri = uri,
+                            filePath = null,
+                            durationMillis = durMs,
+                            fileSizeBytes = pcm.size * 2L,
+                            lastModifiedMillis = System.currentTimeMillis(),
+                            statusBadge = "Active"
+                        )
+                        createNameDraft = ""
+                        openAudioProjectIntoHub(summary, preloadedPcm = pcm)
+                    } else {
+                        Toast.makeText(context, "Could not decode selected audio file.", Toast.LENGTH_LONG).show()
+                    }
+                } catch (t: Throwable) {
+                    if (t is CancellationException) throw t
+                    isCreateLoading = false
+                    createLoadingMsg = ""
+                    Toast.makeText(
+                        context,
+                        "Could not import audio: ${t.localizedMessage ?: "Out of memory or unsupported format"}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
@@ -409,25 +439,36 @@ fun StudioRootCoordinator(
                                 }
                                 ProjectMediaType.VIDEO -> {
                                     scope.launch {
-                                        isCreateLoading = true
-                                        createLoadingMsg = "Generating demo video clip..."
-                                        val demoFile = videoProcessor.generateDemoVideoClip(settings = VideoEditSettings(), durationSec = 6) {}
-                                        isCreateLoading = false
-                                        createLoadingMsg = ""
-                                        val title = createNameDraft.trim().ifBlank { "Demo Video Project" }
-                                        val summary = StudioProjectSummary(
-                                            id = "video_demo_${UUID.randomUUID()}",
-                                            title = title,
-                                            mediaType = ProjectMediaType.VIDEO,
-                                            sourceUri = Uri.fromFile(demoFile),
-                                            filePath = demoFile.absolutePath,
-                                            durationMillis = 6000L,
-                                            fileSizeBytes = demoFile.length(),
-                                            lastModifiedMillis = System.currentTimeMillis(),
-                                            statusBadge = "Demo"
-                                        )
-                                        createNameDraft = ""
-                                        openVideoProjectIntoHub(summary)
+                                        try {
+                                            isCreateLoading = true
+                                            createLoadingMsg = "Generating demo video clip..."
+                                            val demoFile = videoProcessor.generateDemoVideoClip(settings = VideoEditSettings(), durationSec = 6) {}
+                                            isCreateLoading = false
+                                            createLoadingMsg = ""
+                                            val title = createNameDraft.trim().ifBlank { "Demo Video Project" }
+                                            val summary = StudioProjectSummary(
+                                                id = "video_demo_${UUID.randomUUID()}",
+                                                title = title,
+                                                mediaType = ProjectMediaType.VIDEO,
+                                                sourceUri = Uri.fromFile(demoFile),
+                                                filePath = demoFile.absolutePath,
+                                                durationMillis = 6000L,
+                                                fileSizeBytes = demoFile.length(),
+                                                lastModifiedMillis = System.currentTimeMillis(),
+                                                statusBadge = "Demo"
+                                            )
+                                            createNameDraft = ""
+                                            openVideoProjectIntoHub(summary)
+                                        } catch (t: Throwable) {
+                                            if (t is CancellationException) throw t
+                                            isCreateLoading = false
+                                            createLoadingMsg = ""
+                                            Toast.makeText(
+                                                context,
+                                                "Could not create demo video: ${t.localizedMessage ?: "Encoder unavailable"}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
                                     }
                                 }
                                 null -> Unit
@@ -533,25 +574,39 @@ fun StudioRootCoordinator(
                                     onOpenWhatsNew = onOpenWhatsNew,
                                     onOpenBatchProcessing = onOpenBatchProcessing,
                                     onSaveAndReturn = { updated ->
-                                        activeAudioSession = updated
-                                        val newDur = ((updated.pcm.size.toDouble() / updated.sampleRate) * 1000.0).toLong()
-                                        activeProject?.let { cur ->
-                                            upsertSessionProject(
-                                                cur.copy(
-                                                    title = updated.title,
-                                                    durationMillis = newDur,
-                                                    lastModifiedMillis = System.currentTimeMillis(),
-                                                    statusBadge = if (updated.hasUnsavedChanges) "Edited" else cur.statusBadge
+                                        try {
+                                            activeAudioSession = updated
+                                            val safeSr = updated.sampleRate.coerceAtLeast(8000)
+                                            val newDur = ((updated.pcm.size.toDouble() / safeSr) * 1000.0).toLong()
+                                            activeProject?.let { cur ->
+                                                upsertSessionProject(
+                                                    cur.copy(
+                                                        title = updated.title,
+                                                        durationMillis = newDur,
+                                                        lastModifiedMillis = System.currentTimeMillis(),
+                                                        statusBadge = if (updated.hasUnsavedChanges) "Edited" else cur.statusBadge
+                                                    )
                                                 )
-                                            )
+                                            }
+                                            try {
+                                                audioPlayer.loadPcmData(updated.pcm, safeSr)
+                                            } catch (_: Throwable) {}
+                                            destination = StudioRootDestination.PROJECT_HUB
+                                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                                            Toast.makeText(context, "Saved workspace progress", Toast.LENGTH_SHORT).show()
+                                        } catch (t: Throwable) {
+                                            destination = StudioRootDestination.PROJECT_HUB
+                                            Toast.makeText(
+                                                context,
+                                                "Save warning: ${t.localizedMessage ?: "Audio reload failed"}",
+                                                Toast.LENGTH_LONG
+                                            ).show()
                                         }
-                                        audioPlayer.loadPcmData(updated.pcm, updated.sampleRate)
-                                        destination = StudioRootDestination.PROJECT_HUB
-                                        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                                        Toast.makeText(context, "Saved workspace progress", Toast.LENGTH_SHORT).show()
                                     },
                                     onCancelBack = {
-                                        aSession.let { audioPlayer.loadPcmData(it.pcm, it.sampleRate) }
+                                        try {
+                                            aSession.let { audioPlayer.loadPcmData(it.pcm, it.sampleRate.coerceAtLeast(8000)) }
+                                        } catch (_: Throwable) {}
                                         destination = StudioRootDestination.PROJECT_HUB
                                     }
                                 )
@@ -647,9 +702,10 @@ fun StudioRootCoordinator(
                 scope.launch {
                     try {
                         val outFile = if (isVideo) {
-                            val vs = activeVideoSession!!
+                            val vs = activeVideoSession ?: throw IllegalStateException("No active video project to export.")
+                            val sourceUri = vs.sourceUri ?: throw IllegalStateException("Please select or create a video clip before exporting.")
                             val req = FullRenderRequest(
-                                sourceUri = vs.sourceUri!!,
+                                sourceUri = sourceUri,
                                 keepRangesMs = listOf(vs.trimStartMs to vs.trimEndMs),
                                 speed = vs.selectedSpeed,
                                 pitchCorrect = vs.pitchCorrect,
@@ -688,7 +744,8 @@ fun StudioRootCoordinator(
                             )
                             videoRenderEngine.renderVideo(req, chosenName) { hubExportProgress = it }
                         } else {
-                            val asess = activeAudioSession!!
+                            val asess = activeAudioSession ?: throw IllegalStateException("No active audio project to export.")
+                            if (asess.pcm.isEmpty()) throw IllegalStateException("Audio track is empty.")
                             audioProcessor.exportSingleAudioFile(
                                 mainPcm = asess.pcm,
                                 bgTrackConfig = null,
@@ -711,31 +768,45 @@ fun StudioRootCoordinator(
                         }
                         if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
                         AccessibilityHelper.announceForAccessibility(context, "Export finished. Saved ${outFile.name}")
-                    } catch (e: Exception) {
+                    } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
                         isHubExporting = false
-                        Toast.makeText(context, "Export error: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Export error: ${t.localizedMessage ?: "Storage or encoding error"}", Toast.LENGTH_LONG).show()
                     }
                 }
             },
             onPlayExported = { file ->
-                if (isVideo) {
-                    videoPlayer.loadUri(Uri.fromFile(file)) { videoPlayer.play() }
-                } else {
-                    audioPlayer.loadUri(Uri.fromFile(file))
-                    audioPlayer.play()
+                try {
+                    if (isVideo) {
+                        videoPlayer.loadUri(Uri.fromFile(file)) { videoPlayer.play() }
+                    } else {
+                        audioPlayer.loadUri(Uri.fromFile(file))
+                        audioPlayer.play()
+                    }
+                    showHubExportDialog = false
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Playback error: ${t.localizedMessage ?: "Cannot play file"}", Toast.LENGTH_LONG).show()
                 }
-                showHubExportDialog = false
             },
             onShareExported = { file ->
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                    type = if (isVideo) "video/*" else "audio/*"
-                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                try {
+                    val media = mediaRepository.exportedFiles.value.find { it.filePath == file.absolutePath }
+                    if (media != null) {
+                        mediaRepository.shareExport(media)
+                    } else {
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        val share = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = if (isVideo) "video/*" else "audio/*"
+                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(android.content.Intent.createChooser(share, "Share Exported File").apply {
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
+                    }
+                } catch (t: Throwable) {
+                    Toast.makeText(context, "Could not share file: ${t.localizedMessage ?: "File location restricted"}", Toast.LENGTH_LONG).show()
                 }
-                context.startActivity(android.content.Intent.createChooser(share, "Share Exported File").apply {
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
             }
         )
     }

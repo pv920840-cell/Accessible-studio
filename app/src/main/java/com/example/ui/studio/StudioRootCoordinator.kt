@@ -500,6 +500,26 @@ fun StudioRootCoordinator(
                                 activeFeatureWorkspace = ActiveFeatureWorkspace.VideoTool(tool)
                                 destination = StudioRootDestination.FEATURE_WORKSPACE
                             },
+                            onSaveProject = {
+                                val stampNow = System.currentTimeMillis()
+                                if (vSession != null) {
+                                    activeVideoSession = vSession.copy(hasUnsavedChanges = false)
+                                }
+                                upsertSessionProject(
+                                    proj.copy(
+                                        lastModifiedMillis = stampNow,
+                                        statusBadge = "Saved"
+                                    )
+                                )
+                                if (vSession?.sourceUri != null) {
+                                    hubExportedFile = null
+                                    showHubExportDialog = true
+                                } else {
+                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                                    AccessibilityHelper.announceForAccessibility(context, "Project saved")
+                                    Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             onExportProject = {
                                 hubExportedFile = null
                                 showHubExportDialog = true
@@ -532,6 +552,26 @@ fun StudioRootCoordinator(
                                 destination = StudioRootDestination.FEATURE_WORKSPACE
                             },
                             onOpenVideoTool = {},
+                            onSaveProject = {
+                                val stampNow = System.currentTimeMillis()
+                                if (aSession != null) {
+                                    activeAudioSession = aSession.copy(hasUnsavedChanges = false)
+                                }
+                                upsertSessionProject(
+                                    proj.copy(
+                                        lastModifiedMillis = stampNow,
+                                        statusBadge = "Saved"
+                                    )
+                                )
+                                if (aSession != null && aSession.pcm.isNotEmpty()) {
+                                    hubExportedFile = null
+                                    showHubExportDialog = true
+                                } else {
+                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                                    AccessibilityHelper.announceForAccessibility(context, "Project saved")
+                                    Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
+                                }
+                            },
                             onExportProject = {
                                 if (aSession == null || aSession.pcm.isEmpty()) {
                                     Toast.makeText(context, "Audio track is empty. Record or import audio first.", Toast.LENGTH_SHORT).show()

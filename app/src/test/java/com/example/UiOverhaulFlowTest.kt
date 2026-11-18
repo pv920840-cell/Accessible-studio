@@ -3,6 +3,7 @@ package com.example
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -148,6 +149,8 @@ class UiOverhaulFlowTest {
             lastModifiedMillis = 1_700_000_000_000L
         )
         var exportClicked = false
+        var saveClicked = false
+        var backClicked = false
         var openedVideoTool: VideoFeatureTool? = null
 
         composeRule.setContent {
@@ -162,11 +165,23 @@ class UiOverhaulFlowTest {
                     onOpenAudioTool = {},
                     onOpenVideoTool = { openedVideoTool = it },
                     onExportProject = { exportClicked = true },
-                    onBackToHome = {}
+                    onBackToHome = { backClicked = true },
+                    onSaveProject = { saveClicked = true }
                 )
             }
         }
         composeRule.waitForIdle()
+
+        val saveNode = composeRule.onNodeWithTag("btn_hub_save").assertExists()
+        val backNode = composeRule.onNodeWithTag("btn_hub_back_home").assertExists()
+        assertTrue(
+            "Save button must appear before Go Back to Home Screen button",
+            saveNode.getUnclippedBoundsInRoot().left < backNode.getUnclippedBoundsInRoot().left
+        )
+        saveNode.performClick()
+        assertTrue(saveClicked)
+        backNode.performClick()
+        assertTrue(backClicked)
 
         composeRule.onNodeWithTag("hub_project_title").assertExists()
         VideoFeatureTool.values().forEach { tool ->
@@ -214,11 +229,20 @@ class UiOverhaulFlowTest {
         composeRule.onNodeWithTag("btn_create_quick_start").performScrollTo().performClick()
         composeRule.waitForIdle()
 
-        // Step 3: Main Project Screen (Feature Hub)
+        // Step 3: Main Project Screen (Feature Hub) - Save button FIRST, then Go Back to Home Screen
         composeRule.onNodeWithTag("hub_project_title").assertExists()
+        val blankSaveBounds = composeRule.onNodeWithTag("btn_hub_save").assertExists().getUnclippedBoundsInRoot()
+        val blankBackBounds = composeRule.onNodeWithTag("btn_hub_back_home").assertExists().getUnclippedBoundsInRoot()
+        assertTrue("Save button should appear before Go Back to Home Screen on blank project", blankSaveBounds.left < blankBackBounds.left)
+        composeRule.onNodeWithTag("btn_hub_save").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("accessible_export_dialog").assertExists()
+        composeRule.onNodeWithTag("btn_cancel_export").performClick()
+        composeRule.waitForIdle()
+
         composeRule.onNodeWithTag("btn_hub_export").assertExists()
         composeRule.onNodeWithTag("hub_status_badge").assertExists()
-        composeRule.onNodeWithText("Ready").assertExists()
+        composeRule.onNodeWithText("Saved").assertExists()
 
         // Open Step 4: Trim & Cut Workspace
         composeRule.onNodeWithTag("hub_features_grid")

@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.Tune
@@ -46,6 +47,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,6 +78,7 @@ fun ProjectHubScreen(
     onOpenVideoTool: (VideoFeatureTool) -> Unit,
     onExportProject: () -> Unit,
     onBackToHome: () -> Unit,
+    onSaveProject: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
@@ -114,21 +117,68 @@ fun ProjectHubScreen(
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    // Top Action Row: Save button FIRST, then Go Back to Home Screen button
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        IconButton(
-                            onClick = onBackToHome,
+                        Button(
+                            onClick = onSaveProject,
                             modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_hub_back_home")
-                                .semantics { contentDescription = "Back to Home Screen" }
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("btn_hub_save")
+                                .semantics {
+                                    contentDescription = "Save project"
+                                },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                            )
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Save",
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
+                        OutlinedButton(
+                            onClick = onBackToHome,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("btn_hub_back_home")
+                                .semantics {
+                                    contentDescription = "Go back to Home Screen"
+                                },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                if (isHighContrast) 2.dp else 1.dp,
+                                if (isHighContrast) Color.White else MaterialTheme.colorScheme.outline
+                            )
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Go Back to Home Screen",
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),

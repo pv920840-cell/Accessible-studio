@@ -120,10 +120,14 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val savedPrefs = remember { StudioPreferences.loadSettings(applicationContext) }
+            val publishConfig = remember { AppUpdateChecker.loadPublishConfig(applicationContext) }
             var isHighContrast by remember { mutableStateOf(savedPrefs.isHighContrast) }
             var isHapticsEnabled by remember { mutableStateOf(savedPrefs.isHapticsEnabled) }
             var defaultExportFormat by remember { mutableStateOf(savedPrefs.defaultExportFormat) }
             var autoCheckUpdates by remember { mutableStateOf(savedPrefs.autoCheckUpdates) }
+            var updateProvider by remember { mutableStateOf(savedPrefs.updateProvider) }
+            var githubOwner by remember { mutableStateOf(publishConfig.owner) }
+            var githubRepo by remember { mutableStateOf(publishConfig.repo) }
             var lastUpdateCheckMs by remember {
                 mutableStateOf(StudioPreferences.loadLastUpdateCheckMs(applicationContext))
             }
@@ -139,11 +143,21 @@ class MainActivity : ComponentActivity() {
             val activityContext = this@MainActivity
             val appCoroutineScope = rememberCoroutineScope()
 
-            fun runUpdateCheck(isAutomatic: Boolean) {
+            fun runUpdateCheck(
+                isAutomatic: Boolean,
+                providerOverride: String = updateProvider,
+                ownerOverride: String = githubOwner,
+                repoOverride: String = githubRepo
+            ) {
                 if (updateCheckState is UpdateCheckState.Checking) return
                 updateCheckState = UpdateCheckState.Checking(isAutomatic = isAutomatic)
                 appCoroutineScope.launch {
-                    val result = AppUpdateChecker.checkForUpdates()
+                    val result = AppUpdateChecker.checkForUpdates(
+                        metadataUrl = publishConfig.fallbackMetadataUrl,
+                        provider = providerOverride,
+                        githubOwner = ownerOverride,
+                        githubRepo = repoOverride
+                    )
                     updateCheckState = result
                     when (result) {
                         is UpdateCheckState.UpToDate -> {
@@ -220,7 +234,15 @@ class MainActivity : ComponentActivity() {
                         isHighContrast = !isHighContrast
                         StudioPreferences.saveSettings(
                             applicationContext,
-                            StudioSettingsState(isHighContrast, isHapticsEnabled, defaultExportFormat, autoCheckUpdates)
+                            StudioSettingsState(
+                                isHighContrast = isHighContrast,
+                                isHapticsEnabled = isHapticsEnabled,
+                                defaultExportFormat = defaultExportFormat,
+                                autoCheckUpdates = autoCheckUpdates,
+                                updateProvider = updateProvider,
+                                githubOwner = githubOwner,
+                                githubRepo = githubRepo
+                            )
                         )
                         if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.DOUBLE_CLICK)
                         AccessibilityHelper.announceForAccessibility(
@@ -256,6 +278,9 @@ class MainActivity : ComponentActivity() {
                         autoCheckUpdates = autoCheckUpdates,
                         updateCheckState = updateCheckState,
                         lastUpdateCheckMs = lastUpdateCheckMs,
+                        updateProvider = updateProvider,
+                        githubOwner = githubOwner,
+                        githubRepo = githubRepo,
                         onToggleAutoCheckUpdates = { enabled ->
                             autoCheckUpdates = enabled
                             StudioPreferences.setAutoCheckUpdatesEnabled(applicationContext, enabled)
@@ -268,6 +293,20 @@ class MainActivity : ComponentActivity() {
                                 hasAutoCheckedThisSession = true
                                 runUpdateCheck(isAutomatic = true)
                             }
+                        },
+                        onSaveGitHubSource = { newProvider, newOwner, newRepo ->
+                            val cleanProvider = StudioPreferences.normalizeUpdateProvider(newProvider)
+                            val cleanOwner = newOwner.trim()
+                            val cleanRepo = newRepo.trim()
+                            updateProvider = cleanProvider
+                            githubOwner = cleanOwner
+                            githubRepo = cleanRepo
+                            StudioPreferences.saveGitHubUpdateSource(
+                                applicationContext,
+                                cleanProvider,
+                                cleanOwner,
+                                cleanRepo
+                            )
                         },
                         onCheckForUpdates = {
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
@@ -296,7 +335,10 @@ class MainActivity : ComponentActivity() {
                                     isHighContrast = newHighContrast,
                                     isHapticsEnabled = newHaptics,
                                     defaultExportFormat = cleanFormat,
-                                    autoCheckUpdates = autoCheckUpdates
+                                    autoCheckUpdates = autoCheckUpdates,
+                                    updateProvider = updateProvider,
+                                    githubOwner = githubOwner,
+                                    githubRepo = githubRepo
                                 )
                             )
                             showSettingsSheet = false

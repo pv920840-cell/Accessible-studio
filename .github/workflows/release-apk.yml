@@ -1,0 +1,85 @@
+name: Build and Publish Accessible Studio APK
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK & Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure GitHub publish owner & repo in update_config.json
+        run: |
+          python3 -c '
+          import json, os
+          owner, repo = os.environ["GITHUB_REPOSITORY"].split("/", 1)
+          for path in ("publish-config.json", "app/src/main/assets/update_config.json"):
+              if os.path.exists(path):
+                  with open(path, "r") as f:
+                      data = json.load(f)
+                  data.setdefault("build", {}).setdefault("publish", {})
+                  data["build"]["publish"]["provider"] = "github"
+                  data["build"]["publish"]["owner"] = owner
+                  data["build"]["publish"]["repo"] = repo
+                  with open(path, "w") as f:
+                      json.dump(data, f, indent=2)
+                      f.write("\n")
+          '
+
+      - name: Run unit tests and build Debug APK
+        run: gradle :app:testDebugUnitTest :app:assembleDebug
+
+      - name: Prepare release assets & version.json
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk AccessibleStudio_V1.2.apk
+          cp app/build/outputs/apk/debug/app-debug.apk AccessibleStudio.apk
+          python3 -c '
+          import glob, json, os, re
+          bc = glob.glob("app/build/generated/source/buildConfig/**/BuildConfig.java", recursive=True)[0]
+          text = open(bc).read()
+          vcode = int(re.search(r"VERSION_CODE\s*=\s*(\d+)", text).group(1))
+          vname = re.search(r"VERSION_NAME\s*=\s*\"([^\"]+)\"", text).group(1)
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ.get("GITHUB_REF_NAME", f"v{vname}")
+          payload = {
+              "appName": "Accessible Studio",
+              "versionCode": vcode,
+              "versionName": vname,
+              "apkUrl": f"https://github.com/{repo}/releases/download/{tag}/AccessibleStudio_V1.2.apk",
+              "pageUrl": f"https://github.com/{repo}/releases/latest",
+              "apkSizeBytes": os.path.getsize("AccessibleStudio_V1.2.apk"),
+              "releaseNotes": f"Accessible Studio {vname} release."
+          }
+          with open("version.json", "w") as f:
+              json.dump(payload, f, indent=2)
+              f.write("\n")
+          '
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', github.run_number) }}
+          name: Accessible Studio ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            AccessibleStudio_V1.2.apk
+            AccessibleStudio.apk
+            version.json

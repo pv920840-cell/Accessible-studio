@@ -62,6 +62,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.StudioPreferences
 import com.example.ui.theme.LocalHighContrast
 import com.example.update.AppUpdateChecker
 import com.example.update.UpdateCheckState
@@ -400,7 +401,11 @@ fun AccessibilitySettingsSheet(
     autoCheckUpdates: Boolean = true,
     updateCheckState: UpdateCheckState = UpdateCheckState.Idle,
     lastUpdateCheckMs: Long = 0L,
+    updateProvider: String = StudioPreferences.UPDATE_PROVIDER_AUTO,
+    githubOwner: String = "",
+    githubRepo: String = "",
     onToggleAutoCheckUpdates: ((Boolean) -> Unit)? = null,
+    onSaveGitHubSource: ((provider: String, owner: String, repo: String) -> Unit)? = null,
     onCheckForUpdates: (() -> Unit)? = null,
     onDownloadUpdate: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
@@ -409,6 +414,9 @@ fun AccessibilitySettingsSheet(
     var draftHapticsEnabled by remember(isHapticsEnabled) { mutableStateOf(isHapticsEnabled) }
     var draftExportFormat by remember(defaultExportFormat) { mutableStateOf(defaultExportFormat) }
     var draftAutoCheckUpdates by remember(autoCheckUpdates) { mutableStateOf(autoCheckUpdates) }
+    var draftUpdateProvider by remember(updateProvider) { mutableStateOf(updateProvider) }
+    var draftGithubOwner by remember(githubOwner) { mutableStateOf(githubOwner) }
+    var draftGithubRepo by remember(githubRepo) { mutableStateOf(githubRepo) }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -913,6 +921,131 @@ fun AccessibilitySettingsSheet(
                                         Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(8.dp))
                                         Text("Download Update (v${updateCheckState.latestVersion})", fontWeight = FontWeight.Black)
+                                    }
+                                }
+                            }
+
+                            // Update Source Selector (Hosted Server vs GitHub Releases)
+                            if (onSaveGitHubSource != null) {
+                                Text(
+                                    text = "Update Publish Source",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    val isServerSelected = draftUpdateProvider != StudioPreferences.UPDATE_PROVIDER_GITHUB
+                                    OutlinedButton(
+                                        onClick = {
+                                            draftUpdateProvider = StudioPreferences.UPDATE_PROVIDER_AUTO
+                                            onSaveGitHubSource(
+                                                StudioPreferences.UPDATE_PROVIDER_AUTO,
+                                                draftGithubOwner,
+                                                draftGithubRepo
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp)
+                                            .testTag("btn_update_source_server")
+                                            .semantics {
+                                                contentDescription = "Default App Server update source. ${if (isServerSelected) "Selected" else "Tap to select"}"
+                                            },
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (isServerSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                                        ),
+                                        border = BorderStroke(
+                                            if (isServerSelected) 2.dp else 1.dp,
+                                            if (isServerSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                        )
+                                    ) {
+                                        Text(
+                                            text = if (isServerSelected) "✓ App Server" else "App Server",
+                                            fontWeight = if (isServerSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+
+                                    val isGitHubSelected = draftUpdateProvider == StudioPreferences.UPDATE_PROVIDER_GITHUB
+                                    OutlinedButton(
+                                        onClick = {
+                                            draftUpdateProvider = StudioPreferences.UPDATE_PROVIDER_GITHUB
+                                            onSaveGitHubSource(
+                                                StudioPreferences.UPDATE_PROVIDER_GITHUB,
+                                                draftGithubOwner,
+                                                draftGithubRepo
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp)
+                                            .testTag("btn_update_source_github")
+                                            .semantics {
+                                                contentDescription = "GitHub Releases update source. ${if (isGitHubSelected) "Selected" else "Tap to select"}"
+                                            },
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (isGitHubSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                                        ),
+                                        border = BorderStroke(
+                                            if (isGitHubSelected) 2.dp else 1.dp,
+                                            if (isGitHubSelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline
+                                        )
+                                    ) {
+                                        Text(
+                                            text = if (isGitHubSelected) "✓ GitHub" else "GitHub",
+                                            fontWeight = if (isGitHubSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+
+                                if (draftUpdateProvider == StudioPreferences.UPDATE_PROVIDER_GITHUB) {
+                                    OutlinedTextField(
+                                        value = draftGithubOwner,
+                                        onValueChange = { draftGithubOwner = it },
+                                        label = { Text("GitHub Owner / Username") },
+                                        placeholder = { Text("e.g. octocat") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("input_github_owner")
+                                            .semantics {
+                                                contentDescription = "GitHub repository owner or username. Current value: ${draftGithubOwner.ifBlank { "empty" }}"
+                                            }
+                                    )
+                                    OutlinedTextField(
+                                        value = draftGithubRepo,
+                                        onValueChange = { draftGithubRepo = it },
+                                        label = { Text("GitHub Repository Name") },
+                                        placeholder = { Text("e.g. accessible-studio") },
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("input_github_repo")
+                                            .semantics {
+                                                contentDescription = "GitHub repository name. Current value: ${draftGithubRepo.ifBlank { "empty" }}"
+                                            }
+                                    )
+                                    OutlinedButton(
+                                        onClick = {
+                                            onSaveGitHubSource(
+                                                StudioPreferences.UPDATE_PROVIDER_GITHUB,
+                                                draftGithubOwner,
+                                                draftGithubRepo
+                                            )
+                                            onCheckForUpdates?.invoke()
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("btn_save_github_source")
+                                            .semantics {
+                                                contentDescription = "Save GitHub repository and check GitHub Releases for updates"
+                                            },
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Save & Check GitHub Releases", fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }

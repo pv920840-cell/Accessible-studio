@@ -11,6 +11,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.StudioPreferences
 import com.example.data.StudioSettingsState
@@ -19,6 +20,7 @@ import com.example.update.AppUpdateChecker
 import com.example.update.UpdateCheckState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -254,5 +256,152 @@ class AppUpdateCheckerTest {
         composeRule.onNodeWithTag("txt_about_update_status")
             .performScrollTo()
             .assertTextContains("No internet connection.", substring = true)
+    }
+
+    @Test
+    fun publishConfig_parsesBuildPublishBlockAndRejectsPlaceholders() {
+        assertFalse(AppUpdateChecker.isValidGitHubRepo("your-github-username", "your-repo-name"))
+        assertFalse(AppUpdateChecker.isValidGitHubRepo("", "accessible-studio"))
+        assertFalse(AppUpdateChecker.isValidGitHubRepo("octocat/bad", "accessible-studio"))
+        assertTrue(AppUpdateChecker.isValidGitHubRepo("octocat", "accessible-studio"))
+
+        val placeholderConfig = AppUpdateChecker.parsePublishConfigJson(
+            """
+            {
+              "build": {
+                "appId": "com.aistudio.accessiblestudio.qmztxp",
+                "publish": {
+                  "provider": "github",
+                  "owner": "your-github-username",
+                  "repo": "your-repo-name"
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        assertNotNull(placeholderConfig)
+        assertEquals("com.aistudio.accessiblestudio.qmztxp", placeholderConfig?.appId)
+        assertEquals("github", placeholderConfig?.provider)
+        assertEquals("", placeholderConfig?.owner)
+        assertEquals("", placeholderConfig?.repo)
+
+        val realConfig = AppUpdateChecker.parsePublishConfigJson(
+            """
+            {
+              "build": {
+                "appId": "com.aistudio.accessiblestudio.qmztxp",
+                "publish": {
+                  "provider": "github",
+                  "owner": "accessible-dev",
+                  "repo": "accessible-studio-android"
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        assertEquals("accessible-dev", realConfig?.owner)
+        assertEquals("accessible-studio-android", realConfig?.repo)
+        assertEquals(
+            "https://api.github.com/repos/accessible-dev/accessible-studio-android/releases/latest",
+            AppUpdateChecker.buildGitHubLatestReleaseUrl("accessible-dev", "accessible-studio-android")
+        )
+    }
+
+    @Test
+    fun parseGitHubReleaseJson_extractsApkAssetTagVersionAndReleaseNotes() {
+        val releaseJson = """
+            {
+              "tag_name": "v1.2.20261119.120000",
+              "name": "Accessible Studio 1.2.20261119.120000",
+              "body": "GitHub Release with Vocal Remover speed boost.",
+              "html_url": "https://github.com/accessible-dev/accessible-studio/releases/tag/v1.2.20261119.120000",
+              "assets": [
+                {
+                  "name": "version.json",
+                  "browser_download_url": "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.20261119.120000/version.json"
+                },
+                {
+                  "name": "AccessibleStudio_V1.2.apk",
+                  "browser_download_url": "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.20261119.120000/AccessibleStudio_V1.2.apk"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        assertEquals(
+            "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.20261119.120000/version.json",
+            AppUpdateChecker.extractGitHubVersionJsonAssetUrl(releaseJson)
+        )
+
+        val state = AppUpdateChecker.parseGitHubReleaseJson(
+            jsonBody = releaseJson,
+            currentVersionName = "1.2.20261118.092951",
+            currentVersionCode = 16,
+            checkedAtMs = 9999L
+        )
+        assertTrue(state is UpdateCheckState.UpdateAvailable)
+        val update = state as UpdateCheckState.UpdateAvailable
+        assertEquals("1.2.20261119.120000", update.latestVersion)
+        assertEquals(
+            "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.20261119.120000/AccessibleStudio_V1.2.apk",
+            update.downloadUrl
+        )
+        assertEquals("GitHub Release with Vocal Remover speed boost.", update.releaseNotes)
+    }
+
+    @Test
+    fun settingsAbout_githubPublishSourceSavesOwnerAndRepo() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        var savedProvider = ""
+        var savedOwner = ""
+        var savedRepo = ""
+        var checked = false
+
+        composeRule.setContent {
+            var provider by remember { mutableStateOf(StudioPreferences.UPDATE_PROVIDER_AUTO) }
+            var owner by remember { mutableStateOf("") }
+            var repo by remember { mutableStateOf("") }
+
+            AccessibilitySettingsSheet(
+                isHighContrast = false,
+                isHapticsEnabled = true,
+                defaultExportFormat = "WAV",
+                autoCheckUpdates = true,
+                updateProvider = provider,
+                githubOwner = owner,
+                githubRepo = repo,
+                onSaveGitHubSource = { p, o, r ->
+                    provider = p
+                    owner = o
+                    repo = r
+                    savedProvider = p
+                    savedOwner = o
+                    savedRepo = r
+                    StudioPreferences.saveGitHubUpdateSource(context, p, o, r)
+                },
+                onCheckForUpdates = { checked = true },
+                onSaveSettings = { _, _, _ -> },
+                onDismiss = {}
+            )
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("btn_update_source_github").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("input_github_owner").performScrollTo().performTextInput("accessible-dev")
+        composeRule.onNodeWithTag("input_github_repo").performScrollTo().performTextInput("accessible-studio")
+        composeRule.onNodeWithTag("btn_save_github_source").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        assertEquals(StudioPreferences.UPDATE_PROVIDER_GITHUB, savedProvider)
+        assertEquals("accessible-dev", savedOwner)
+        assertEquals("accessible-studio", savedRepo)
+        assertTrue(checked)
+
+        val loaded = StudioPreferences.loadSettings(context)
+        assertEquals(StudioPreferences.UPDATE_PROVIDER_GITHUB, loaded.updateProvider)
+        assertEquals("accessible-dev", loaded.githubOwner)
+        assertEquals("accessible-studio", loaded.githubRepo)
     }
 }

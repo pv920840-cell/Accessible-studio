@@ -131,7 +131,7 @@ class AppUpdateCheckerTest {
             {
               "versionCode": 16,
               "versionName": "1.2.20261118.091803",
-              "apkUrl": "${AppUpdateChecker.DEFAULT_APK_URL}"
+              "pageUrl": "${AppUpdateChecker.DEFAULT_DOWNLOAD_PAGE_URL}"
             }
         """.trimIndent()
         val upToDate = AppUpdateChecker.parseUpdateResponseJson(
@@ -177,7 +177,7 @@ class AppUpdateCheckerTest {
                         currentVersion = "1.2.20261118.091803",
                         latestVersion = "1.2.20261119.010101",
                         latestCode = 17,
-                        downloadUrl = AppUpdateChecker.DEFAULT_APK_URL,
+                        downloadUrl = AppUpdateChecker.DEFAULT_DOWNLOAD_PAGE_URL,
                         releaseNotes = "New update ready.",
                         checkedAtMs = 5000L
                     )
@@ -216,7 +216,7 @@ class AppUpdateCheckerTest {
             .assertExists()
             .performClick()
         composeRule.waitForIdle()
-        assertEquals(AppUpdateChecker.DEFAULT_APK_URL, downloadedUrl)
+        assertEquals(AppUpdateChecker.DEFAULT_DOWNLOAD_PAGE_URL, downloadedUrl)
     }
 
     @Test
@@ -343,10 +343,26 @@ class AppUpdateCheckerTest {
         val update = state as UpdateCheckState.UpdateAvailable
         assertEquals("1.2.20261119.120000", update.latestVersion)
         assertEquals(
-            "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.20261119.120000/AccessibleStudio_V1.2.apk",
+            "https://github.com/accessible-dev/accessible-studio/releases/tag/v1.2.20261119.120000",
             update.downloadUrl
         )
         assertEquals("GitHub Release with Vocal Remover speed boost.", update.releaseNotes)
+    }
+
+    @Test
+    fun resolveDownloadUrl_enforcesHttpsAndRejectsUnsafeSchemes() {
+        assertEquals(
+            "https://example.com/release",
+            AppUpdateChecker.resolveDownloadUrl("http://example.com/release")
+        )
+        assertEquals(
+            AppUpdateChecker.DEFAULT_DOWNLOAD_PAGE_URL,
+            AppUpdateChecker.resolveDownloadUrl("javascript:alert(1)")
+        )
+        assertEquals(
+            AppUpdateChecker.DEFAULT_DOWNLOAD_PAGE_URL,
+            AppUpdateChecker.resolveDownloadUrl("file:///sdcard/evil.apk")
+        )
     }
 
     @Test

@@ -57,7 +57,7 @@ object AppUpdateChecker {
     const val BASE_HOST_URL = "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app"
     const val DEFAULT_METADATA_URL = "$BASE_HOST_URL/version.json"
     const val DEFAULT_FALLBACK_HTML_URL = "$BASE_HOST_URL/index.html"
-    const val DEFAULT_APK_URL = "$BASE_HOST_URL/AccessibleStudio_V1.2.apk"
+    const val DEFAULT_DOWNLOAD_PAGE_URL = "$BASE_HOST_URL/"
     const val ASSET_UPDATE_CONFIG = "update_config.json"
 
     private const val GITHUB_API_BASE = "https://api.github.com"
@@ -177,9 +177,15 @@ object AppUpdateChecker {
 
     fun resolveDownloadUrl(rawUrl: String?): String {
         val trimmed = rawUrl?.trim().orEmpty()
-        if (trimmed.isEmpty()) return DEFAULT_APK_URL
-        if (trimmed.startsWith("http://", ignoreCase = true) || trimmed.startsWith("https://", ignoreCase = true)) {
+        if (trimmed.isEmpty()) return DEFAULT_DOWNLOAD_PAGE_URL
+        if (trimmed.startsWith("https://", ignoreCase = true)) {
             return trimmed
+        }
+        if (trimmed.startsWith("http://", ignoreCase = true)) {
+            return "https://" + trimmed.substring(7)
+        }
+        if (trimmed.contains("://") || trimmed.startsWith("javascript:", ignoreCase = true)) {
+            return DEFAULT_DOWNLOAD_PAGE_URL
         }
         return if (trimmed.startsWith("/")) {
             "$BASE_HOST_URL$trimmed"
@@ -204,7 +210,7 @@ object AppUpdateChecker {
             }
             val effectiveRemoteName = remoteVersionName.ifEmpty { currentVersionName }
             val downloadUrl = resolveDownloadUrl(
-                json.optString("apkUrl").ifBlank { json.optString("pageUrl") }
+                json.optString("pageUrl").ifBlank { json.optString("apkUrl") }
             )
             val releaseNotes = json.optString("releaseNotes", "").trim()
 
@@ -263,7 +269,7 @@ object AppUpdateChecker {
                     break
                 }
             }
-            val downloadUrl = apkAssetUrl.ifEmpty { htmlUrl }.ifEmpty { DEFAULT_APK_URL }
+            val downloadUrl = resolveDownloadUrl(htmlUrl.ifEmpty { apkAssetUrl })
             val notes = json.optString("body", "").trim()
                 .ifEmpty { releaseName }
                 .ifEmpty { "A newer GitHub release is available." }
@@ -336,7 +342,7 @@ object AppUpdateChecker {
                 currentVersion = currentVersionName,
                 latestVersion = remoteName,
                 latestCode = currentVersionCode,
-                downloadUrl = DEFAULT_APK_URL,
+                downloadUrl = DEFAULT_DOWNLOAD_PAGE_URL,
                 releaseNotes = "A newer build of Accessible Studio is available on the download page.",
                 checkedAtMs = checkedAtMs,
                 sourceLabel = "Download Page"
@@ -439,11 +445,8 @@ object AppUpdateChecker {
 
     fun openUpdateDownload(context: Context, url: String): Boolean {
         return try {
-            val resolved = if (url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true)) {
-                url
-            } else {
-                resolveDownloadUrl(url)
-            }
+            val resolved = resolveDownloadUrl(url)
+            if (!resolved.startsWith("https://", ignoreCase = true)) return false
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(resolved)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

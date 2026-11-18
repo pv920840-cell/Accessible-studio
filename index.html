@@ -394,7 +394,7 @@
                 <li>प्रोग्रेस बार पूरा (100%) होते ही फ़ाइल अपने आप सेव हो जाएगी।</li>
                 <li>नोटिफिकेशन या <b>Downloads</b> फ़ोल्डर में जाकर <b>AccessibleStudio.apk</b> पर टैप करें।</li>
                 <li><b>Install</b> चुनें (अगर पहली बार कर रहे हैं, तो <i>"Install unknown apps"</i> को Allow करें)।</li>
-                <li><b>Play Protect नोट:</b> ब्राउज़र या Downloads से सीधे APK इंस्टॉल करने पर Android का Play Protect सुरक्षा के लिए एक बार <i>"Scan app"</i> पूछ सकता है — आप निश्चिंत होकर <b>Scan app</b> चुन सकते हैं। सभी ऑडियो/वीडियो एडिटिंग 100% ऑफ़लाइन होती है और ऐप में कोई अनावश्यक Permission नहीं है।</li>
+                <li><b>Play Protect "App scan recommended" नोट:</b> Google Play Store के बाहर (ब्राउज़र या Downloads से) APK इंस्टॉल करने पर Android का Play Protect एक बार <i>"App scan recommended" / "Scan app"</i> दिखा सकता है क्योंकि यह सीधा डाउनलोड किया गया बिल्ड है — आप निश्चिंत होकर <b>Scan app</b> (या <i>More details &rarr; Install anyway</i>) चुनें। सभी ऑडियो/वीडियो एडिटिंग 100% ऑफ़लाइन होती है, नेटवर्क केवल HTTPS पर वैकल्पिक अपडेट चेक के लिए उपयोग होता है, और ऐप में कोई अनावश्यक Permission नहीं है।</li>
             </ol>
         </div>
 
@@ -404,10 +404,10 @@
             <ul>
                 <li>
                     <div class="changelog-ver-row">
-                        <span class="changelog-ver-title">v1.2.20261118.092951 (Latest)</span>
+                        <span class="changelog-ver-title">v1.2.20261118.112856 (Latest)</span>
                         <a href="/AccessibleStudio_V1.2.apk" download="AccessibleStudio_V1.2.apk" class="changelog-link" aria-label="Download Accessible Studio version 1.2 APK">Download v1.2 APK</a>
                     </div>
-                    <p class="changelog-desc">Added Automatic Check for Updates toggle and manual Check for Updates button in Settings &rarr; About, automatic per-build versioning, plus Vocal Remover / Noise Reduction OOM and Realme export crash fixes.</p>
+                    <p class="changelog-desc">Enforced HTTPS-only network security config, minimized manifest permissions, added GitHub Releases &amp; Automatic Check for Updates in Settings &rarr; About, automatic per-build versioning, plus Vocal Remover / Noise Reduction OOM and Realme export crash fixes.</p>
                 </li>
                 <li>
                     <div class="changelog-ver-row">
@@ -432,7 +432,7 @@
 
     <script>
         const APK_URL = '/AccessibleStudio.apk';
-        const ESTIMATED_TOTAL_BYTES = 19819037; // ~18.9 MB
+        const ESTIMATED_TOTAL_BYTES = 19836509; // ~18.9 MB
 
         let isDownloading = false;
 

@@ -1,16 +1,4 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
-import org.gradle.api.provider.ValueSource
-import org.gradle.api.provider.ValueSourceParameters
-import java.time.ZoneOffset
-import java.time.ZonedDateTime
-import java.time.format.DateTimeFormatter
-
-abstract class AutoBuildVersionNameSource : ValueSource<String, ValueSourceParameters.None> {
-  override fun obtain(): String {
-    val now = ZonedDateTime.now(ZoneOffset.UTC)
-    return "1.2." + now.format(DateTimeFormatter.ofPattern("yyyyMMdd.HHmmss"))
-  }
-}
 
 plugins {
   alias(libs.plugins.android.application)
@@ -29,7 +17,7 @@ android {
     minSdk = 24
     targetSdk = 36
     versionCode = 16
-    versionName = providers.of(AutoBuildVersionNameSource::class.java) {}.get()
+    versionName = "1.2.3"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

@@ -18,6 +18,7 @@ import com.example.ui.components.StudioDawTopBar
 import com.example.ui.components.StudioHelpUserGuideDialog
 import com.example.ui.components.StudioUserGuideContent
 import com.example.ui.components.StudioWhatsNewDialog
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -141,7 +142,7 @@ class WelcomePreferenceTest {
 
         composeRule.onNodeWithTag("accessibility_settings_sheet").assertExists()
         composeRule.onNodeWithTag("card_about_accessible_studio").performScrollTo().assertExists()
-        assertTrue(com.example.BuildConfig.VERSION_NAME.matches(Regex("""1\.2\.\d{8}\.\d{6}""")))
+        assertEquals("1.2.3", com.example.BuildConfig.VERSION_NAME)
         composeRule.onNodeWithText("Version ${com.example.BuildConfig.VERSION_NAME} • 100% Free & Open Accessible Studio • 100% Offline").performScrollTo().assertExists()
 
         // First button inside About: User Guide

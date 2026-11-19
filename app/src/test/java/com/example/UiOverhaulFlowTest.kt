@@ -236,13 +236,18 @@ class UiOverhaulFlowTest {
         assertTrue("Save button should appear before Go Back to Home Screen on blank project", blankSaveBounds.left < blankBackBounds.left)
         composeRule.onNodeWithTag("btn_hub_save").performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("accessible_export_dialog").assertExists()
-        composeRule.onNodeWithTag("btn_cancel_export").performClick()
-        composeRule.waitForIdle()
+        // Clicking Save must save as a project, NOT trigger final audio export dialog
+        composeRule.onNodeWithTag("accessible_export_dialog").assertDoesNotExist()
+        assertTrue("Final exports should remain empty when saving project", repo.exportedFiles.value.isEmpty())
 
         composeRule.onNodeWithTag("btn_hub_export").assertExists()
         composeRule.onNodeWithTag("hub_status_badge").assertExists()
         composeRule.onNodeWithText("Saved").assertExists()
+
+        // Verify persisted saved project appears on Home Screen under Existing Projects
+        composeRule.waitUntil(timeoutMillis = 3_000L) {
+            com.example.data.StudioProjectStorage.loadSavedProjects(context).any { it.statusBadge == "Saved" }
+        }
 
         // Open Step 4: Trim & Cut Workspace
         composeRule.onNodeWithTag("hub_features_grid")
@@ -265,5 +270,15 @@ class UiOverhaulFlowTest {
         composeRule.onNodeWithTag("hub_project_title").assertExists()
         composeRule.onNodeWithTag("btn_hub_export").assertExists()
         composeRule.onNodeWithText("Edited").assertExists()
+        composeRule.onNodeWithTag("btn_hub_save").assertExists().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("accessible_export_dialog").assertDoesNotExist()
+        composeRule.onNodeWithText("Saved").assertExists()
+
+        // Go back to Home Screen and verify saved project is listed
+        composeRule.onNodeWithTag("btn_hub_back_home").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("home_projects_list").assertExists()
+        composeRule.onNodeWithText("Blank Audio Project").assertExists()
     }
 }

@@ -58,6 +58,7 @@ import com.example.audio.StudioAudioProcessor
 import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
+import com.example.data.StudioProjectStorage
 import com.example.ui.components.AccessibleExportDialog
 import com.example.ui.screens.ExportedFilesScreen
 import com.example.ui.theme.LocalHighContrast
@@ -69,7 +70,9 @@ import com.example.video.VideoProcessor
 import com.example.video.VideoRenderEngine
 import com.example.video.VideoToolkitProcessor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -118,7 +121,11 @@ fun StudioRootCoordinator(
     }
 
     val exportedMedia by mediaRepository.exportedFiles.collectAsState()
-    val sessionProjects = remember { mutableStateListOf<StudioProjectSummary>() }
+    val sessionProjects = remember {
+        mutableStateListOf<StudioProjectSummary>().apply {
+            addAll(StudioProjectStorage.loadSavedProjects(context))
+        }
+    }
 
     val allProjects = remember(sessionProjects.toList(), exportedMedia) {
         val fromExports = exportedMedia.map { media ->
@@ -505,20 +512,27 @@ fun StudioRootCoordinator(
                                 if (vSession != null) {
                                     activeVideoSession = vSession.copy(hasUnsavedChanges = false)
                                 }
-                                upsertSessionProject(
-                                    proj.copy(
-                                        lastModifiedMillis = stampNow,
-                                        statusBadge = "Saved"
-                                    )
+                                val optimistic = proj.copy(
+                                    sourceUri = vSession?.sourceUri ?: proj.sourceUri,
+                                    durationMillis = (vSession?.durationMs ?: 0L).takeIf { it > 0L } ?: proj.durationMillis,
+                                    lastModifiedMillis = stampNow,
+                                    statusBadge = "Saved"
                                 )
-                                if (vSession?.sourceUri != null) {
-                                    hubExportedFile = null
-                                    showHubExportDialog = true
-                                } else {
-                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                                    AccessibilityHelper.announceForAccessibility(context, "Project saved")
-                                    Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
+                                upsertSessionProject(optimistic)
+                                scope.launch {
+                                    val savedSummary = withContext(Dispatchers.IO) {
+                                        StudioProjectStorage.saveVideoProject(
+                                            context = context,
+                                            project = optimistic,
+                                            sourceUri = vSession?.sourceUri,
+                                            durationMs = vSession?.durationMs ?: optimistic.durationMillis
+                                        )
+                                    }
+                                    upsertSessionProject(savedSummary)
                                 }
+                                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                                AccessibilityHelper.announceForAccessibility(context, "Project saved")
+                                Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
                             },
                             onExportProject = {
                                 hubExportedFile = null
@@ -557,20 +571,28 @@ fun StudioRootCoordinator(
                                 if (aSession != null) {
                                     activeAudioSession = aSession.copy(hasUnsavedChanges = false)
                                 }
-                                upsertSessionProject(
-                                    proj.copy(
-                                        lastModifiedMillis = stampNow,
-                                        statusBadge = "Saved"
-                                    )
+                                val optimistic = proj.copy(
+                                    lastModifiedMillis = stampNow,
+                                    statusBadge = "Saved"
                                 )
-                                if (aSession != null && aSession.pcm.isNotEmpty()) {
-                                    hubExportedFile = null
-                                    showHubExportDialog = true
-                                } else {
-                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                                    AccessibilityHelper.announceForAccessibility(context, "Project saved")
-                                    Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
+                                upsertSessionProject(optimistic)
+                                scope.launch {
+                                    val savedSummary = withContext(Dispatchers.IO) {
+                                        StudioProjectStorage.saveAudioProject(
+                                            context = context,
+                                            project = optimistic,
+                                            pcm = aSession?.pcm ?: ShortArray(0),
+                                            sampleRate = aSession?.sampleRate ?: StudioAudioProcessor.SAMPLE_RATE,
+                                            writeWav = { file, samples, sr, ch ->
+                                                audioProcessor.writeWavFile(file, samples, sr, ch)
+                                            }
+                                        )
+                                    }
+                                    upsertSessionProject(savedSummary)
                                 }
+                                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                                AccessibilityHelper.announceForAccessibility(context, "Project saved")
+                                Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
                             },
                             onExportProject = {
                                 if (aSession == null || aSession.pcm.isEmpty()) {

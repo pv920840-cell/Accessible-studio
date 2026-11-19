@@ -83,6 +83,7 @@ fun ProjectHubScreen(
 ) {
     val isHighContrast = LocalHighContrast.current
     val isVideo = project.mediaType == ProjectMediaType.VIDEO
+    val saveNeeded = hasUnsavedChanges || project.statusBadge != "Saved"
 
     Column(
         modifier = modifier
@@ -97,7 +98,6 @@ fun ProjectHubScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Project Hub Header Card
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -117,41 +117,42 @@ fun ProjectHubScreen(
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Top Action Row: Save button FIRST, then Go Back to Home Screen button
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Button(
-                            onClick = onSaveProject,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("btn_hub_save")
-                                .semantics {
-                                    contentDescription = "Save project"
-                                },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                                contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
-                            )
-                        ) {
-                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                text = "Save",
-                                fontWeight = FontWeight.Black,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                        if (saveNeeded) {
+                            Button(
+                                onClick = onSaveProject,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("btn_hub_save")
+                                    .semantics {
+                                        contentDescription = "Save project"
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                    contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = "Save",
+                                    fontWeight = FontWeight.Black,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
 
                         OutlinedButton(
                             onClick = onBackToHome,
                             modifier = Modifier
-                                .weight(1f)
+                                .weight(if (saveNeeded) 1f else 2f)
                                 .height(48.dp)
                                 .testTag("btn_hub_back_home")
                                 .semantics {
@@ -201,8 +202,13 @@ fun ProjectHubScreen(
                                     shape = RoundedCornerShape(6.dp),
                                     modifier = Modifier.testTag("hub_status_badge")
                                 ) {
+                                    val statusText = when {
+                                        hasUnsavedChanges -> "Edited"
+                                        project.statusBadge == "Saved" -> "Saved"
+                                        else -> "Ready"
+                                    }
                                     Text(
-                                        text = if (hasUnsavedChanges) "Edited" else "Ready",
+                                        text = statusText,
                                         style = MaterialTheme.typography.labelSmall,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 10.sp,
@@ -248,7 +254,6 @@ fun ProjectHubScreen(
                 }
             }
 
-            // Feature Hub Grid
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 160.dp),
                 modifier = Modifier
@@ -296,7 +301,6 @@ fun ProjectHubScreen(
                 }
             }
 
-            // Prominent Export Button
             Button(
                 onClick = onExportProject,
                 modifier = Modifier

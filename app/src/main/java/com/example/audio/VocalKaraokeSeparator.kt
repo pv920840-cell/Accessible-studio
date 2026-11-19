@@ -415,7 +415,7 @@ object VocalKaraokeSeparator {
 
         // Clean studio floors: near-zero bleed in both directions
         val vocalFloor = (0.045f - str * 0.043f).coerceIn(0.0015f, 0.08f)
-        val karaokeFloor = (0.08f - str * 0.077f).coerceIn(0.002f, 0.14f)
+        val karaokeFloor = (0.055f - str * 0.0535f).coerceIn(0.0012f, 0.12f)
         val vocalGamma = 1.25f + str * 1.15f
         val sideBaseGain = 1.0f + str * 0.14f
 
@@ -586,9 +586,9 @@ object VocalKaraokeSeparator {
                 val kMidKeep = prevKaraokeMidKeep[b] + kAlpha * (targetMidKeep - prevKaraokeMidKeep[b])
                 prevKaraokeMidKeep[b] = kMidKeep
 
-                // Sub-bass mono anchor (< bassCut) + slight Side ducking ONLY at strong active vocal harmonics (350-3800 Hz) to kill stereo vocal reverb ghosts
-                val vocalReverbDuck = if (freq in 340f..3800f && vocalCancelCue > 0.62f && smoothHarmonic[b] > 0.50f) {
-                    1.0f - 0.24f * str * ((vocalCancelCue - 0.62f) / 0.38f) * smoothHarmonic[b]
+                // Sub-bass mono anchor (< bassCut) + Side ducking ONLY at active vocal harmonics (300-4400 Hz) to kill stereo vocal reverb/chorus ghosts
+                val vocalReverbDuck = if (freq in 300f..4400f && vocalCancelCue > 0.45f && smoothHarmonic[b] > 0.38f) {
+                    1.0f - 0.44f * str * ((vocalCancelCue - 0.45f) / 0.55f) * smoothHarmonic[b]
                 } else 1.0f
 
                 val sideWeight = when {
@@ -711,8 +711,11 @@ object VocalKaraokeSeparator {
         val rawHpssScore = FloatArray(MONO_NUM_BINS)
         val smoothHpss = FloatArray(MONO_NUM_BINS)
         val percussiveFloor = FloatArray(MONO_NUM_BINS)
+        val drumProtection = FloatArray(MONO_NUM_BINS)
         val excessMag = FloatArray(MONO_NUM_BINS)
+        val residualExcess = FloatArray(MONO_NUM_BINS)
         val temporalScratch = FloatArray(MONO_RING_FRAMES)
+        val fastTemporalScratch = FloatArray(5)
         val spectralScratch = FloatArray(17)
 
         // Precompute 62 log-spaced F0 candidates (105 Hz .. 620 Hz, ~3% half-semitone spacing) for vocal harmonic-comb locking
@@ -739,12 +742,15 @@ object VocalKaraokeSeparator {
         }
 
         val vocalFloor = (0.040f - str * 0.038f).coerceIn(0.0018f, 0.08f)
-        val karaokeFloor = (0.075f - str * 0.072f).coerceIn(0.002f, 0.14f)
+        val karaokeFloor = (0.045f - str * 0.0435f).coerceIn(0.001f, 0.10f)
         val prevVGain = FloatArray(MONO_NUM_BINS)
         val prevKGain = FloatArray(MONO_NUM_BINS) { 1.0f }
+        val prevKaraokeCombHold = FloatArray(MONO_NUM_BINS)
 
         var trackedF0 = 220f
         var smoothedPitchConf = 0f
+        var trackedSecondF0 = 0f
+        var smoothedSecondPitchConf = 0f
 
         val totalSteps = frameCount + MONO_HALF_RING
         for (t in 0 until totalSteps) {
@@ -777,7 +783,9 @@ object VocalKaraokeSeparator {
             val fMin = max(0, f - MONO_HALF_RING)
             val fMax = min(frameCount - 1, f + MONO_HALF_RING)
 
-            // 1) True 2D Median HPSS at 2048-pt (~21.5 Hz) frequency resolution
+            // 1) Dual-scale 2D Median HPSS (5-frame fast vibrato + 9-frame sustain) at 2048-pt resolution
+            val fastMin = max(0, f - 2)
+            val fastMax = min(frameCount - 1, f + 2)
             var vocalBandSum = 0f
             var vocalBandCount = 0
             for (b in 0 until MONO_NUM_BINS) {
@@ -785,7 +793,14 @@ object VocalKaraokeSeparator {
                 for (fi in fMin..fMax) {
                     temporalScratch[tCount++] = ringMags[fi % MONO_RING_FRAMES][b]
                 }
-                val harmonicMed = medianInPlace(temporalScratch, tCount)
+                val harmonicMed9 = medianInPlace(temporalScratch, tCount)
+
+                var fCount = 0
+                for (fi in fastMin..fastMax) {
+                    fastTemporalScratch[fCount++] = ringMags[fi % MONO_RING_FRAMES][b]
+                }
+                val harmonicMed5 = medianInPlace(fastTemporalScratch, fCount)
+                val harmonicEnergy = max(harmonicMed9, 0.88f * harmonicMed5)
 
                 val bMin = max(0, b - 8)
                 val bMax = min(MONO_NUM_BINS - 1, b + 8)
@@ -795,12 +810,16 @@ object VocalKaraokeSeparator {
                 }
                 val percussiveMed = medianInPlace(spectralScratch, sCount)
                 percussiveFloor[b] = percussiveMed
-                excessMag[b] = (mags[b] - 0.85f * percussiveMed).coerceAtLeast(0f)
+                excessMag[b] = (mags[b] - 0.80f * percussiveMed).coerceAtLeast(0f)
 
-                val h2 = harmonicMed * harmonicMed
+                drumProtection[b] = ((percussiveMed - 0.85f * harmonicEnergy) / (percussiveMed + harmonicEnergy + 1e-6f)).coerceIn(0f, 1f)
+
+                val h2 = harmonicEnergy * harmonicEnergy
                 val p2 = percussiveMed * percussiveMed
-                val rawHpss = (h2 / (h2 + 1.40f * p2 + 1e-9f)).coerceIn(0f, 1f)
-                rawHpssScore[b] = ((rawHpss - 0.28f) / 0.56f).coerceIn(0f, 1f)
+                val rawHpss = (h2 / (h2 + 1.35f * p2 + 1e-9f)).coerceIn(0f, 1f)
+                val hpssNorm = ((rawHpss - 0.25f) / 0.56f).coerceIn(0f, 1f)
+                val specSalience = ((mags[b] - 1.12f * percussiveMed) / (mags[b] + 0.35f * percussiveMed + 1e-6f)).coerceIn(0f, 1f)
+                rawHpssScore[b] = max(hpssNorm, specSalience * 0.78f).coerceIn(0f, 1f)
 
                 if (b in vocalMinBin..vocalMaxBin) {
                     vocalBandSum += mags[b]
@@ -814,7 +833,7 @@ object VocalKaraokeSeparator {
                 smoothHpss[b] = 0.22f * rawHpssScore[bM1] + 0.56f * rawHpssScore[b] + 0.22f * rawHpssScore[bP1]
             }
 
-            // 2) Octave-disambiguated Subharmonic Summation (SHS) pitch & vocal harmonic-comb lock
+            // 2) Dual-F0 Harmonic Comb Tracker: Lead Singing F0 + Secondary Vocal Harmony F0
             val frameVocalMean = if (vocalBandCount > 0) vocalBandSum / vocalBandCount else 0f
             var bestScore = 0f
             var bestHarmSum = 0f
@@ -836,7 +855,6 @@ object VocalKaraokeSeparator {
                     for (h in 0 until numHarm) {
                         val hb = hBins[h]
                         if (hb >= 0) {
-                            // Never read below vocalMinBin so sub-bass (<120 Hz) leakage cannot masquerade as a vocal fundamental
                             val pLeft = if (hb - 1 >= vocalMinBin) excessMag[hb - 1] else 0f
                             val pRight = excessMag[hb + 1]
                             val peak = max(excessMag[hb], max(pLeft, pRight))
@@ -856,7 +874,6 @@ object VocalKaraokeSeparator {
                         }
                     }
                     if (matchedCount > 0 && maxHarmPeak > 1e-5f) {
-                        // Reject sub-octave (F0/2) and sub-harmonic (F0/3, F0/4) ghosts whose lower harmonics sit in empty bins
                         val hasH0 = h0Peak > maxHarmPeak * 0.14f
                         val hasH1 = h1Peak > maxHarmPeak * 0.14f
                         val hasH2 = h2Peak > maxHarmPeak * 0.14f
@@ -866,7 +883,7 @@ object VocalKaraokeSeparator {
                             else -> 1.0f
                         }
                         val continuityBoost = if (smoothedPitchConf > 0.25f && abs(candF0[c] - trackedF0) < trackedF0 * 0.14f) 1.07f else 1.0f
-                        val rawCandScore = (hSum - 0.22f * tSum).coerceAtLeast(0f) * octaveGate * continuityBoost
+                        val rawCandScore = (hSum - 0.18f * tSum).coerceAtLeast(0f) * octaveGate * continuityBoost
                         if (rawCandScore > bestScore) {
                             bestScore = rawCandScore
                             bestHarmSum = hSum
@@ -877,7 +894,6 @@ object VocalKaraokeSeparator {
                 }
             }
 
-            // Refine F0 within ±2.5% around bestF0 using exact spectral peak centroids so harmonics align cleanly
             if (bestScore > 0f) {
                 var refinedSum = 0f
                 var refinedNum = 0f
@@ -914,37 +930,133 @@ object VocalKaraokeSeparator {
             }
 
             val rawPitchConf = if (bestScore > 0f && frameVocalMean > 1e-4f) {
-                val harmProminence = (bestHarmSum / (bestHarmSum + bestHarmNoise * 1.35f + frameVocalMean * 1.15f + 1e-6f)).coerceIn(0f, 1f)
+                val harmProminence = (bestHarmSum / (bestHarmSum + bestHarmNoise * 0.50f + frameVocalMean * 0.35f + 1e-6f)).coerceIn(0f, 1f)
                 val combRatio = (bestScore / (bestHarmSum + 1e-6f)).coerceIn(0f, 1f)
-                (harmProminence * (0.45f + 0.55f * combRatio) * 1.18f).coerceIn(0f, 1f)
+                (harmProminence * (0.50f + 0.50f * combRatio) * 1.22f).coerceIn(0f, 1f)
             } else 0f
 
-            if (rawPitchConf > 0.25f) {
+            if (rawPitchConf > 0.22f) {
                 trackedF0 = bestF0
             }
-            val pAlpha = if (rawPitchConf > smoothedPitchConf) 0.75f else 0.38f
+            val pAlpha = if (rawPitchConf > smoothedPitchConf) 0.78f else 0.36f
             smoothedPitchConf += pAlpha * (rawPitchConf - smoothedPitchConf)
-            val pitchActive = ((smoothedPitchConf - 0.18f) / 0.36f).coerceIn(0f, 1f)
+            val pitchActive = ((smoothedPitchConf - 0.14f) / 0.32f).coerceIn(0f, 1f)
+
+            // Secondary pitch tracker (for vocal harmonies / choir / duet voices outside lead F0 comb)
+            var secondRawConf = 0f
+            var secondCandF0 = trackedSecondF0
+            if (bestScore > 0f && bestHarmSum > 1e-4f && pitchActive > 0.25f) {
+                System.arraycopy(excessMag, 0, residualExcess, 0, MONO_NUM_BINS)
+                for (m in 1..18) {
+                    val centerBin = ((trackedF0 * m) / binHz + 0.5f).toInt()
+                    for (d in -1..1) {
+                        val nb = centerBin + d
+                        if (nb in 0 until MONO_NUM_BINS) residualExcess[nb] = 0f
+                    }
+                }
+                var bestSecScore = 0f
+                var bestSecHarmSum = 0f
+                var bestSecActiveHarms = 0
+                for (c in 0 until numCand) {
+                    val f2 = candF0[c]
+                    if (f2 < 115f || f2 > 520f) continue
+                    if (abs(f2 - trackedF0) < trackedF0 * 0.14f) continue
+                    val hBins = candHarmBins[c]
+                    var hSum2 = 0f
+                    var maxH2 = 0f
+                    var h0P = 0f
+                    var h1P = 0f
+                    var h2P = 0f
+                    for (h in 0 until numHarm) {
+                        val hb = hBins[h]
+                        if (hb >= 0) {
+                            val pLeft = if (hb - 1 >= vocalMinBin) residualExcess[hb - 1] else 0f
+                            val peak = max(residualExcess[hb], max(pLeft, residualExcess[hb + 1]))
+                            hSum2 += peak * harmWeight[h]
+                            if (peak > maxH2) maxH2 = peak
+                            when (h) {
+                                0 -> h0P = peak
+                                1 -> h1P = peak
+                                2 -> h2P = peak
+                            }
+                        }
+                    }
+                    if (maxH2 > 1e-5f) {
+                        var activeHarms = 0
+                        for (h in 0 until 6) {
+                            val hb = hBins[h]
+                            if (hb >= 0) {
+                                val pLeft = if (hb - 1 >= vocalMinBin) residualExcess[hb - 1] else 0f
+                                val peak = max(residualExcess[hb], max(pLeft, residualExcess[hb + 1]))
+                                if (peak > maxH2 * 0.22f) activeHarms++
+                            }
+                        }
+                        val hasH0 = h0P > maxH2 * 0.16f
+                        val hasH1 = h1P > maxH2 * 0.16f
+                        val hasH2 = h2P > maxH2 * 0.16f
+                        val octOk = !((!hasH0 && !hasH2) || (!hasH0 && !hasH1))
+                        if (activeHarms >= 2 && octOk && hSum2 > bestSecScore) {
+                            bestSecScore = hSum2
+                            bestSecHarmSum = hSum2
+                            bestSecActiveHarms = activeHarms
+                            secondCandF0 = f2
+                        }
+                    }
+                }
+                if (bestSecActiveHarms >= 2 && bestSecHarmSum >= bestHarmSum * 0.24f) {
+                    secondRawConf = (bestSecHarmSum / (bestHarmSum * 0.65f + 1e-6f)).coerceIn(0f, 1f)
+                    trackedSecondF0 = secondCandF0
+                }
+            }
+            val secAlpha = if (secondRawConf > smoothedSecondPitchConf) 0.72f else 0.42f
+            smoothedSecondPitchConf += secAlpha * (secondRawConf - smoothedSecondPitchConf)
 
             val combTolHz = max(binHz * 1.45f, trackedF0 * 0.20f).coerceAtMost(88f)
             val combSigmaHz = combTolHz * 0.56f
+            val kCombTolHz = max(binHz * 1.95f, trackedF0 * 0.25f).coerceAtMost(110f)
+            val kCombSigmaHz = kCombTolHz * 0.64f
+            val kComb2TolHz = max(binHz * 1.75f, trackedSecondF0.coerceAtLeast(120f) * 0.22f).coerceAtMost(98f)
+            val kComb2SigmaHz = kComb2TolHz * 0.60f
 
             for (b in 0 until MONO_NUM_BINS) {
                 val freq = b * binHz
                 val hpssScore = smoothHpss[b]
 
-                val combProximity = if (pitchActive > 0.05f && freq in 105f..5400f && trackedF0 > 85f) {
+                var vCombProximity = 0f
+                var kComb1Prox = 0f
+                if (pitchActive > 0.05f && freq in 105f..5800f && trackedF0 > 85f) {
                     val ratio = freq / trackedF0
                     val nearest = (ratio + 0.5f).toInt()
-                    if (nearest in 1..24) {
+                    if (nearest in 1..26) {
                         val distHz = abs(freq - nearest * trackedF0)
                         if (distHz < combTolHz) {
                             val normDist = distHz / combSigmaHz
-                            exp(-(normDist * normDist))
-                        } else 0f
-                    } else 0f
-                } else 0f
-                val combScore = (combProximity * pitchActive).coerceIn(0f, 1f)
+                            vCombProximity = exp(-(normDist * normDist))
+                        }
+                        if (distHz < kCombTolHz) {
+                            val kNorm = distHz / kCombSigmaHz
+                            kComb1Prox = exp(-(kNorm * kNorm))
+                        }
+                    }
+                }
+                val combScore = (vCombProximity * pitchActive).coerceIn(0f, 1f)
+
+                var kComb2Prox = 0f
+                if (smoothedSecondPitchConf > 0.18f && freq in 115f..5600f && trackedSecondF0 > 95f) {
+                    val ratio2 = freq / trackedSecondF0
+                    val nearest2 = (ratio2 + 0.5f).toInt()
+                    if (nearest2 in 1..24) {
+                        val distHz2 = abs(freq - nearest2 * trackedSecondF0)
+                        if (distHz2 < kComb2TolHz) {
+                            val norm2 = distHz2 / kComb2SigmaHz
+                            kComb2Prox = exp(-(norm2 * norm2)) * smoothedSecondPitchConf
+                        }
+                    }
+                }
+
+                val kCombPeak = max(kComb1Prox * pitchActive, kComb2Prox).coerceIn(0f, 1f)
+                val kCombHeld = max(kCombPeak, prevKaraokeCombHold[b] * 0.82f)
+                prevKaraokeCombHold[b] = kCombHeld
 
                 val formantBand = when {
                     freq < 105f -> 0.0f
@@ -969,22 +1081,34 @@ object VocalKaraokeSeparator {
                 val vGain = prevVGain[b] + vAlpha * (targetVGain - prevVGain[b])
                 prevVGain[b] = vGain
 
-                // Karaoke (-1): preserve sub-bass (< bassCut), percussion & off-harmonic instruments; erase active vocal F0 harmonic ladder
+                // Karaoke (-1): preserve sub-bass (< bassCut) & punchy drums; erase lead vocal + harmonies + vocal reverb/formants deeply
                 val karaokeSuppressionBand = when {
                     freq < bassCut -> 0.0f
                     freq < bassCut + 85f -> (freq - bassCut) / 85f
-                    freq <= 5200f -> 1.0f
-                    freq <= 7600f -> 1.0f - 0.72f * ((freq - 5200f) / 2400f)
-                    else -> 0.08f
+                    freq <= 6200f -> 1.0f
+                    freq <= 9000f -> 1.0f - 0.72f * ((freq - 6200f) / 2800f)
+                    else -> 0.12f
                 }
-                val karaokeCancelCue = if (pitchActive > 0.25f) {
-                    max(combScore, hpssScore * (0.10f + 0.90f * combScore))
+                val nonPercussive = (1.0f - drumProtection[b] * 0.92f).coerceIn(0.08f, 1.0f)
+                val bedRatio = ((percussiveFloor[b] / (mags[b] + 1e-6f)) - 0.20f) / 0.24f
+                val bedFactor = bedRatio.coerceIn(0f, 1f)
+                val formantEnv = when {
+                    freq < 210f -> 0.0f
+                    freq < 310f -> (freq - 210f) / 100f
+                    freq <= 4400f -> 1.0f
+                    freq <= 7200f -> 1.0f - 0.70f * ((freq - 4400f) / 2800f)
+                    else -> 0.10f
+                }
+                val formantBedCue = bedFactor * nonPercussive * (0.48f + 0.52f * str) * formantEnv
+                val hpssCancelCue = if (pitchActive > 0.25f) {
+                    hpssScore * (0.14f + 0.86f * bedFactor) * nonPercussive
                 } else {
-                    hpssScore * 0.65f
-                }.coerceIn(0f, 1f)
-                val targetKGain = (1.0f - str * 1.32f * karaokeCancelCue.pow(0.65f) * karaokeSuppressionBand)
+                    hpssScore * 0.82f * nonPercussive
+                }
+                val karaokeCancelCue = max(kCombHeld, max(hpssCancelCue, formantBedCue)).coerceIn(0f, 1f)
+                val targetKGain = (1.0f - str * 1.40f * karaokeCancelCue.pow(0.58f) * karaokeSuppressionBand)
                     .coerceIn(karaokeFloor, 1.0f)
-                val kAlpha = if (targetKGain < prevKGain[b]) 0.88f else 0.50f
+                val kAlpha = if (targetKGain < prevKGain[b]) 0.92f else 0.42f
                 val kGain = prevKGain[b] + kAlpha * (targetKGain - prevKGain[b])
                 prevKGain[b] = kGain
 

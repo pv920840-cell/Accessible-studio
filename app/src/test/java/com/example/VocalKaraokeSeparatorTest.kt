@@ -729,4 +729,45 @@ class VocalKaraokeSeparatorTest {
         assertTrue("Mono -1 Karaoke should preserve in-between backing 650 Hz ($k650 vs $k520)", k650 > k520 * 2.5)
         assertTrue("Mono -1 Karaoke should preserve sub-bass 85 Hz ($k85 vs $k520)", k85 > k520 * 3.0)
     }
+
+    @Test
+    fun separateMono_balancedCleanKaraokeEliminatesLeadHarmonyAndVibratoWhilePreservingBassAndDrums() {
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        val total = sr * 2
+        val mono = ShortArray(total) { i ->
+            val t = i.toDouble() / sr
+            // Lead vocal F0=240 Hz with realistic +-12 Hz vibrato + 2nd/3rd harmonics
+            val vibratoPhase = 2.0 * PI * 240.0 * t + (12.0 / 5.5) * (1.0 - cos(2.0 * PI * 5.5 * t))
+            val leadVocal = 5500.0 * sin(vibratoPhase) +
+                6000.0 * sin(2.0 * vibratoPhase) +
+                4000.0 * sin(3.0 * vibratoPhase)
+            // 2nd Vocal harmony a major third above (340 / 680 / 1020 Hz)
+            val harmonyVocal = 4000.0 * sin(2.0 * PI * 340.0 * t) +
+                4500.0 * sin(2.0 * PI * 680.0 * t) +
+                3000.0 * sin(2.0 * PI * 1020.0 * t)
+            // Punchy sub-bass 85 Hz + percussive snare-burst hits every 0.5s
+            val subBass = 6500.0 * sin(2.0 * PI * 85.0 * t)
+            val posInBeat = i % (sr / 2)
+            val drumEnv = if (posInBeat < 900) kotlin.math.exp(-posInBeat / 220.0) else 0.0
+            val drumHit = drumEnv * (5000.0 * sin(2.0 * PI * 2800.0 * t) + 4000.0 * sin(2.0 * PI * 4100.0 * t))
+            (leadVocal + harmonyVocal + subBass + drumHit).toInt().coerceIn(-32767, 32767).toShort()
+        }
+
+        val res = VocalKaraokeSeparator.separateMono(
+            samples = mono,
+            quality = VocalKaraokeQuality.BALANCED,
+            sampleRate = sr,
+            studioMasteringPolish = true
+        )
+
+        val inLead480 = goertzelMagnitude(mono, 480.0, sr)
+        val inHarm680 = goertzelMagnitude(mono, 680.0, sr)
+        val kLead480 = goertzelMagnitude(res.karaoke, 480.0, sr)
+        val kHarm680 = goertzelMagnitude(res.karaoke, 680.0, sr)
+        val kBass85 = goertzelMagnitude(res.karaoke, 85.0, sr)
+
+        assertTrue("Balanced Mono Karaoke must deeply eliminate vibrato lead vocal 480 Hz ($kLead480 vs input $inLead480)", kLead480 < inLead480 * 0.14)
+        assertTrue("Balanced Mono Karaoke must eliminate 2nd vocal harmony 680 Hz ($kHarm680 vs input $inHarm680)", kHarm680 < inHarm680 * 0.14)
+        assertTrue("Balanced Mono Karaoke must keep 85 Hz sub-bass strong ($kBass85 vs vocal residue $kLead480)", kBass85 > kLead480 * 5.0)
+    }
 }

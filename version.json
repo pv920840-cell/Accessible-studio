@@ -4,6 +4,6 @@
   "versionName": "1.2.3",
   "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.apk",
   "pageUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/",
-  "apkSizeBytes": 19852873,
-  "releaseNotes": "Save button now saves studio projects directly (including blank and edited projects) without triggering final audio/video export, plus Play Protect HTTPS hardening, GitHub Releases & Automatic Check for Updates in Settings -> About."
+  "apkSizeBytes": 20727275,
+  "releaseNotes": "Studio-grade -1 Vocal Remover & Clean Karaoke engine for both Stereo (L/R balance drift alignment, Mid/Side Wiener coherence, 2D Median HPSS) and Mono (2048-pt 4x-overlap STFT, 2D Median HPSS + Harmonic Comb F0 locking), Save button saves studio projects directly without triggering final export, plus Play Protect HTTPS hardening and Settings -> About updater."
 }

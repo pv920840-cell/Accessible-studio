@@ -648,4 +648,85 @@ class VocalKaraokeSeparatorTest {
 
         playerManager.release()
     }
+
+    @Test
+    fun separateStereo_deepCleanKaraokeNullsVocalsEvenWithLoudStereoBedAndChannelDrift() {
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        val total = sr * 2
+        val left = ShortArray(total)
+        val right = ShortArray(total)
+        for (i in 0 until total) {
+            val t = i.toDouble() / sr
+            val vocal = 8000.0 * sin(2.0 * PI * 620.0 * t) + 4500.0 * sin(2.0 * PI * 1240.0 * t)
+            val bass = 7000.0 * sin(2.0 * PI * 85.0 * t)
+            val stereoL = 5500.0 * sin(2.0 * PI * 1800.0 * t) + 4000.0 * sin(2.0 * PI * 760.0 * t)
+            val stereoR = 5500.0 * sin(2.0 * PI * 2900.0 * t) - 4000.0 * sin(2.0 * PI * 760.0 * t)
+            // Simulate 14% L/R channel gain mismatch common in re-encoded MP3s
+            left[i] = (vocal + bass + stereoL).toInt().coerceIn(-32767, 32767).toShort()
+            right[i] = (0.86 * (vocal + bass) + stereoR).toInt().coerceIn(-32767, 32767).toShort()
+        }
+
+        val res = VocalKaraokeSeparator.separateStereo(
+            left = left,
+            right = right,
+            quality = VocalKaraokeQuality.DEEP_ISOLATION,
+            sampleRate = sr,
+            autoAlignPhase = true,
+            studioMasteringPolish = true
+        )
+        assertTrue(res.usedStereoSeparation)
+
+        val v620 = goertzelMagnitude(res.vocals, 620.0, sr)
+        val v1800 = goertzelMagnitude(res.vocals, 1800.0, sr)
+        val k620 = goertzelMagnitude(res.karaoke, 620.0, sr)
+        val k760 = goertzelMagnitude(res.karaoke, 760.0, sr)
+        val k85 = goertzelMagnitude(res.karaoke, 85.0, sr)
+
+        assertTrue("Clean Vocals should reject stereo music 1800 Hz ($v620 vs $v1800)", v620 > v1800 * 4.0)
+        assertTrue("Clean -1 Karaoke should deeply null 620 Hz vocal ($k620 vs $v620)", k620 < v620 * 0.12)
+        assertTrue("Clean -1 Karaoke should keep stereo backing 760 Hz ($k760 vs $k620)", k760 > k620 * 3.0)
+        assertTrue("Clean -1 Karaoke should keep punchy 85 Hz bass ($k85 vs $k620)", k85 > k620 * 3.0)
+    }
+
+    @Test
+    fun separateMono_harmonicCombRemovesVocalHarmonicsWhileKeepingInBetweenInstrumentsAndBass() {
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        val total = sr * 2
+        val mono = ShortArray(total) { i ->
+            val t = i.toDouble() / sr
+            // Singing voice F0=260 Hz with strong 2nd/3rd/4th harmonics
+            val vocalHarmonics = 5500.0 * sin(2.0 * PI * 260.0 * t) +
+                6000.0 * sin(2.0 * PI * 520.0 * t) +
+                4000.0 * sin(2.0 * PI * 780.0 * t) +
+                3000.0 * sin(2.0 * PI * 1040.0 * t)
+            // Accompaniment frequencies sitting BETWEEN the singer's harmonics + sub-bass
+            val inBetweenMusic = 4800.0 * sin(2.0 * PI * 650.0 * t) + 3800.0 * sin(2.0 * PI * 1950.0 * t)
+            val subBass = 6500.0 * sin(2.0 * PI * 85.0 * t)
+            (vocalHarmonics + inBetweenMusic + subBass).toInt().coerceIn(-32767, 32767).toShort()
+        }
+
+        val res = VocalKaraokeSeparator.separateMono(
+            samples = mono,
+            quality = VocalKaraokeQuality.DEEP_ISOLATION,
+            sampleRate = sr,
+            studioMasteringPolish = true
+        )
+        assertFalse(res.usedStereoSeparation)
+        assertEquals(total, res.vocals.size)
+        assertEquals(total, res.karaoke.size)
+
+        val v520 = goertzelMagnitude(res.vocals, 520.0, sr)
+        val v650 = goertzelMagnitude(res.vocals, 650.0, sr)
+        val v85 = goertzelMagnitude(res.vocals, 85.0, sr)
+
+        val k520 = goertzelMagnitude(res.karaoke, 520.0, sr)
+        val k650 = goertzelMagnitude(res.karaoke, 650.0, sr)
+        val k85 = goertzelMagnitude(res.karaoke, 85.0, sr)
+
+        assertTrue("Mono Vocals should isolate vocal harmonic 520 Hz ($v520) well above in-between music 650 Hz ($v650)", v520 > v650 * 2.2)
+        assertTrue("Mono Vocals should reject sub-bass 85 Hz ($v85 vs $v520)", v85 < v520 * 0.25)
+        assertTrue("Mono -1 Karaoke should deeply suppress vocal harmonic 520 Hz ($k520 vs $v520)", k520 < v520 * 0.18)
+        assertTrue("Mono -1 Karaoke should preserve in-between backing 650 Hz ($k650 vs $k520)", k650 > k520 * 2.5)
+        assertTrue("Mono -1 Karaoke should preserve sub-bass 85 Hz ($k85 vs $k520)", k85 > k520 * 3.0)
+    }
 }

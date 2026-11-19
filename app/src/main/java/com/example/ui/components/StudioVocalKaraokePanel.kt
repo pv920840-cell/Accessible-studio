@@ -299,7 +299,7 @@ fun VocalKaraokeMakerCard(
                 generatedVocals = result.vocals
                 generatedKaraoke = result.karaoke
                 usedStereoEngine = result.usedStereoSeparation
-                val engineNote = if (result.usedStereoSeparation) "Stereo Mid/Side + STFT" else "HPSS Spectral"
+                val engineNote = if (result.usedStereoSeparation) "Stereo Mid/Side + HPSS" else "Mono Harmonic Comb + HPSS"
                 val phaseNote = if (result.phaseCorrected) " • Phase Aligned" else ""
                 val masterNote = if (studioMasteringPolish) " • Studio EQ/Comp" else ""
                 lastStatusMessage = "Extracted Vocals & Karaoke stems ready ($engineNote$phaseNote$masterNote)."

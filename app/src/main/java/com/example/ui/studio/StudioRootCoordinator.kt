@@ -59,6 +59,7 @@ import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
 import com.example.data.StudioProjectStorage
+import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibleExportDialog
 import com.example.ui.screens.ExportedFilesScreen
 import com.example.ui.theme.LocalHighContrast
@@ -92,7 +93,8 @@ fun StudioRootCoordinator(
     onOpenSettings: () -> Unit,
     onOpenHelp: () -> Unit,
     onOpenWhatsNew: () -> Unit,
-    onOpenBatchProcessing: () -> Unit
+    onOpenBatchProcessing: () -> Unit,
+    studioSettings: StudioSettingsState = StudioSettingsState()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -118,6 +120,10 @@ fun StudioRootCoordinator(
 
     LaunchedEffect(Unit) {
         mediaRepository.refreshExports()
+    }
+
+    LaunchedEffect(studioSettings) {
+        recorderManager.applySettings(studioSettings)
     }
 
     val exportedMedia by mediaRepository.exportedFiles.collectAsState()
@@ -635,6 +641,10 @@ fun StudioRootCoordinator(
                                     onOpenHelp = onOpenHelp,
                                     onOpenWhatsNew = onOpenWhatsNew,
                                     onOpenBatchProcessing = onOpenBatchProcessing,
+                                    visualModeEnabled = studioSettings.visualModeEnabled,
+                                    showZoomControls = studioSettings.showZoomControls,
+                                    showWaveformDisplay = studioSettings.showWaveformDisplay,
+                                    recordingSettings = studioSettings,
                                     onSaveAndReturn = { updated ->
                                         try {
                                             activeAudioSession = updated

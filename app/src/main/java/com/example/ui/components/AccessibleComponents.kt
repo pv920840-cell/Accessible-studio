@@ -228,6 +228,9 @@ fun AccessibleAudioWaveform(
     onZoomInAction: (() -> Unit)? = null,
     onZoomOutAction: (() -> Unit)? = null,
     onZoomFitAction: (() -> Unit)? = null,
+    visualModeEnabled: Boolean = true,
+    showWaveformDisplay: Boolean = true,
+    showZoomControls: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
@@ -317,37 +320,40 @@ fun AccessibleAudioWaveform(
     val inactiveColor = if (isHighContrast) Color(0xFF333333) else MaterialTheme.colorScheme.surfaceVariant
     val baselineColor = (if (isHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant).copy(alpha = 0.45f)
 
+    val canRenderWaveform = visualModeEnabled && showWaveformDisplay
+
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(140.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface)
-                .border(
-                    if (isHighContrast) 2.dp else 1.dp,
-                    if (isHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant,
-                    RoundedCornerShape(14.dp)
-                )
-                .testTag("audio_waveform_view")
-                .semantics {
-                    contentDescription = "Interactive audio ${visualMode.displayName}. Playhead at ${AccessibilityHelper.formatTimeSpoken(currentMs)}. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}. View window ${WaveformViewportMath.formatWindowLabel(windowSpanMs, safeDuration)}, amplitude scale ${"%.1f".format(activeVerticalZoom)}x."
-                }
-                .pointerInput(windowStartMs, windowSpanMs) {
-                    detectTapGestures { offset ->
-                        val fraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        val targetMs = windowStartMs + (fraction * windowSpanMs).toLong()
-                        onSeek(targetMs.coerceIn(0L, safeDuration))
+        if (canRenderWaveform) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(140.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface)
+                    .border(
+                        if (isHighContrast) 2.dp else 1.dp,
+                        if (isHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant,
+                        RoundedCornerShape(14.dp)
+                    )
+                    .testTag("audio_waveform_view")
+                    .semantics {
+                        contentDescription = "Interactive audio ${visualMode.displayName}. Playhead at ${AccessibilityHelper.formatTimeSpoken(currentMs)}. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}. View window ${WaveformViewportMath.formatWindowLabel(windowSpanMs, safeDuration)}, amplitude scale ${"%.1f".format(activeVerticalZoom)}x."
                     }
-                }
-                .pointerInput(windowStartMs, windowSpanMs) {
-                    detectHorizontalDragGestures { change, _ ->
-                        val fraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        val targetMs = windowStartMs + (fraction * windowSpanMs).toLong()
-                        onSeek(targetMs.coerceIn(0L, safeDuration))
+                    .pointerInput(windowStartMs, windowSpanMs) {
+                        detectTapGestures { offset ->
+                            val fraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
+                            val targetMs = windowStartMs + (fraction * windowSpanMs).toLong()
+                            onSeek(targetMs.coerceIn(0L, safeDuration))
+                        }
                     }
-                }
-        ) {
+                    .pointerInput(windowStartMs, windowSpanMs) {
+                        detectHorizontalDragGestures { change, _ ->
+                            val fraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
+                            val targetMs = windowStartMs + (fraction * windowSpanMs).toLong()
+                            onSeek(targetMs.coerceIn(0L, safeDuration))
+                        }
+                    }
+            ) {
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
@@ -436,69 +442,102 @@ fun AccessibleAudioWaveform(
                     )
                 }
             }
+            }
+        } else {
+            val hiddenReason = if (!visualModeEnabled) {
+                "Visual Mode is Off — audio-first accessible controls active."
+            } else {
+                "Waveform Display is hidden in Settings."
+            }
+            Surface(
+                color = if (isHighContrast) Color(0xFF121212) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, if (isHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("audio_visual_hidden_notice")
+                    .semantics {
+                        contentDescription = "$hiddenReason Playhead at ${AccessibilityHelper.formatTimeSpoken(currentMs)}. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}."
+                    }
+            ) {
+                Text(
+                    text = hiddenReason,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                )
+            }
         }
 
         // View / Zoom / Visual Controls
-        @OptIn(ExperimentalLayoutApi::class)
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Surface(
-                color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(8.dp),
-                border = if (isHighContrast) BorderStroke(1.dp, Color.White) else null
-            ) {
-                val winText = WaveformViewportMath.formatWindowLabel(windowSpanMs, safeDuration)
-                Text(
-                    text = "Win:$winText (${"%.1f".format(activeZoom)}x)  •  V:${"%.1f".format(activeVerticalZoom)}x  •  ${visualMode.displayName}",
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
-                )
-            }
-
+        if (canRenderWaveform || showZoomControls) {
+            @OptIn(ExperimentalLayoutApi::class)
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                OutlinedButton(
-                    onClick = { onZoomInAction?.invoke() ?: updateFallbackZoom(activeZoom * 2f) },
-                    modifier = Modifier.height(48.dp).testTag("btn_zoom_in")
-                        .semantics { contentDescription = "Zoom In waveform view horizontally" },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                ) { Text("Zoom +", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                Surface(
+                    color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    border = if (isHighContrast) BorderStroke(1.dp, Color.White) else null
+                ) {
+                    val winText = WaveformViewportMath.formatWindowLabel(windowSpanMs, safeDuration)
+                    val modeSuffix = if (canRenderWaveform) "  •  ${visualMode.displayName}" else "  •  Audio-First"
+                    Text(
+                        text = "Win:$winText (${"%.1f".format(activeZoom)}x)  •  V:${"%.1f".format(activeVerticalZoom)}x$modeSuffix",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                    )
+                }
 
-                OutlinedButton(
-                    onClick = { onZoomOutAction?.invoke() ?: updateFallbackZoom(activeZoom / 2f) },
-                    modifier = Modifier.height(48.dp).testTag("btn_zoom_out")
-                        .semantics { contentDescription = "Zoom Out waveform view horizontally" },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                ) { Text("Zoom -", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                if (showZoomControls || (canRenderWaveform && onToggleVisualMode != null)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (showZoomControls) {
+                            OutlinedButton(
+                                onClick = { onZoomInAction?.invoke() ?: updateFallbackZoom(activeZoom * 2f) },
+                                modifier = Modifier.height(48.dp).testTag("btn_zoom_in")
+                                    .semantics { contentDescription = "Zoom In waveform view horizontally" },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                            ) { Text("Zoom +", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
 
-                OutlinedButton(
-                    onClick = {
-                        if (onZoomFitAction != null) {
-                            onZoomFitAction()
-                        } else {
-                            updateFallbackZoom(1.0f)
-                            updateVerticalZoom(1.0f)
+                            OutlinedButton(
+                                onClick = { onZoomOutAction?.invoke() ?: updateFallbackZoom(activeZoom / 2f) },
+                                modifier = Modifier.height(48.dp).testTag("btn_zoom_out")
+                                    .semantics { contentDescription = "Zoom Out waveform view horizontally" },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                            ) { Text("Zoom -", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (onZoomFitAction != null) {
+                                        onZoomFitAction()
+                                    } else {
+                                        updateFallbackZoom(1.0f)
+                                        updateVerticalZoom(1.0f)
+                                    }
+                                },
+                                modifier = Modifier.height(48.dp).testTag("btn_zoom_full")
+                                    .semantics { contentDescription = "Fit All. Resets horizontal and vertical zoom" },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                            ) { Text("Fit", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
                         }
-                    },
-                    modifier = Modifier.height(48.dp).testTag("btn_zoom_full")
-                        .semantics { contentDescription = "Fit All. Resets horizontal and vertical zoom" },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                ) { Text("Fit", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
 
-                if (onToggleVisualMode != null) {
-                    OutlinedButton(
-                        onClick = onToggleVisualMode,
-                        modifier = Modifier.height(48.dp).testTag("btn_visual_mode")
-                            .semantics { contentDescription = "Visual mode: ${visualMode.displayName}. Tap to switch." },
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
-                    ) { Text(visualMode.displayName, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                        if (canRenderWaveform && onToggleVisualMode != null) {
+                            OutlinedButton(
+                                onClick = onToggleVisualMode,
+                                modifier = Modifier.height(48.dp).testTag("btn_visual_mode")
+                                    .semantics { contentDescription = "Visual mode: ${visualMode.displayName}. Tap to switch." },
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+                            ) { Text(visualMode.displayName, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
+                        }
+                    }
                 }
             }
         }

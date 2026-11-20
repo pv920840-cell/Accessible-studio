@@ -121,6 +121,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val savedPrefs = remember { StudioPreferences.loadSettings(applicationContext) }
             val publishConfig = remember { AppUpdateChecker.loadPublishConfig(applicationContext) }
+            var studioSettings by remember { mutableStateOf(savedPrefs) }
             var isHighContrast by remember { mutableStateOf(savedPrefs.isHighContrast) }
             var isHapticsEnabled by remember { mutableStateOf(savedPrefs.isHapticsEnabled) }
             var defaultExportFormat by remember { mutableStateOf(savedPrefs.defaultExportFormat) }
@@ -142,6 +143,23 @@ class MainActivity : ComponentActivity() {
 
             val activityContext = this@MainActivity
             val appCoroutineScope = rememberCoroutineScope()
+
+            fun persistAndApplySettings(updated: StudioSettingsState) {
+                val normalized = updated.copy(
+                    defaultExportFormat = StudioPreferences.normalizeExportFormat(updated.defaultExportFormat),
+                    updateProvider = StudioPreferences.normalizeUpdateProvider(updated.updateProvider),
+                    recordingSampleRateHz = StudioPreferences.normalizeSampleRateHz(updated.recordingSampleRateHz),
+                    recordingBitrateKbps = StudioPreferences.normalizeBitrateKbps(updated.recordingBitrateKbps),
+                    recordingInputGain = StudioPreferences.normalizeInputGain(updated.recordingInputGain)
+                )
+                studioSettings = normalized
+                isHighContrast = normalized.isHighContrast
+                isHapticsEnabled = normalized.isHapticsEnabled
+                defaultExportFormat = normalized.defaultExportFormat
+                autoCheckUpdates = normalized.autoCheckUpdates
+                updateProvider = normalized.updateProvider
+                StudioPreferences.saveSettings(applicationContext, normalized)
+            }
 
             fun runUpdateCheck(
                 isAutomatic: Boolean,
@@ -230,20 +248,9 @@ class MainActivity : ComponentActivity() {
                     hapticsEnabled = isHapticsEnabled,
                     defaultExportFormat = defaultExportFormat,
                     followCursor = followCursor,
+                    studioSettings = studioSettings,
                     onToggleHighContrast = {
-                        isHighContrast = !isHighContrast
-                        StudioPreferences.saveSettings(
-                            applicationContext,
-                            StudioSettingsState(
-                                isHighContrast = isHighContrast,
-                                isHapticsEnabled = isHapticsEnabled,
-                                defaultExportFormat = defaultExportFormat,
-                                autoCheckUpdates = autoCheckUpdates,
-                                updateProvider = updateProvider,
-                                githubOwner = githubOwner,
-                                githubRepo = githubRepo
-                            )
-                        )
+                        persistAndApplySettings(studioSettings.copy(isHighContrast = !isHighContrast))
                         if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.DOUBLE_CLICK)
                         AccessibilityHelper.announceForAccessibility(
                             activityContext,
@@ -281,8 +288,19 @@ class MainActivity : ComponentActivity() {
                         updateProvider = updateProvider,
                         githubOwner = githubOwner,
                         githubRepo = githubRepo,
+                        currentSettings = studioSettings,
+                        onImmediateSettingsUpdate = { updated ->
+                            persistAndApplySettings(updated)
+                            if (updated.isHapticsEnabled) {
+                                AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            }
+                        },
+                        onSaveFullSettings = { finalSettings ->
+                            persistAndApplySettings(finalSettings)
+                        },
                         onToggleAutoCheckUpdates = { enabled ->
                             autoCheckUpdates = enabled
+                            studioSettings = studioSettings.copy(autoCheckUpdates = enabled)
                             StudioPreferences.setAutoCheckUpdatesEnabled(applicationContext, enabled)
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
                             AccessibilityHelper.announceForAccessibility(
@@ -301,6 +319,11 @@ class MainActivity : ComponentActivity() {
                             updateProvider = cleanProvider
                             githubOwner = cleanOwner
                             githubRepo = cleanRepo
+                            studioSettings = studioSettings.copy(
+                                updateProvider = cleanProvider,
+                                githubOwner = cleanOwner,
+                                githubRepo = cleanRepo
+                            )
                             StudioPreferences.saveGitHubUpdateSource(
                                 applicationContext,
                                 cleanProvider,
@@ -326,12 +349,8 @@ class MainActivity : ComponentActivity() {
                         },
                         onSaveSettings = { newHighContrast, newHaptics, newExportFormat ->
                             val cleanFormat = StudioPreferences.normalizeExportFormat(newExportFormat)
-                            isHighContrast = newHighContrast
-                            isHapticsEnabled = newHaptics
-                            defaultExportFormat = cleanFormat
-                            StudioPreferences.saveSettings(
-                                applicationContext,
-                                StudioSettingsState(
+                            persistAndApplySettings(
+                                studioSettings.copy(
                                     isHighContrast = newHighContrast,
                                     isHapticsEnabled = newHaptics,
                                     defaultExportFormat = cleanFormat,

@@ -62,7 +62,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.audio.AndroidRecordingCapabilityProbe
+import com.example.audio.RecordingCapabilityProbe
 import com.example.data.StudioPreferences
+import com.example.data.StudioSettingsState
 import com.example.ui.theme.LocalHighContrast
 import com.example.update.AppUpdateChecker
 import com.example.update.UpdateCheckState
@@ -408,8 +411,32 @@ fun AccessibilitySettingsSheet(
     onSaveGitHubSource: ((provider: String, owner: String, repo: String) -> Unit)? = null,
     onCheckForUpdates: (() -> Unit)? = null,
     onDownloadUpdate: ((String) -> Unit)? = null,
+    currentSettings: StudioSettingsState? = null,
+    recordingCapabilityProbe: RecordingCapabilityProbe = AndroidRecordingCapabilityProbe,
+    onImmediateSettingsUpdate: ((StudioSettingsState) -> Unit)? = null,
+    onSaveFullSettings: ((StudioSettingsState) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
+    val initialState = remember(
+        currentSettings,
+        isHighContrast,
+        isHapticsEnabled,
+        defaultExportFormat,
+        autoCheckUpdates,
+        updateProvider,
+        githubOwner,
+        githubRepo
+    ) {
+        (currentSettings ?: StudioSettingsState()).copy(
+            isHighContrast = isHighContrast,
+            isHapticsEnabled = isHapticsEnabled,
+            defaultExportFormat = defaultExportFormat,
+            autoCheckUpdates = autoCheckUpdates,
+            updateProvider = updateProvider,
+            githubOwner = githubOwner,
+            githubRepo = githubRepo
+        )
+    }
     var draftHighContrast by remember(isHighContrast) { mutableStateOf(isHighContrast) }
     var draftHapticsEnabled by remember(isHapticsEnabled) { mutableStateOf(isHapticsEnabled) }
     var draftExportFormat by remember(defaultExportFormat) { mutableStateOf(defaultExportFormat) }
@@ -417,6 +444,27 @@ fun AccessibilitySettingsSheet(
     var draftUpdateProvider by remember(updateProvider) { mutableStateOf(updateProvider) }
     var draftGithubOwner by remember(githubOwner) { mutableStateOf(githubOwner) }
     var draftGithubRepo by remember(githubRepo) { mutableStateOf(githubRepo) }
+    var draftStudioSettings by remember(initialState) { mutableStateOf(initialState) }
+
+    fun currentMergedSettings(): StudioSettingsState {
+        return draftStudioSettings.copy(
+            isHighContrast = draftHighContrast,
+            isHapticsEnabled = draftHapticsEnabled,
+            defaultExportFormat = draftExportFormat,
+            autoCheckUpdates = draftAutoCheckUpdates,
+            updateProvider = draftUpdateProvider,
+            githubOwner = draftGithubOwner,
+            githubRepo = draftGithubRepo
+        )
+    }
+
+    fun applyImmediateChange(updated: StudioSettingsState) {
+        draftStudioSettings = updated
+        draftHighContrast = updated.isHighContrast
+        draftHapticsEnabled = updated.isHapticsEnabled
+        draftExportFormat = updated.defaultExportFormat
+        onImmediateSettingsUpdate?.invoke(updated)
+    }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -646,9 +694,41 @@ fun AccessibilitySettingsSheet(
                 }
             }
 
+            // 4. Display & Visual Controls Section
+            DisplayVisualControlsCard(
+                isHighContrast = draftHighContrast,
+                visualModeEnabled = draftStudioSettings.visualModeEnabled,
+                showZoomControls = draftStudioSettings.showZoomControls,
+                showWaveformDisplay = draftStudioSettings.showWaveformDisplay,
+                onVisualModeChange = { enabled ->
+                    applyImmediateChange(currentMergedSettings().copy(visualModeEnabled = enabled))
+                },
+                onZoomControlsChange = { enabled ->
+                    applyImmediateChange(currentMergedSettings().copy(showZoomControls = enabled))
+                },
+                onWaveformDisplayChange = { enabled ->
+                    applyImmediateChange(currentMergedSettings().copy(showWaveformDisplay = enabled))
+                }
+            )
+
+            // 5. Recording Settings Section
+            RecordingSettingsCard(
+                settings = currentMergedSettings(),
+                isHighContrast = draftHighContrast,
+                capabilityProbe = recordingCapabilityProbe,
+                onUpdateSettings = { updated ->
+                    applyImmediateChange(updated)
+                },
+                onResetRecordingDefaults = {
+                    applyImmediateChange(currentMergedSettings().withResetRecordingDefaults())
+                }
+            )
+
             // Primary Save All Settings Button
             Button(
                 onClick = {
+                    val finalSettings = currentMergedSettings()
+                    onSaveFullSettings?.invoke(finalSettings)
                     onSaveSettings(draftHighContrast, draftHapticsEnabled, draftExportFormat)
                 },
                 modifier = Modifier
@@ -656,7 +736,7 @@ fun AccessibilitySettingsSheet(
                     .height(52.dp)
                     .testTag("btn_save_settings")
                     .semantics {
-                        contentDescription = "Save all settings. Export format $draftExportFormat, High contrast ${if (draftHighContrast) "On" else "Off"}, Haptics ${if (draftHapticsEnabled) "On" else "Off"}"
+                        contentDescription = "Save all settings. Export format $draftExportFormat, High contrast ${if (draftHighContrast) "On" else "Off"}, Haptics ${if (draftHapticsEnabled) "On" else "Off"}, Visual mode ${if (draftStudioSettings.visualModeEnabled) "On" else "Off"}"
                     },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (draftHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,

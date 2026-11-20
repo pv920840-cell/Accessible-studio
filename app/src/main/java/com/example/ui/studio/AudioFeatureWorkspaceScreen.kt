@@ -88,6 +88,8 @@ import com.example.audio.VocalIsolationPreset
 import com.example.audio.VocalIsolationProcessor
 import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
+import com.example.data.StudioPreferences
+import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibleAudioWaveform
 import com.example.ui.components.AccessibleEffectSlider
 import com.example.ui.components.AccessibleTimeReadout
@@ -124,6 +126,10 @@ fun AudioFeatureWorkspaceScreen(
     onOpenBatchProcessing: () -> Unit,
     onSaveAndReturn: (AudioProjectSessionState) -> Unit,
     onCancelBack: () -> Unit,
+    visualModeEnabled: Boolean = true,
+    showZoomControls: Boolean = true,
+    showWaveformDisplay: Boolean = true,
+    recordingSettings: StudioSettingsState? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -321,6 +327,10 @@ fun AudioFeatureWorkspaceScreen(
                     hasPendingTrimRange = trimStartMs > 0L || (trimEndMs in 1L until durMs)
                     if (hasPendingTrimRange) localModified = true
                 },
+                visualModeEnabled = visualModeEnabled,
+                showZoomControls = showZoomControls,
+                showWaveformDisplay = showWaveformDisplay,
+                recordingSettings = recordingSettings,
                 modifier = Modifier.weight(1f)
             )
         }
@@ -407,6 +417,9 @@ fun AudioFeatureWorkspaceScreen(
                         trimStartMs = trimStartMs,
                         trimEndMs = trimEndMs,
                         samples = workingPcm,
+                        visualModeEnabled = visualModeEnabled,
+                        showWaveformDisplay = showWaveformDisplay,
+                        showZoomControls = showZoomControls,
                         onSeek = { playerManager.seekTo(it) }
                     )
                     AccessibleTrimSection(
@@ -787,11 +800,21 @@ fun AudioFeatureWorkspaceScreen(
                     val isRecording by recorderManager.isRecording.collectAsState()
                     val recDurMs by recorderManager.recordedDurationMs.collectAsState()
                     val recAmp by recorderManager.amplitude.collectAsState()
-                    var autoGain by remember { mutableStateOf(true) }
+                    val resolvedRecConfig by recorderManager.resolvedConfig.collectAsState()
+                    var autoGain by remember {
+                        mutableStateOf(recordingSettings?.recordingAutoGainEnabled ?: recorderManager.autoGainEnabled)
+                    }
+                    LaunchedEffect(recordingSettings) {
+                        if (recordingSettings != null) {
+                            recorderManager.applySettings(recordingSettings)
+                            autoGain = recordingSettings.recordingAutoGainEnabled
+                        }
+                    }
 
                     val micPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
                         if (granted) {
                             recorderManager.autoGainEnabled = autoGain
+                            recordingSettings?.let { recorderManager.applySettings(it.copy(recordingAutoGainEnabled = autoGain)) }
                             recorderManager.startRecording(onSuccess = {}, onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() })
                         } else {
                             Toast.makeText(context, "Microphone permission required.", Toast.LENGTH_SHORT).show()
@@ -804,6 +827,12 @@ fun AudioFeatureWorkspaceScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Voice Recording Studio", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                            Text(
+                                text = "Active Profile: ${resolvedRecConfig.summaryLabel()} • Input Gain ${(recorderManager.micGainVolume * 100).toInt()}%",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.testTag("txt_workspace_rec_profile")
+                            )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,

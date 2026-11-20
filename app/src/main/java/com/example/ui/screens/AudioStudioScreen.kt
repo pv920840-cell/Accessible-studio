@@ -89,6 +89,7 @@ import com.example.audio.VocalIsolationProcessor
 import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
+import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibleAudioWaveform
 import com.example.ui.components.AccessibleEffectSlider
 import com.example.ui.components.AccessibleExportDialog
@@ -146,6 +147,10 @@ fun AudioStudioScreen(
     initialTrimEndMs: Long? = null,
     onSyncToProjectHub: ((String, String?, ShortArray, Int) -> Unit)? = null,
     onSyncTrimToProjectHub: ((Long, Long) -> Unit)? = null,
+    visualModeEnabled: Boolean = true,
+    showZoomControls: Boolean = true,
+    showWaveformDisplay: Boolean = true,
+    recordingSettings: StudioSettingsState? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -340,9 +345,17 @@ fun AudioStudioScreen(
     var showMicAdvancedSettings by remember { mutableStateOf(false) }
     var recordSelectionMode by remember { mutableStateOf(false) }
     var recentOpenedTitles by remember { mutableStateOf(listOf<String>()) }
-    var micVolume by remember { mutableFloatStateOf(1.0f) }
-    var micAutoGain by remember { mutableStateOf(true) }
+    var micVolume by remember { mutableFloatStateOf(recordingSettings?.recordingInputGain ?: 1.0f) }
+    var micAutoGain by remember { mutableStateOf(recordingSettings?.recordingAutoGainEnabled ?: true) }
     var micBufferSize by remember { mutableIntStateOf(2048) }
+    val resolvedRecConfig by recorderManager.resolvedConfig.collectAsState()
+    LaunchedEffect(recordingSettings) {
+        if (recordingSettings != null) {
+            recorderManager.applySettings(recordingSettings)
+            micVolume = StudioPreferences.normalizeInputGain(recordingSettings.recordingInputGain)
+            micAutoGain = recordingSettings.recordingAutoGainEnabled
+        }
+    }
     val micAmplitude by recorderManager.amplitude.collectAsState()
     val isTooLoud by recorderManager.isTooLoudWarning.collectAsState()
     val isRecording by recorderManager.isRecording.collectAsState()
@@ -1459,6 +1472,9 @@ fun AudioStudioScreen(
             windowSpanMsOverride = viewWindowSpanMs,
             verticalZoom = verticalZoom,
             followCursor = followCursor,
+            visualModeEnabled = visualModeEnabled,
+            showWaveformDisplay = showWaveformDisplay,
+            showZoomControls = showZoomControls,
             onVerticalZoomChange = { verticalZoom = it },
             onZoomInAction = {
                 val resolved = WaveformViewportMath.resolveWindow(durationMs, viewWindowStartMs, viewWindowSpanMs, currentPositionMs, followCursor)
@@ -1746,6 +1762,13 @@ fun AudioStudioScreen(
                                 modifier = Modifier.testTag("switch_mic_auto_gain")
                             )
                         }
+
+                        Text(
+                            text = "Profile: ${resolvedRecConfig.summaryLabel()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("txt_mic_resolved_profile")
+                        )
 
                         AnimatedVisibility(visible = showMicAdvancedSettings) {
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

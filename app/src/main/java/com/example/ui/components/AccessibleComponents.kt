@@ -58,6 +58,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -75,38 +76,54 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.accessibility.AccessibilityHelper
 import com.example.accessibility.VibrationType
+import com.example.data.StudioPreferences
 import com.example.ui.components.AudioVisualMode
 import com.example.ui.theme.LocalHighContrast
+import kotlinx.coroutines.flow.StateFlow
+import java.util.Locale
 
 @Composable
 fun AccessibleTimeReadout(
     currentMs: Long,
     durationMs: Long,
     label: String = "Current Playhead",
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isPlaying: Boolean = false,
+    positionFlow: StateFlow<Long>? = null
 ) {
     val isHighContrast = LocalHighContrast.current
-    val spokenCurrent = remember(currentMs) { AccessibilityHelper.formatTimeSpoken(currentMs) }
+    val livePosMs = if (positionFlow != null) positionFlow.collectAsState().value else currentMs
     val spokenTotal = remember(durationMs) { AccessibilityHelper.formatTimeSpoken(durationMs) }
+
+    val cardSemantics = if (isPlaying) {
+        Modifier.clearAndSetSemantics {
+            contentDescription = "$label, playing, total $spokenTotal"
+        }
+    } else {
+        val spokenCurrent = AccessibilityHelper.formatTimeSpoken(livePosMs)
+        Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$label: $spokenCurrent of total $spokenTotal"
+        }
+    }
 
     Card(
         modifier = modifier
             .fillMaxWidth()
             .testTag("time_readout_card")
-            .semantics(mergeDescendants = true) {
-                contentDescription = "$label: $spokenCurrent of total $spokenTotal"
-            },
+            .then(cardSemantics),
         colors = CardDefaults.cardColors(
             containerColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surfaceVariant
         ),
@@ -132,7 +149,7 @@ fun AccessibleTimeReadout(
                     letterSpacing = 1.sp
                 )
                 Text(
-                    text = AccessibilityHelper.formatTimeVisual(currentMs),
+                    text = AccessibilityHelper.formatTimeVisual(livePosMs),
                     style = MaterialTheme.typography.headlineMedium,
                     color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Black
@@ -231,9 +248,12 @@ fun AccessibleAudioWaveform(
     visualModeEnabled: Boolean = true,
     showWaveformDisplay: Boolean = true,
     showZoomControls: Boolean = true,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isPlaying: Boolean = false,
+    positionFlow: StateFlow<Long>? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    val livePosMs = if (positionFlow != null) positionFlow.collectAsState().value else currentMs
     val safeDuration = durationMs.coerceAtLeast(100L)
     val numBars = 64
     var internalZoom by remember { mutableFloatStateOf(1.0f) }
@@ -251,16 +271,16 @@ fun AccessibleAudioWaveform(
             durationMs = safeDuration,
             viewStartMs = windowStartMsOverride ?: 0L,
             viewSpanMs = windowSpanMsOverride,
-            currentMs = currentMs,
+            currentMs = livePosMs,
             followCursor = followCursor
         )
     } else {
         val span = (safeDuration.toDouble() / fallbackZoom.toDouble()).toLong().coerceAtLeast(50L)
         WaveformViewportMath.resolveWindow(
             durationMs = safeDuration,
-            viewStartMs = (currentMs - span / 2L).coerceAtLeast(0L),
+            viewStartMs = (livePosMs - span / 2L).coerceAtLeast(0L),
             viewSpanMs = if (fallbackZoom <= 1.01f) null else span,
-            currentMs = currentMs,
+            currentMs = livePosMs,
             followCursor = followCursor
         )
     }
@@ -337,7 +357,11 @@ fun AccessibleAudioWaveform(
                     )
                     .testTag("audio_waveform_view")
                     .semantics {
-                        contentDescription = "Interactive audio ${visualMode.displayName}. Playhead at ${AccessibilityHelper.formatTimeSpoken(currentMs)}. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}. View window ${WaveformViewportMath.formatWindowLabel(windowSpanMs, safeDuration)}, amplitude scale ${"%.1f".format(activeVerticalZoom)}x."
+                        contentDescription = if (isPlaying) {
+                            "Interactive audio ${visualMode.displayName}, playing. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}. View window ${WaveformViewportMath.formatWindowLabel(windowSpanMs, safeDuration)}, amplitude scale ${"%.1f".format(Locale.US, activeVerticalZoom)}x."
+                        } else {
+                            "Interactive audio ${visualMode.displayName}. Playhead at ${AccessibilityHelper.formatTimeSpoken(livePosMs)}. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}. View window ${WaveformViewportMath.formatWindowLabel(windowSpanMs, safeDuration)}, amplitude scale ${"%.1f".format(Locale.US, activeVerticalZoom)}x."
+                        }
                     }
                     .pointerInput(windowStartMs, windowSpanMs) {
                         detectTapGestures { offset ->
@@ -431,8 +455,8 @@ fun AccessibleAudioWaveform(
                 }
 
                 // Draw current playhead indicator only when inside visible window
-                if (currentMs in windowStartMs..windowEndMs) {
-                    val playheadRatio = ((currentMs - windowStartMs).toFloat() / span).coerceIn(0f, 1f)
+                if (livePosMs in windowStartMs..windowEndMs) {
+                    val playheadRatio = ((livePosMs - windowStartMs).toFloat() / span).coerceIn(0f, 1f)
                     val playheadX = playheadRatio * w
                     drawLine(
                         color = if (isHighContrast) Color(0xFF00FF66) else Color(0xFFE53935),
@@ -457,7 +481,11 @@ fun AccessibleAudioWaveform(
                     .fillMaxWidth()
                     .testTag("audio_visual_hidden_notice")
                     .semantics {
-                        contentDescription = "$hiddenReason Playhead at ${AccessibilityHelper.formatTimeSpoken(currentMs)}. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}."
+                        contentDescription = if (isPlaying) {
+                            "$hiddenReason Playing. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}."
+                        } else {
+                            "$hiddenReason Playhead at ${AccessibilityHelper.formatTimeSpoken(livePosMs)}. Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}."
+                        }
                     }
             ) {
                 Text(
@@ -595,9 +623,9 @@ fun AccessibleTransportControls(
                 ) {
                     Text(
                         text = if (activeScrubDirection == ScrubDirection.REWIND) {
-                            "<< REWINDING IN REVERSE (-${"%.1f".format(scrubSpeed)}x) • Playing Live"
+                            "<< REWINDING IN REVERSE (-${"%.1f".format(Locale.US, scrubSpeed)}x) • Playing Live"
                         } else {
-                            "FAST FORWARDING (+${"%.1f".format(scrubSpeed)}x) >> • Playing Live"
+                            "FAST FORWARDING (+${"%.1f".format(Locale.US, scrubSpeed)}x) >> • Playing Live"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Black,
@@ -620,12 +648,13 @@ fun AccessibleTransportControls(
                 testTag = "btn_jump_start"
             )
 
+            val speedLabel = StudioPreferences.formatScrubSpeedLabel(scrubSpeed)
             NudgeButton(
                 label = if (activeScrubDirection == ScrubDirection.REWIND) "<< -${selectedJumpIntervalSec}s" else "-${selectedJumpIntervalSec}s",
                 spokenDesc = if (activeScrubDirection == ScrubDirection.REWIND) {
-                    "Rewinding in reverse. Press again to return to normal playback."
+                    "Rewinding in reverse at $speedLabel speed. Press again to return to normal playback."
                 } else {
-                    "Rewind. Press once for continuous audible reverse rewind, press again for normal playback."
+                    "Rewind at $speedLabel speed. Press once for continuous audible reverse rewind, press again for normal playback."
                 },
                 onClick = {
                     if (selectedJumpIntervalSec == 5 && onRewind5s != null) {
@@ -688,12 +717,13 @@ fun AccessibleTransportControls(
                 }
             }
 
+            val fwdSpeedLabel = StudioPreferences.formatScrubSpeedLabel(scrubSpeed)
             NudgeButton(
                 label = if (activeScrubDirection == ScrubDirection.FORWARD) "+${selectedJumpIntervalSec}s >>" else "+${selectedJumpIntervalSec}s",
                 spokenDesc = if (activeScrubDirection == ScrubDirection.FORWARD) {
-                    "Fast forwarding. Press again to return to normal playback."
+                    "Fast forwarding at $fwdSpeedLabel speed. Press again to return to normal playback."
                 } else {
-                    "Forward. Press once for continuous audible fast forward, press again for normal playback."
+                    "Forward at $fwdSpeedLabel speed. Press once for continuous audible fast forward, press again for normal playback."
                 },
                 onClick = {
                     if (selectedJumpIntervalSec == 5 && onForward5s != null) {
@@ -824,19 +854,64 @@ fun AccessibleTransportControls(
                 modifier = Modifier.align(Alignment.CenterVertically).padding(end = 2.dp)
             )
             listOf(1, 5, 10, 30).forEach { sec ->
+                val selected = selectedJumpIntervalSec == sec
                 FilterChip(
-                    selected = selectedJumpIntervalSec == sec,
+                    selected = selected,
                     onClick = { selectedJumpIntervalSec = sec },
                     label = { Text("${sec}s", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                     modifier = Modifier
                         .padding(horizontal = 2.dp)
-                        .height(34.dp)
-                        .testTag("chip_seek_interval_${sec}s"),
+                        .heightIn(min = 48.dp)
+                        .testTag("chip_seek_interval_${sec}s")
+                        .semantics {
+                            stateDescription = if (selected) "Selected" else "Not selected"
+                            contentDescription = "Jump step $sec seconds"
+                        },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primaryContainer,
                         selectedLabelColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 )
+            }
+        }
+
+        // Rewind & Fast-Forward Scrub Speed Selector
+        if (onChangeScrubSpeed != null) {
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("row_scrub_speed_selector"),
+                horizontalArrangement = Arrangement.Center,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    "REW/FF Speed: ",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.CenterVertically).padding(end = 2.dp)
+                )
+                StudioPreferences.SUPPORTED_SCRUB_SPEED_OPTIONS.forEach { spd ->
+                    val selected = kotlin.math.abs(scrubSpeed - spd) < 0.1f
+                    val label = StudioPreferences.formatScrubSpeedLabel(spd)
+                    FilterChip(
+                        selected = selected,
+                        onClick = { onChangeScrubSpeed(spd) },
+                        label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        modifier = Modifier
+                            .padding(horizontal = 2.dp)
+                            .heightIn(min = 48.dp)
+                            .testTag("chip_scrub_speed_$label")
+                            .semantics {
+                                stateDescription = if (selected) "Selected" else "Not selected"
+                                contentDescription = "Rewind and fast forward speed $label"
+                            },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.secondaryContainer,
+                            selectedLabelColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    )
+                }
             }
         }
     }
@@ -950,7 +1025,8 @@ fun AccessibleTrimSection(
     onFineTuneStart: (Long) -> Unit,
     onFineTuneEnd: (Long) -> Unit,
     onPreviewTrim: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPositionMsProvider: (() -> Long)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
     val trimmedDuration = (trimEndMs - trimStartMs).coerceAtLeast(0L)
@@ -1014,13 +1090,13 @@ fun AccessibleTrimSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { onSetTrimStart(currentMs) },
+                    onClick = { onSetTrimStart(currentPositionMsProvider?.invoke() ?: currentMs) },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                         .testTag("btn_set_trim_start")
                         .semantics {
-                            contentDescription = "Set Trim Start Marker to current position ${AccessibilityHelper.formatTimeSpoken(currentMs)}"
+                            contentDescription = "Set Trim Start Marker to playhead. Currently ${AccessibilityHelper.formatTimeSpoken(trimStartMs)}"
                         },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -1046,13 +1122,13 @@ fun AccessibleTrimSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { onSetTrimEnd(currentMs) },
+                    onClick = { onSetTrimEnd(currentPositionMsProvider?.invoke() ?: currentMs) },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                         .testTag("btn_set_trim_end")
                         .semantics {
-                            contentDescription = "Set Trim End Marker to current position ${AccessibilityHelper.formatTimeSpoken(currentMs)}"
+                            contentDescription = "Set Trim End Marker to playhead. Currently ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}"
                         },
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(

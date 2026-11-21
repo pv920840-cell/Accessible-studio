@@ -329,15 +329,15 @@
     <div class="card">
         <div class="icon">🎙️ 🎬</div>
         <h1>Accessible Studio</h1>
-        <div class="badge">Android APK • v1.2.3 Offline • Accessible Studio</div>
+        <div class="badge">Android APK • v1.2.4 Offline • Accessible Studio</div>
         <p class="subtitle">
-            Accessible Audio &amp; Video Studio (Version 1.2.3) — Vocal Extractor &amp; Karaoke Maker, Auto Gain, Voice Over Music + Auto-Ducking, Noise Reduction with Adaptive Spectral Speech Isolation (Light / Medium / Strong), 100% Offline, and TalkBack Ready.
+            Accessible Audio &amp; Video Studio (Version 1.2.4) — Smooth TalkBack playback swiping (zero lag during audio/video play), customizable Audio Rewind &amp; Fast-Forward speed (1.5x–8.0x), Vocal Extractor &amp; Karaoke Maker, Auto Gain, Multi-Music Loop + Auto-Ducking, 100% Offline, and TalkBack Ready.
         </p>
 
         <!-- Main Download Button -->
         <button id="downloadBtn" type="button" class="btn-download" onclick="startDownload()">
             <span id="btnIcon" aria-hidden="true">⬇️</span>
-            <span id="btnText">Download AccessibleStudio_V1.2.apk</span>
+            <span id="btnText">Download AccessibleStudio_V1.2.4.apk</span>
         </button>
 
         <!-- Web Share & Copy Link Buttons -->
@@ -358,7 +358,7 @@
             <div class="progress-header">
                 <span id="progressTitle" class="progress-title">
                     <span>⏳</span>
-                    <span id="progressTitleText">Downloading AccessibleStudio.apk...</span>
+                    <span id="progressTitleText">Downloading AccessibleStudio_V1.2.4.apk...</span>
                 </span>
                 <span id="progressPercent" class="progress-percent">0%</span>
             </div>
@@ -370,7 +370,7 @@
 
             <!-- Detailed Transfer Statistics -->
             <div class="progress-stats">
-                <span id="progressBytes">0.0 MB / 18.9 MB</span>
+                <span id="progressBytes">0.0 MB / 19.1 MB</span>
                 <span id="progressSpeed">Calculating speed...</span>
             </div>
         </div>
@@ -378,12 +378,12 @@
         <!-- Download Success Banner -->
         <div id="successBanner" class="success-banner">
             <h4>✅ Download Complete!</h4>
-            <p>फ़ाइल डाउनलोड हो गई है। अपने मोबाइल के <b>Downloads</b> फ़ोल्डर या नोटिफिकेशन बार से <b>AccessibleStudio.apk</b> पर टैप करके <b>Install</b> करें।</p>
+            <p>फ़ाइल डाउनलोड हो गई है। अपने मोबाइल के <b>Downloads</b> फ़ोल्डर या नोटिफिकेशन बार से <b>AccessibleStudio_V1.2.4.apk</b> पर टैप करके <b>Install</b> करें।</p>
         </div>
 
         <!-- Fallback Link -->
-        <a href="/AccessibleStudio_V1.2.apk" download="AccessibleStudio_V1.2.apk" class="fallback-link">
-            सीधे ब्राउज़र से डाउनलोड करने के लिए यहाँ टैप करें (Alternative Direct Link: V1.2)
+        <a href="/AccessibleStudio_V1.2.4.apk" download="AccessibleStudio_V1.2.4.apk" class="fallback-link">
+            सीधे ब्राउज़र से डाउनलोड करने के लिए यहाँ टैप करें (Alternative Direct Link: V1.2.4)
         </a>
 
         <!-- Installation Instructions -->
@@ -392,7 +392,7 @@
             <ol>
                 <li>ऊपर दिए गए <b>"Download APK"</b> बटन पर टैप करें।</li>
                 <li>प्रोग्रेस बार पूरा (100%) होते ही फ़ाइल अपने आप सेव हो जाएगी।</li>
-                <li>नोटिफिकेशन या <b>Downloads</b> फ़ोल्डर में जाकर <b>AccessibleStudio.apk</b> पर टैप करें।</li>
+                <li>नोटिफिकेशन या <b>Downloads</b> फ़ोल्डर में जाकर <b>AccessibleStudio_V1.2.4.apk</b> पर टैप करें।</li>
                 <li><b>Install</b> चुनें (अगर पहली बार कर रहे हैं, तो <i>"Install unknown apps"</i> को Allow करें)।</li>
                 <li><b>Play Protect "App scan recommended" नोट:</b> Google Play Store के बाहर (ब्राउज़र या Downloads से) APK इंस्टॉल करने पर Android का Play Protect एक बार <i>"App scan recommended" / "Scan app"</i> दिखा सकता है क्योंकि यह सीधा डाउनलोड किया गया बिल्ड है — आप निश्चिंत होकर <b>Scan app</b> (या <i>More details &rarr; Install anyway</i>) चुनें। सभी ऑडियो/वीडियो एडिटिंग 100% ऑफ़लाइन होती है, नेटवर्क केवल HTTPS पर वैकल्पिक अपडेट चेक के लिए उपयोग होता है, और ऐप में कोई अनावश्यक Permission नहीं है।</li>
             </ol>
@@ -404,7 +404,14 @@
             <ul>
                 <li>
                     <div class="changelog-ver-row">
-                        <span class="changelog-ver-title">v1.2.3 (Latest)</span>
+                        <span class="changelog-ver-title">v1.2.4 (Latest)</span>
+                        <a href="/AccessibleStudio_V1.2.4.apk" download="AccessibleStudio_V1.2.4.apk" class="changelog-link" aria-label="Download Accessible Studio version 1.2.4 APK">Download v1.2.4 APK</a>
+                    </div>
+                    <p class="changelog-desc">Fixed TalkBack swiping lag during audio &amp; video playback (throttled playhead ticks, local leaf recomposition, suppressed accessibility event floods while playing) and added customizable Rewind &amp; Fast-Forward speed controls (1.5x, 2.0x, 3.5x, 5.0x, 8.0x) in Audio Editing with persistent preference.</p>
+                </li>
+                <li>
+                    <div class="changelog-ver-row">
+                        <span class="changelog-ver-title">v1.2.3</span>
                         <a href="/AccessibleStudio_V1.2.apk" download="AccessibleStudio_V1.2.apk" class="changelog-link" aria-label="Download Accessible Studio version 1.2.3 APK">Download v1.2.3 APK</a>
                     </div>
                     <p class="changelog-desc">Studio-grade -1 Vocal Remover &amp; Clean Karaoke upgrade for both Stereo (adaptive L/R gain alignment, Mid/Side Wiener center coherence, reverb ducking) and Mono (2048-pt Dual-F0 Lead + Harmony Comb, Dual-Scale Vibrato HPSS &amp; vocal formant-bed suppression with drum transient protection to eliminate vocals &amp; harmonies cleanly), Save button saves projects directly without final export, HTTPS-only Play Protect hardening, and GitHub Releases / Automatic Check for Updates in Settings &rarr; About.</p>
@@ -431,8 +438,8 @@
     </div>
 
     <script>
-        const APK_URL = '/AccessibleStudio.apk';
-        const ESTIMATED_TOTAL_BYTES = 20727275; // ~19.8 MB
+        const APK_URL = '/AccessibleStudio_V1.2.4.apk';
+        const ESTIMATED_TOTAL_BYTES = 20049485; // ~19.1 MB
 
         let isDownloading = false;
 
@@ -468,9 +475,9 @@
             progressBarFill.style.width = '0%';
             progressBar.setAttribute('aria-valuenow', '0');
             progressPercent.textContent = '0%';
-            progressBytes.textContent = '0.0 MB / 18.9 MB';
+            progressBytes.textContent = '0.0 MB / 19.1 MB';
             progressSpeed.textContent = 'Connecting...';
-            progressTitleText.textContent = 'Downloading AccessibleStudio.apk...';
+            progressTitleText.textContent = 'Downloading AccessibleStudio_V1.2.4.apk...';
 
             announce('APK download started. 0 percent.');
 
@@ -526,7 +533,7 @@
                         const blobUrl = window.URL.createObjectURL(blob);
                         const tempLink = document.createElement('a');
                         tempLink.href = blobUrl;
-                        tempLink.download = 'AccessibleStudio.apk';
+                        tempLink.download = 'AccessibleStudio_V1.2.4.apk';
                         document.body.appendChild(tempLink);
                         tempLink.click();
                         document.body.removeChild(tempLink);
@@ -567,7 +574,7 @@
 
         function getApkDownloadUrl() {
             try {
-                return new URL('/AccessibleStudio_V1.2.apk', window.location.href).href;
+                return new URL('/AccessibleStudio_V1.2.4.apk', window.location.href).href;
             } catch (e) {
                 return window.location.href;
             }
@@ -613,8 +620,8 @@
         async function shareApkLink() {
             const apkUrl = getApkDownloadUrl();
             const shareData = {
-                title: 'Accessible Studio APK (v1.2.3)',
-                text: 'Download Accessible Studio (v1.2.3) — 100% Offline TalkBack-Accessible Audio & Video Studio APK:',
+                title: 'Accessible Studio APK (v1.2.4)',
+                text: 'Download Accessible Studio (v1.2.4) — 100% Offline TalkBack-Accessible Audio & Video Studio APK:',
                 url: apkUrl
             };
 

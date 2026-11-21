@@ -55,6 +55,7 @@ import com.example.ui.theme.LocalHighContrast
 import com.example.video.SnapshotGlimpseItem
 import com.example.video.VideoCutSegment
 import com.example.video.VideoMetadataDetails
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun VideoTimelineToolsPanel(
@@ -95,7 +96,9 @@ fun VideoTimelineToolsPanel(
     onRemoveCutSegment: (String) -> Unit = {},
     onClearCutSegments: () -> Unit = {},
     showHeaderMetadataAndScrubber: Boolean = true,
-    showTrimmerExportButton: Boolean = true
+    showTrimmerExportButton: Boolean = true,
+    positionFlow: StateFlow<Long>? = null,
+    currentPositionMsProvider: (() -> Long)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
 
@@ -134,7 +137,9 @@ fun VideoTimelineToolsPanel(
                 trimStartMs = trimStartMs,
                 trimEndMs = trimEndMs,
                 cutSegments = cutSegments,
-                onSeekTo = onSeekTo
+                onSeekTo = onSeekTo,
+                isPlaying = isPlaying,
+                positionFlow = positionFlow
             )
         }
 
@@ -223,7 +228,8 @@ fun VideoTimelineToolsPanel(
             onReplayFromStart = onReplayFromStart,
             onAddCutSegment = onAddCutSegment,
             onRemoveCutSegment = onRemoveCutSegment,
-            onClearCutSegments = onClearCutSegments
+            onClearCutSegments = onClearCutSegments,
+            currentPositionMsProvider = currentPositionMsProvider
         )
 
         // 3. Snapshot & Glimpse Creator
@@ -234,7 +240,14 @@ fun VideoTimelineToolsPanel(
             ) {
                 Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Capture 2s Glimpse at ${AccessibilityHelper.formatTimeVisual(currentPositionMs)}", fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (currentPositionMsProvider != null || isPlaying) {
+                        "Capture 2s Glimpse at Playhead"
+                    } else {
+                        "Capture 2s Glimpse at ${AccessibilityHelper.formatTimeVisual(currentPositionMs)}"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
             }
 
             if (snapshots.isNotEmpty()) {

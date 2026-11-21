@@ -138,261 +138,61 @@ object VocalIsolationProcessor {
         highPassHz: Float? = null,
         sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE
     ): ShortArray {
-        if (samples.size < 128) return samples
+        return isolateSpokenAudio(
+            samples = samples,
+            subtractionStrength = subtractionStrength,
+            humRemovalStrength = humRemovalStrength,
+            vocalClarityBoost = vocalClarityBoost,
+            spectralFloorOverride = spectralFloorOverride,
+            vocalBandEmphasisOverride = vocalBandEmphasisOverride,
+            pauseGateFloorOverride = pauseGateFloorOverride,
+            highPassHz = highPassHz,
+            sampleRate = sampleRate,
+            channels = 1
+        )
+    }
+
+    fun isolateSpokenAudio(
+        samples: ShortArray,
+        subtractionStrength: Float,
+        humRemovalStrength: Float,
+        vocalClarityBoost: Float,
+        spectralFloorOverride: Float? = null,
+        vocalBandEmphasisOverride: Float? = null,
+        pauseGateFloorOverride: Float? = null,
+        highPassHz: Float? = null,
+        sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE,
+        channels: Int = 1
+    ): ShortArray {
+        val minRequired = if (channels == 2) 256 else 128
+        if (samples.size < minRequired) return samples
 
         val subStr = subtractionStrength.coerceIn(0.1f, 1.0f)
         val humStr = humRemovalStrength.coerceIn(0f, 1.0f)
         val clarityStr = vocalClarityBoost.coerceIn(0f, 1.0f)
 
-        val alphaBase = 0.85f + subStr * 1.75f
         val spectralFloor = spectralFloorOverride ?: (0.28f - subStr * 0.255f).coerceIn(0.018f, 0.35f)
-        val vocalEmphasis = vocalBandEmphasisOverride ?: (subStr * 0.80f).coerceIn(0.1f, 0.85f)
+        val vocalEmphasis = vocalBandEmphasisOverride ?: (subStr * 0.72f).coerceIn(0.1f, 0.80f)
         val pauseFloor = pauseGateFloorOverride ?: (0.42f - subStr * 0.405f).coerceIn(0.01f, 0.5f)
-        val hpCutoff = highPassHz ?: (65f + subStr * 32f)
+        val hpCutoff = highPassHz ?: (65f + subStr * 30f)
 
-        // Step 1: DC offset removal + sub-bass rumble high-pass + 50/60 Hz hum pre-conditioning
-        var pre = StudioAudioProcessor.removeDcOffset(samples)
-        pre = StudioAudioProcessor.applyHighPassFilter(pre, hpCutoff)
-        if (humStr > 0.15f) {
-            val humClean = StudioAudioProcessor.applyNotchFilter(
-                StudioAudioProcessor.applyNotchFilter(
-                    StudioAudioProcessor.applyNotchFilter(pre, 60f, 12f),
-                    50f,
-                    12f
-                ),
-                120f,
-                16f
-            )
-            val wet = humStr.coerceIn(0f, 1f)
-            val blended = ShortArray(pre.size)
-            for (i in pre.indices) {
-                blended[i] = (pre[i] * (1f - wet) + humClean[i] * wet).toInt().coerceIn(-32767, 32767).toShort()
-            }
-            pre = blended
-        }
+        val config = StudioNoiseReductionConfig(
+            strength = subStr,
+            humRemovalStrength = humStr,
+            spectralFloorOverride = spectralFloor,
+            pauseAttenuationFloor = pauseFloor,
+            lowCutHz = hpCutoff,
+            lowCutAttenuation = (0.35f + vocalEmphasis * 0.50f).coerceIn(0.25f, 0.85f),
+            preserveHighFrequencies = true,
+            vocalClarityBoost = clarityStr
+        )
 
-        // Convert on-the-fly to normalized float (-1..1) with edge padding for clean OLA boundaries
-        val pad = HOP_SIZE
-        val paddedLen = pre.size + 2 * pad
-        val frameCount = (((paddedLen - FFT_SIZE + HOP_SIZE - 1) / HOP_SIZE) + 1).coerceAtLeast(1)
-
-        val sr = sampleRate.coerceIn(8000, 96000).toFloat()
-        val binHz = sr / FFT_SIZE.toFloat()
-        val speechMinBin = max(1, (160f / binHz).toInt())
-        val speechMaxBin = min(NUM_BINS - 1, (4200f / binHz).toInt())
-        val lowCutBin = max(1, (85f / binHz).toInt())
-        val consonantMaxBin = min(NUM_BINS - 1, (7800f / binHz).toInt())
-
-        // Streaming 2-pass STFT: single reusable FFT buffers (O(1) STFT heap instead of O(frames * FFT_SIZE))
-        val re = FloatArray(FFT_SIZE)
-        val im = FloatArray(FFT_SIZE)
-        val mags = FloatArray(NUM_BINS)
-        val frameSpeechBandPower = FloatArray(frameCount)
-
-        // Pass 1: Measure per-frame speech-band energy only (1 float per frame)
-        for (f in 0 until frameCount) {
-            val offset = f * HOP_SIZE
-            for (k in 0 until FFT_SIZE) {
-                val sIdx = offset + k - pad
-                val sample = if (sIdx in pre.indices) pre[sIdx].toFloat() / 32767f else 0f
-                re[k] = sample * sqrtHannWindow[k]
-                im[k] = 0f
-            }
-            fft(re, im, inverse = false)
-
-            var speechPow = 0f
-            for (b in speechMinBin..speechMaxBin) {
-                val p = re[b] * re[b] + im[b] * im[b]
-                speechPow += p
-            }
-            frameSpeechBandPower[f] = speechPow / max(1, speechMaxBin - speechMinBin + 1)
-        }
-
-        // Step 2: Initial Ambient Noise Profile from lowest-energy 20% frames (re-compute FFT only for <= 24 frames)
-        val sortedIndices = frameSpeechBandPower.indices.sortedBy { frameSpeechBandPower[it] }
-        val quietCount = max(1, (frameCount * 0.20f).toInt().coerceAtMost(min(frameCount, 24)))
-        val noiseMag = FloatArray(NUM_BINS)
-        for (q in 0 until quietCount) {
-            val offset = sortedIndices[q] * HOP_SIZE
-            for (k in 0 until FFT_SIZE) {
-                val sIdx = offset + k - pad
-                val sample = if (sIdx in pre.indices) pre[sIdx].toFloat() / 32767f else 0f
-                re[k] = sample * sqrtHannWindow[k]
-                im[k] = 0f
-            }
-            fft(re, im, inverse = false)
-            for (b in 0 until NUM_BINS) {
-                noiseMag[b] += sqrt(re[b] * re[b] + im[b] * im[b])
-            }
-        }
-        val invQuiet = 1f / quietCount.toFloat()
-        for (b in 0 until NUM_BINS) {
-            noiseMag[b] *= invQuiet
-        }
-
-        // Determine speech activity threshold relative to median quiet floor
-        val medianQuietPow = frameSpeechBandPower[sortedIndices[(quietCount - 1).coerceAtLeast(0)]]
-        val speechFloorRef = max(medianQuietPow * 2.4f, 1e-6f)
-
-        // Frequency-dependent hum bins (50Hz, 60Hz, and low harmonics 100/120/150/180 Hz)
-        val humHarmonicsHz = floatArrayOf(50f, 60f, 100f, 120f, 150f, 180f)
-        val humBinWeights = FloatArray(NUM_BINS) { 1.0f }
-        if (humStr > 0.05f) {
-            for (b in 0 until NUM_BINS) {
-                val freq = b * binHz
-                for (hz in humHarmonicsHz) {
-                    if (abs(freq - hz) <= binHz * 0.85f) {
-                        humBinWeights[b] = min(humBinWeights[b], 1.0f - humStr * 0.82f)
-                    }
-                }
-            }
-        }
-
-        // Step 3 (Pass 2): Streaming Per-Frame Spectral Subtraction + Musical Noise Smoothing + 2-hop Sliding OLA
-        val outAccum = FloatArray(FFT_SIZE)
-        val olaNorm = FloatArray(FFT_SIZE)
-        val prevGain = FloatArray(NUM_BINS) { 1.0f }
-        val rawBinGain = FloatArray(NUM_BINS)
-        val freqSmoothedGain = FloatArray(NUM_BINS)
-        var speechActivitySmoothed = 0f
-        var work = ShortArray(samples.size)
-
-        for (f in 0 until frameCount) {
-            val offset = f * HOP_SIZE
-            for (k in 0 until FFT_SIZE) {
-                val sIdx = offset + k - pad
-                val sample = if (sIdx in pre.indices) pre[sIdx].toFloat() / 32767f else 0f
-                re[k] = sample * sqrtHannWindow[k]
-                im[k] = 0f
-            }
-            fft(re, im, inverse = false)
-
-            for (b in 0 until NUM_BINS) {
-                mags[b] = sqrt(re[b] * re[b] + im[b] * im[b])
-            }
-
-            // Estimate instantaneous speech SNR across vocal formant band
-            var speechSignalSum = 0f
-            var speechNoiseSum = 1e-8f
-            for (b in speechMinBin..speechMaxBin) {
-                speechSignalSum += mags[b]
-                speechNoiseSum += noiseMag[b]
-            }
-            val frameSnr = speechSignalSum / speechNoiseSum
-            val instantSpeechProb = when {
-                frameSpeechBandPower[f] < speechFloorRef * 0.45f -> 0f
-                frameSnr <= 1.25f -> 0f
-                frameSnr >= 2.6f -> 1f
-                else -> ((frameSnr - 1.25f) / 1.35f).coerceIn(0f, 1f)
-            }
-            // Fast attack, slow hang-over release so word endings & soft consonants are never chopped
-            val actAlpha = if (instantSpeechProb > speechActivitySmoothed) 0.65f else 0.14f
-            speechActivitySmoothed += actAlpha * (instantSpeechProb - speechActivitySmoothed)
-
-            // Adapt spectral noise profile online during non-speech / quiet dips
-            for (b in 0 until NUM_BINS) {
-                val cur = mags[b]
-                if (cur < noiseMag[b]) {
-                    noiseMag[b] = 0.82f * noiseMag[b] + 0.18f * cur
-                } else if (speechActivitySmoothed < 0.28f && cur < noiseMag[b] * 2.2f) {
-                    noiseMag[b] = 0.94f * noiseMag[b] + 0.06f * cur
-                }
-            }
-
-            // Compute oversubtracted Wiener gain per frequency bin
-            val adaptiveAlpha = alphaBase * (1.15f - 0.30f * speechActivitySmoothed)
-            for (b in 0 until NUM_BINS) {
-                val mag = mags[b]
-                val nMag = noiseMag[b]
-                val sub = 1.0f - adaptiveAlpha * (nMag / (mag + 1e-7f))
-                val wiener = if (sub > spectralFloor) sub else spectralFloor
-
-                val freqWeight = when {
-                    b < lowCutBin -> 1.0f - vocalEmphasis * 0.85f
-                    b in lowCutBin..speechMaxBin -> 1.0f
-                    b in (speechMaxBin + 1)..consonantMaxBin ->
-                        (1.0f - vocalEmphasis * 0.25f) + (vocalEmphasis * 0.25f * speechActivitySmoothed)
-                    else -> 1.0f - vocalEmphasis * 0.75f
-                }
-
-                rawBinGain[b] = (wiener * freqWeight * humBinWeights[b]).coerceIn(spectralFloor, 1.0f)
-            }
-
-            // 3-bin frequency smoothing eliminates isolated tonal peaks ("musical noise")
-            for (b in 0 until NUM_BINS) {
-                val left = rawBinGain[max(0, b - 1)]
-                val center = rawBinGain[b]
-                val right = rawBinGain[min(NUM_BINS - 1, b + 1)]
-                freqSmoothedGain[b] = 0.22f * left + 0.56f * center + 0.22f * right
-            }
-
-            // Smooth pause gate across silence/ambient gaps
-            val pauseMult = pauseFloor + (1.0f - pauseFloor) * speechActivitySmoothed
-
-            // Apply temporal smoothing + gain to complex spectrum (bin 0..N/2 and conjugate symmetry)
-            for (b in 0 until NUM_BINS) {
-                val targetGain = (freqSmoothedGain[b] * pauseMult).coerceIn(pauseFloor.coerceAtMost(spectralFloor), 1.0f)
-                val tAlpha = if (targetGain > prevGain[b]) 0.72f else 0.38f
-                val finalGain = prevGain[b] + tAlpha * (targetGain - prevGain[b])
-                prevGain[b] = finalGain
-
-                re[b] *= finalGain
-                im[b] *= finalGain
-                if (b in 1 until (FFT_SIZE / 2)) {
-                    val mirror = FFT_SIZE - b
-                    re[mirror] *= finalGain
-                    im[mirror] *= finalGain
-                }
-            }
-
-            fft(re, im, inverse = true)
-
-            for (k in 0 until FFT_SIZE) {
-                val w = sqrtHannWindow[k]
-                outAccum[k] += re[k] * w
-                olaNorm[k] += w * w
-            }
-
-            for (k in 0 until HOP_SIZE) {
-                val sigIdx = offset + k - pad
-                if (sigIdx in work.indices) {
-                    val norm = olaNorm[k].coerceAtLeast(1e-4f)
-                    val s = (outAccum[k] / norm) * 32767f
-                    work[sigIdx] = s.toInt().coerceIn(-32767, 32767).toShort()
-                }
-            }
-            System.arraycopy(outAccum, HOP_SIZE, outAccum, 0, HOP_SIZE)
-            System.arraycopy(olaNorm, HOP_SIZE, olaNorm, 0, HOP_SIZE)
-            java.util.Arrays.fill(outAccum, HOP_SIZE, FFT_SIZE, 0f)
-            java.util.Arrays.fill(olaNorm, HOP_SIZE, FFT_SIZE, 0f)
-        }
-        for (k in 0 until HOP_SIZE) {
-            val sigIdx = frameCount * HOP_SIZE + k - pad
-            if (sigIdx in work.indices) {
-                val norm = olaNorm[k].coerceAtLeast(1e-4f)
-                val s = (outAccum[k] / norm) * 32767f
-                work[sigIdx] = s.toInt().coerceIn(-32767, 32767).toShort()
-            }
-        }
-
-        // Step 4: Pristine vocal clarity EQ polish (gentle presence boost, warm low protection)
-        if (clarityStr > 0.05f) {
-            val midPres = 1.0f + clarityStr * 1.8f
-            val airPres = 1.0f + clarityStr * 1.2f
-            val mudTrim = -0.8f * clarityStr
-            work = StudioAudioProcessor.apply7BandEq(
-                work,
-                b60 = -1.2f * clarityStr,
-                b150 = 0f,
-                b400 = mudTrim,
-                b1k = 0.6f * clarityStr,
-                b2_5k = midPres,
-                b6k = airPres,
-                b15k = 0f
-            )
-        }
-
-        return StudioAudioProcessor.applyTruePeakLimiter(work, -0.8f)
+        return StudioNoiseReducer.reduceNoise(
+            samples = samples,
+            sampleRate = sampleRate,
+            channels = channels,
+            config = config
+        )
     }
 
     internal fun fft(real: FloatArray, imag: FloatArray, inverse: Boolean) {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +33,8 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Crop
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Layers
@@ -45,6 +48,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,16 +77,20 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.accessibility.AccessibilityHelper
 import com.example.accessibility.VibrationType
 import com.example.audio.AudioEditSettings
 import com.example.audio.AudioPlayerManager
 import com.example.audio.AudioRecorderManager
+import com.example.ui.components.MixSyncOffsetControl
 import com.example.audio.EqPreset
+import com.example.audio.ScrubDirection
 import com.example.audio.StudioAudioProcessor
 import com.example.audio.VocalIsolationPreset
 import com.example.audio.VocalIsolationProcessor
@@ -152,8 +160,16 @@ fun AudioFeatureWorkspaceScreen(
     var isApplyingTransform by remember(session.projectId, tool) { mutableStateOf(false) }
 
     val isPlaying by playerManager.isPlaying.collectAsState()
-    val currentPositionMs by playerManager.currentPositionMs.collectAsState()
     val durationMs by playerManager.durationMs.collectAsState()
+    val activeScrubDirection by playerManager.scrubDirection.collectAsState()
+    var scrubSpeed by remember(recordingSettings?.audioScrubSpeed) {
+        mutableFloatStateOf(
+            recordingSettings?.audioScrubSpeed ?: StudioPreferences.loadSettings(context).audioScrubSpeed
+        )
+    }
+    LaunchedEffect(scrubSpeed) {
+        playerManager.setScrubSpeed(scrubSpeed)
+    }
     val sampleRate = session.sampleRate.coerceAtLeast(8000)
 
     LaunchedEffect(workingPcm) {
@@ -373,9 +389,11 @@ fun AudioFeatureWorkspaceScreen(
             }
 
             AccessibleTimeReadout(
-                currentMs = currentPositionMs,
+                currentMs = 0L,
                 durationMs = durationMs,
-                label = workingTitle
+                label = workingTitle,
+                isPlaying = isPlaying,
+                positionFlow = playerManager.currentPositionMs
             )
 
             Row(
@@ -409,10 +427,128 @@ fun AudioFeatureWorkspaceScreen(
                 }
             }
 
+            // Rewind / Fast-Forward & Scrub Speed Controls for Audio Editing
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("card_workspace_scrub_controls"),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                ),
+                border = if (isHighContrast) BorderStroke(1.dp, MaterialTheme.colorScheme.outline) else null
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    val activeSpeedLabel = StudioPreferences.formatScrubSpeedLabel(scrubSpeed)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val isRewActive = activeScrubDirection == ScrubDirection.REWIND
+                        val isFwdActive = activeScrubDirection == ScrubDirection.FORWARD
+                        OutlinedButton(
+                            onClick = {
+                                if (workingPcm.isNotEmpty()) {
+                                    playerManager.toggleScrub(ScrubDirection.REWIND)
+                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("btn_workspace_rewind_scrub")
+                                .semantics {
+                                    contentDescription = if (isRewActive) {
+                                        "Rewinding at $activeSpeedLabel speed. Press to resume normal playback."
+                                    } else {
+                                        "Rewind at $activeSpeedLabel speed"
+                                    }
+                                },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isRewActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            )
+                        ) {
+                            Icon(Icons.Default.FastRewind, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isRewActive) "Rew $activeSpeedLabel" else "Rewind $activeSpeedLabel", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (workingPcm.isNotEmpty()) {
+                                    playerManager.toggleScrub(ScrubDirection.FORWARD)
+                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("btn_workspace_forward_scrub")
+                                .semantics {
+                                    contentDescription = if (isFwdActive) {
+                                        "Fast forwarding at $activeSpeedLabel speed. Press to resume normal playback."
+                                    } else {
+                                        "Fast forward at $activeSpeedLabel speed"
+                                    }
+                                },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isFwdActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            )
+                        ) {
+                            Icon(Icons.Default.FastForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(if (isFwdActive) "FF $activeSpeedLabel" else "Forward $activeSpeedLabel", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+
+                    FlowRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("row_workspace_scrub_speed_selector"),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "REW/FF Speed:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.align(Alignment.CenterVertically).padding(end = 4.dp)
+                        )
+                        StudioPreferences.SUPPORTED_SCRUB_SPEED_OPTIONS.forEach { spd ->
+                            val selected = kotlin.math.abs(scrubSpeed - spd) < 0.1f
+                            val label = StudioPreferences.formatScrubSpeedLabel(spd)
+                            FilterChip(
+                                selected = selected,
+                                onClick = {
+                                    val normalized = StudioPreferences.normalizeScrubSpeed(spd)
+                                    scrubSpeed = normalized
+                                    playerManager.setScrubSpeed(normalized)
+                                    StudioPreferences.saveAudioScrubSpeed(context, normalized)
+                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
+                                    AccessibilityHelper.announceForAccessibility(context, "Rewind and fast forward speed $label")
+                                },
+                                label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("chip_workspace_scrub_speed_$label")
+                                    .semantics {
+                                        stateDescription = if (selected) "Selected" else "Not selected"
+                                        contentDescription = "Set rewind and fast forward speed to $label"
+                                    },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.secondaryContainer,
+                                    selectedLabelColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
             when (tool) {
                 AudioFeatureTool.TRIM_CUT -> {
                     AccessibleAudioWaveform(
-                        currentMs = currentPositionMs,
+                        currentMs = 0L,
                         durationMs = durationMs,
                         trimStartMs = trimStartMs,
                         trimEndMs = trimEndMs,
@@ -420,10 +556,12 @@ fun AudioFeatureWorkspaceScreen(
                         visualModeEnabled = visualModeEnabled,
                         showWaveformDisplay = showWaveformDisplay,
                         showZoomControls = showZoomControls,
-                        onSeek = { playerManager.seekTo(it) }
+                        onSeek = { playerManager.seekTo(it) },
+                        isPlaying = isPlaying,
+                        positionFlow = playerManager.currentPositionMs
                     )
                     AccessibleTrimSection(
-                        currentMs = currentPositionMs,
+                        currentMs = 0L,
                         durationMs = durationMs,
                         trimStartMs = trimStartMs,
                         trimEndMs = trimEndMs,
@@ -447,6 +585,7 @@ fun AudioFeatureWorkspaceScreen(
                             hasPendingTrimRange = true
                             localModified = true
                         },
+                        currentPositionMsProvider = { playerManager.currentPositionMs.value },
                         onPreviewTrim = {
                             if (workingPcm.isNotEmpty() && trimEndMs > trimStartMs) {
                                 playerManager.stop()
@@ -524,12 +663,18 @@ fun AudioFeatureWorkspaceScreen(
                     var overlayVol by remember { mutableFloatStateOf(0.85f) }
                     var startOffsetMs by remember { mutableLongStateOf(0L) }
                     var limiterOn by remember { mutableStateOf(true) }
+                    var mixPreviewActive by remember { mutableStateOf(false) }
 
                     val mixPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
                         if (uri != null) {
                             scope.launch {
                                 try {
-                                    val decoded = audioProcessor.decodeUriToPcm(uri)
+                                    val decodedRaw = audioProcessor.decodeUriToPcm(uri)
+                                    val decoded = if (decodedRaw.isNotEmpty() && sampleRate != 44100) {
+                                        StudioAudioProcessor.resamplePcmLinear(decodedRaw, 44100, sampleRate)
+                                    } else {
+                                        decodedRaw
+                                    }
                                     if (decoded.isNotEmpty()) {
                                         mixOverlayPcm = decoded
                                         mixOverlayTitle = audioProcessor.queryAudioDisplayName(uri) ?: "Overlay Track"
@@ -578,16 +723,65 @@ fun AudioFeatureWorkspaceScreen(
                                 spokenDescription = "Mix track volume ${(overlayVol * 100).toInt()} percent",
                                 testTag = "slider_mix_overlay_vol"
                             )
+                            MixSyncOffsetControl(
+                                offsetMs = startOffsetMs,
+                                onOffsetChange = { startOffsetMs = it },
+                                baseStartMs = 0L,
+                                minOffsetMs = -60_000L,
+                                maxOffsetMs = maxOf(60_000L, durationMs)
+                            )
+                            val maxOffsetSec = (durationMs / 1000f).coerceAtLeast(10f)
                             AccessibleEffectSlider(
-                                title = "Start Offset (Seconds)",
-                                value = startOffsetMs / 1000f,
-                                onValueChange = { startOffsetMs = (it * 1000f).toLong() },
-                                valueRange = 0f..(durationMs / 1000f).coerceAtLeast(1f),
-                                step = 0.5f,
-                                displayValue = "${"%.1f".format(startOffsetMs / 1000f)}s",
-                                spokenDescription = "Mix start offset ${startOffsetMs / 1000} seconds",
+                                title = "Fine Start Position Slider",
+                                value = (startOffsetMs / 1000f).coerceIn(-30f, maxOffsetSec),
+                                onValueChange = { startOffsetMs = kotlin.math.round(it * 1000.0).toLong() },
+                                valueRange = -30f..maxOffsetSec,
+                                step = 0.05f,
+                                displayValue = "${if (startOffsetMs >= 0) "+" else "-"}${"%.2f".format(kotlin.math.abs(startOffsetMs) / 1000f)}s",
+                                spokenDescription = "Mix start offset ${"%.2f".format(startOffsetMs / 1000f)} seconds",
                                 testTag = "slider_mix_offset"
                             )
+                            OutlinedButton(
+                                enabled = mixOverlayPcm != null && mixOverlayPcm!!.isNotEmpty(),
+                                onClick = {
+                                    val overlay = mixOverlayPcm ?: return@OutlinedButton
+                                    if (mixPreviewActive && isPlaying) {
+                                        playerManager.stop()
+                                        playerManager.loadPcmData(workingPcm, sampleRate)
+                                        mixPreviewActive = false
+                                    } else {
+                                        scope.launch {
+                                            playerManager.stop()
+                                            val previewPcm = withContext(Dispatchers.Default) {
+                                                StudioAudioProcessor.mixAudioTracks(
+                                                    main = workingPcm,
+                                                    overlay = overlay,
+                                                    startMs = startOffsetMs,
+                                                    mainVolume = mainVol,
+                                                    overlayVolume = overlayVol,
+                                                    applyPeakLimiter = limiterOn,
+                                                    sampleRate = sampleRate
+                                                )
+                                            }
+                                            mixPreviewActive = true
+                                            playerManager.loadPcmData(previewPcm, sampleRate)
+                                            playerManager.seekTo(if (startOffsetMs > 0L) (startOffsetMs - 500L).coerceAtLeast(0L) else 0L)
+                                            playerManager.play()
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_workspace_mix_preview")
+                            ) {
+                                Icon(
+                                    imageVector = if (mixPreviewActive && isPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                    contentDescription = null
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = if (mixPreviewActive && isPlaying) "Stop Mix Preview" else "Preview Mix Sync",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -602,6 +796,10 @@ fun AudioFeatureWorkspaceScreen(
                                     if (overlay == null || overlay.isEmpty()) {
                                         Toast.makeText(context, "Select an audio file to mix first.", Toast.LENGTH_SHORT).show()
                                     } else {
+                                        if (mixPreviewActive) {
+                                            playerManager.stop()
+                                            mixPreviewActive = false
+                                        }
                                         pushUndoAndApply("Mixed ${mixOverlayTitle ?: "audio"} into track") { pcm ->
                                             StudioAudioProcessor.mixAudioTracks(
                                                 main = pcm,
@@ -783,7 +981,7 @@ fun AudioFeatureWorkspaceScreen(
                                     )
                                     editSettings = newSettings
                                     pushUndoAndApply("Applied Studio Effects Chain") { pcm ->
-                                        audioProcessor.processPcm(pcm, newSettings)
+                                        audioProcessor.processPcm(pcm, newSettings, sampleRate)
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_workspace_apply_fx")

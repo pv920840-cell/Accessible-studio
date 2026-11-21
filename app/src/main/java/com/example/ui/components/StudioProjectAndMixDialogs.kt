@@ -26,8 +26,13 @@ import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -42,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,7 +55,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -57,7 +65,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.accessibility.AccessibilityHelper
 import com.example.audio.CuePoint
+import com.example.audio.StudioAudioProcessor
+import com.example.audio.WavAudioProcessor
 import com.example.ui.theme.LocalHighContrast
+import java.util.Locale
+import kotlin.math.abs
 import java.util.UUID
 
 data class AudioProjectTab(
@@ -219,6 +231,163 @@ fun OpenProjectsTabBar(
     }
 }
 
+internal fun formatSignedSyncMs(ms: Long): String {
+    if (ms == 0L) return "0.00 s (0 ms • Exact Sync)"
+    val sign = if (ms > 0L) "+" else "-"
+    val absMs = abs(ms)
+    val secStr = String.format(Locale.US, "%.2f", absMs / 1000.0)
+    val dirLabel = if (ms > 0L) "Later" else "Earlier"
+    return "$sign$secStr s ($sign$absMs ms • $dirLabel)"
+}
+
+internal fun formatStepChipLabel(stepMs: Long): String = when {
+    stepMs >= 1000L -> "${stepMs / 1000L} s"
+    else -> "$stepMs ms"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun MixSyncOffsetControl(
+    offsetMs: Long,
+    onOffsetChange: (Long) -> Unit,
+    baseStartMs: Long = 0L,
+    minOffsetMs: Long = -60_000L,
+    maxOffsetMs: Long = 300_000L,
+    title: String = "Sync Timing Adjust (Increase / Decrease)",
+    modifier: Modifier = Modifier
+) {
+    val stepOptions = listOf(50L, 100L, 250L, 500L, 1000L, 5000L)
+    var stepMs by remember { mutableLongStateOf(250L) }
+    val stepLabel = formatStepChipLabel(stepMs)
+    val effectiveStartMs = baseStartMs + offsetMs
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Text(
+                text = "Out of sync? Decrease (-) shifts added audio earlier; Increase (+) shifts it later.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("text_mix_sync_status")
+                    .semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = "Mix sync offset ${formatSignedSyncMs(offsetMs)}. Effective start ${
+                            if (effectiveStartMs >= 0L) AccessibilityHelper.formatTimeVisual(effectiveStartMs)
+                            else "minus ${AccessibilityHelper.formatTimeVisual(-effectiveStartMs)} trimmed from start"
+                        }"
+                    }
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                    Text(
+                        text = "Sync Offset: ${formatSignedSyncMs(offsetMs)}",
+                        fontWeight = FontWeight.Black,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.testTag("text_mix_sync_offset_value")
+                    )
+                    Text(
+                        text = if (effectiveStartMs >= 0L) {
+                            "Effective Mix Position: ${AccessibilityHelper.formatTimeVisual(effectiveStartMs)}"
+                        } else {
+                            "Shifts ${AccessibilityHelper.formatTimeVisual(-effectiveStartMs)} earlier (skips intro delay)"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                stepOptions.forEach { optionMs ->
+                    val label = formatStepChipLabel(optionMs)
+                    FilterChip(
+                        selected = stepMs == optionMs,
+                        onClick = { stepMs = optionMs },
+                        label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("chip_mix_step_$optionMs")
+                            .semantics {
+                                contentDescription = "Sync adjust step $label"
+                            }
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        onOffsetChange((offsetMs - stepMs).coerceIn(minOffsetMs, maxOffsetMs))
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_mix_time_decrease")
+                        .semantics {
+                            contentDescription = "Decrease mix start time by $stepLabel to shift added audio earlier"
+                        }
+                ) {
+                    Text("- $stepLabel", fontWeight = FontWeight.Black, maxLines = 1)
+                }
+
+                OutlinedButton(
+                    onClick = { onOffsetChange(0L) },
+                    enabled = offsetMs != 0L,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_mix_time_reset")
+                        .semantics {
+                            contentDescription = "Reset mix sync offset to zero"
+                        }
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("0 ms", fontWeight = FontWeight.Bold, maxLines = 1)
+                }
+
+                Button(
+                    onClick = {
+                        onOffsetChange((offsetMs + stepMs).coerceIn(minOffsetMs, maxOffsetMs))
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_mix_time_increase")
+                        .semantics {
+                            contentDescription = "Increase mix start time by $stepLabel to shift added audio later"
+                        }
+                ) {
+                    Text("+ $stepLabel", fontWeight = FontWeight.Black, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StudioMixAudioDialog(
@@ -229,6 +398,15 @@ fun StudioMixAudioDialog(
     pickedMixPcm: ShortArray?,
     sampleRate: Int,
     currentCursorMs: Long,
+    isPreviewPlaying: Boolean = false,
+    onPreviewMix: ((
+        overlayPcm: ShortArray,
+        startMs: Long,
+        mainVol: Float,
+        overlayVol: Float,
+        applyLimiter: Boolean
+    ) -> Unit)? = null,
+    onStopPreview: (() -> Unit)? = null,
     onPickFileToMix: () -> Unit,
     onConfirmMix: (
         overlayPcm: ShortArray,
@@ -259,16 +437,33 @@ fun StudioMixAudioDialog(
     var mainVolume by remember { mutableFloatStateOf(1.0f) }
     var overlayVolume by remember { mutableFloatStateOf(0.85f) }
     var mixAtCursor by remember { mutableStateOf(false) }
+    var syncOffsetMs by remember { mutableLongStateOf(0L) }
     var applyPeakLimiter by remember { mutableStateOf(true) }
 
-    val activeOverlayPair: Pair<String, ShortArray?> = when (sourceMode) {
+    val activeOverlayInfo: Pair<String, ShortArray?> = when (sourceMode) {
         0 -> "Clipboard" to clipboardPcm
         1 -> {
             val chosen = otherProjects.getOrNull(selectedTabIdx.coerceIn(0, (otherProjects.size - 1).coerceAtLeast(0)))
-            (chosen?.title ?: "Tab") to chosen?.pcm
+            val rawTabPcm = chosen?.pcm
+            val alignedTabPcm = if (rawTabPcm != null && chosen.sampleRate != sampleRate) {
+                StudioAudioProcessor.resamplePcmLinear(rawTabPcm, chosen.sampleRate, sampleRate)
+            } else {
+                rawTabPcm
+            }
+            (chosen?.title ?: "Tab") to alignedTabPcm
         }
-        else -> (pickedMixTitle ?: "Selected File") to pickedMixPcm
+        else -> {
+            val alignedPicked = if (pickedMixPcm != null && sampleRate != StudioAudioProcessor.SAMPLE_RATE) {
+                StudioAudioProcessor.resamplePcmLinear(pickedMixPcm, StudioAudioProcessor.SAMPLE_RATE, sampleRate)
+            } else {
+                pickedMixPcm
+            }
+            (pickedMixTitle ?: "Selected File") to alignedPicked
+        }
     }
+
+    val baseStartMs = if (mixAtCursor) currentCursorMs else 0L
+    val effectiveStartMs = baseStartMs + syncOffsetMs
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -277,7 +472,7 @@ fun StudioMixAudioDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 460.dp)
+                    .heightIn(max = 490.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -378,7 +573,7 @@ fun StudioMixAudioDialog(
                     testTag = "slider_mix_overlay_volume"
                 )
 
-                Text("3. Mix Start Position:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Text("3. Mix Start Position & Timing Sync:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = !mixAtCursor,
@@ -392,6 +587,47 @@ fun StudioMixAudioDialog(
                         label = { Text("At Cursor (${AccessibilityHelper.formatTimeVisual(currentCursorMs)})") },
                         modifier = Modifier.testTag("chip_mix_pos_cursor")
                     )
+                }
+
+                MixSyncOffsetControl(
+                    offsetMs = syncOffsetMs,
+                    onOffsetChange = { syncOffsetMs = it },
+                    baseStartMs = baseStartMs
+                )
+
+                if (onPreviewMix != null) {
+                    val readyPreviewPcm = activeOverlayInfo.second
+                    OutlinedButton(
+                        enabled = readyPreviewPcm != null && readyPreviewPcm.isNotEmpty(),
+                        onClick = {
+                            if (isPreviewPlaying) {
+                                onStopPreview?.invoke()
+                            } else if (readyPreviewPcm != null && readyPreviewPcm.isNotEmpty()) {
+                                onPreviewMix(
+                                    readyPreviewPcm,
+                                    effectiveStartMs,
+                                    mainVolume,
+                                    overlayVolume,
+                                    applyPeakLimiter
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("btn_mix_preview_sync")
+                    ) {
+                        Icon(
+                            imageVector = if (isPreviewPlaying) Icons.Default.Stop else Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = if (isPreviewPlaying) "Stop Mix Preview" else "Preview Mix Sync",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Row(
@@ -412,15 +648,15 @@ fun StudioMixAudioDialog(
             }
         },
         confirmButton = {
-            val readyPcm = activeOverlayPair.second
+            val readyPcm = activeOverlayInfo.second
             Button(
                 enabled = readyPcm != null && readyPcm.isNotEmpty(),
                 onClick = {
                     val pcm = readyPcm ?: return@Button
                     onConfirmMix(
                         pcm,
-                        activeOverlayPair.first,
-                        if (mixAtCursor) currentCursorMs else 0L,
+                        activeOverlayInfo.first,
+                        effectiveStartMs,
                         mainVolume,
                         overlayVolume,
                         applyPeakLimiter

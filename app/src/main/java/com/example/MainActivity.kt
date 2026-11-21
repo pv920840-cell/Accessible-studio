@@ -150,7 +150,8 @@ class MainActivity : ComponentActivity() {
                     updateProvider = StudioPreferences.normalizeUpdateProvider(updated.updateProvider),
                     recordingSampleRateHz = StudioPreferences.normalizeSampleRateHz(updated.recordingSampleRateHz),
                     recordingBitrateKbps = StudioPreferences.normalizeBitrateKbps(updated.recordingBitrateKbps),
-                    recordingInputGain = StudioPreferences.normalizeInputGain(updated.recordingInputGain)
+                    recordingInputGain = StudioPreferences.normalizeInputGain(updated.recordingInputGain),
+                    audioScrubSpeed = StudioPreferences.normalizeScrubSpeed(updated.audioScrubSpeed)
                 )
                 studioSettings = normalized
                 isHighContrast = normalized.isHighContrast

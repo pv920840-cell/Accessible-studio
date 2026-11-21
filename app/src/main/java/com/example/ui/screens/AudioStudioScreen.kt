@@ -65,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -119,6 +120,7 @@ import com.example.ui.components.WaveformViewportMath
 import com.example.ui.components.WaveformViewportSnapshot
 import com.example.ui.theme.LocalHighContrast
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -212,12 +214,26 @@ fun AudioStudioScreen(
     }
 
     val isPlaying by playerManager.isPlaying.collectAsState()
-    val currentPositionMs by playerManager.currentPositionMs.collectAsState()
     val durationMs by playerManager.durationMs.collectAsState()
     val livePlaybackRate by playerManager.playbackRate.collectAsState()
     val liveVolumeLevel by playerManager.volumeLevel.collectAsState()
     val activeScrubDirection by playerManager.scrubDirection.collectAsState()
-    var scrubSpeed by remember { mutableFloatStateOf(3.5f) }
+    var scrubSpeed by remember {
+        mutableFloatStateOf(
+            recordingSettings?.audioScrubSpeed ?: StudioPreferences.loadSettings(context).audioScrubSpeed
+        )
+    }
+    LaunchedEffect(recordingSettings?.audioScrubSpeed) {
+        recordingSettings?.audioScrubSpeed?.let { incoming ->
+            val normalized = StudioPreferences.normalizeScrubSpeed(incoming)
+            if (kotlin.math.abs(scrubSpeed - normalized) > 0.05f) {
+                scrubSpeed = normalized
+            }
+        }
+    }
+    LaunchedEffect(scrubSpeed) {
+        playerManager.setScrubSpeed(scrubSpeed)
+    }
     val savedExports by mediaRepository.exportedFiles.collectAsState()
 
     // View State
@@ -258,12 +274,18 @@ fun AudioStudioScreen(
         }
     }
 
-    LaunchedEffect(currentPositionMs, followCursor) {
-        val span = viewWindowSpanMs
-        if (followCursor && span != null && durationMs > 0L) {
-            if (currentPositionMs < viewWindowStartMs || currentPositionMs > viewWindowStartMs + span) {
-                val maxStart = (durationMs - span).coerceAtLeast(0L)
-                viewWindowStartMs = (currentPositionMs - span / 2L).coerceIn(0L, maxStart)
+    LaunchedEffect(isPlaying, isLooping, followCursor, viewWindowSpanMs, durationMs) {
+        playerManager.currentPositionMs.collect { pos ->
+            val span = viewWindowSpanMs
+            if (followCursor && span != null && durationMs > 0L) {
+                if (pos < viewWindowStartMs || pos > viewWindowStartMs + span) {
+                    val maxStart = (durationMs - span).coerceAtLeast(0L)
+                    viewWindowStartMs = (pos - span / 2L).coerceIn(0L, maxStart)
+                }
+            }
+            if (isPlaying && isLooping && durationMs > 0 && pos >= durationMs - 120L) {
+                playerManager.seekTo(0L)
+                playerManager.play()
             }
         }
     }
@@ -275,13 +297,6 @@ fun AudioStudioScreen(
         } else {
             if (trimStartMs > durationMs) trimStartMs = 0L
             if (trimEndMs > durationMs) trimEndMs = durationMs
-        }
-    }
-
-    LaunchedEffect(currentPositionMs, isPlaying, isLooping) {
-        if (isPlaying && isLooping && durationMs > 0 && currentPositionMs >= durationMs - 120L) {
-            playerManager.seekTo(0L)
-            playerManager.play()
         }
     }
 
@@ -401,7 +416,7 @@ fun AudioStudioScreen(
                 sampleRate = playerManager.sampleRate.value,
                 trimStartMs = trimStartMs,
                 trimEndMs = trimEndMs,
-                currentPositionMs = currentPositionMs,
+                currentPositionMs = playerManager.currentPositionMs.value,
                 cuePoints = cuePoints,
                 isBlankProject = openedFileBaseName == null && (mainTrackTitle.startsWith("Untitled") || mainTrackTitle.startsWith("Blank")),
                 sourceUri = currentTrackSourceUri
@@ -533,7 +548,7 @@ fun AudioStudioScreen(
         val current = rawOriginalPcm
         if (current != null && !isApplyingProFx) {
             isApplyingProFx = true
-            val prevPos = currentPositionMs
+            val prevPos = playerManager.currentPositionMs.value
             val prevTrimEnd = trimEndMs
             scope.launch {
                 try {
@@ -620,7 +635,7 @@ fun AudioStudioScreen(
             try {
                 playerManager.stop()
                 val processed = withContext(Dispatchers.Default) {
-                    audioProcessor.processPcm(orig, snapshotSettings)
+                    audioProcessor.processPcm(orig, snapshotSettings, workingSampleRate)
                 }
                 if (processed.isNotEmpty()) {
                     playerManager.loadPcmData(processed, workingSampleRate)
@@ -1028,7 +1043,8 @@ fun AudioStudioScreen(
                 val clip = clipboardPcm
                 if (current != null && clip != null && clip.isNotEmpty()) {
                     applyTransform("Pasted clipboard audio at cursor") { pcm ->
-                        val pos = if (pcm.isEmpty()) 0 else ((currentPositionMs.toDouble() / 1000.0) * workingSampleRate).toInt().coerceIn(0, pcm.size)
+                        val curPosMs = playerManager.currentPositionMs.value
+                        val pos = if (pcm.isEmpty()) 0 else ((curPosMs.toDouble() / 1000.0) * workingSampleRate).toInt().coerceIn(0, pcm.size)
                         ShortArray(pcm.size + clip.size).also { out ->
                             System.arraycopy(pcm, 0, out, 0, pos)
                             System.arraycopy(clip, 0, out, pos, clip.size)
@@ -1059,7 +1075,7 @@ fun AudioStudioScreen(
                         StudioAudioProcessor.mixAudioTracks(
                             main = pcm,
                             overlay = clip,
-                            startMs = currentPositionMs,
+                            startMs = playerManager.currentPositionMs.value,
                             mainVolume = 1.0f,
                             overlayVolume = 0.85f,
                             applyPeakLimiter = true,
@@ -1080,11 +1096,11 @@ fun AudioStudioScreen(
             }
 
             AudioStudioCommand.SetSelStart -> {
-                setTrimStartSafe(currentPositionMs)
+                setTrimStartSafe(playerManager.currentPositionMs.value)
                 AccessibilityHelper.announceForAccessibility(context, "Trim start set")
             }
             AudioStudioCommand.SetSelEnd -> {
-                setTrimEndSafe(currentPositionMs)
+                setTrimEndSafe(playerManager.currentPositionMs.value)
                 AccessibilityHelper.announceForAccessibility(context, "Trim end set")
             }
             AudioStudioCommand.CropSelection -> {
@@ -1170,7 +1186,7 @@ fun AudioStudioScreen(
             }
             AudioStudioCommand.ViewPresetDefault -> {
                 val safeDur = durationMs.coerceAtLeast(100L)
-                applyTimeSpanWindow(minOf(10_000L, safeDur), currentPositionMs)
+                applyTimeSpanWindow(minOf(10_000L, safeDur), playerManager.currentPositionMs.value)
                 AccessibilityHelper.announceForAccessibility(context, "Applied default 10 second preset view")
             }
             AudioStudioCommand.ToggleFollowCursor -> {
@@ -1179,30 +1195,32 @@ fun AudioStudioScreen(
                 Toast.makeText(context, stateLabel, Toast.LENGTH_SHORT).show()
             }
             AudioStudioCommand.ZoomIn -> {
-                val resolved = WaveformViewportMath.resolveWindow(durationMs, viewWindowStartMs, viewWindowSpanMs, currentPositionMs, followCursor)
-                applyTimeSpanWindow((resolved.spanMs / 2L).coerceAtLeast(50L), currentPositionMs)
+                val pos = playerManager.currentPositionMs.value
+                val resolved = WaveformViewportMath.resolveWindow(durationMs, viewWindowStartMs, viewWindowSpanMs, pos, followCursor)
+                applyTimeSpanWindow((resolved.spanMs / 2L).coerceAtLeast(50L), pos)
                 AccessibilityHelper.announceForAccessibility(context, "Zoomed in")
             }
             AudioStudioCommand.ZoomOut -> {
                 val safeDur = durationMs.coerceAtLeast(100L)
-                val resolved = WaveformViewportMath.resolveWindow(safeDur, viewWindowStartMs, viewWindowSpanMs, currentPositionMs, followCursor)
+                val pos = playerManager.currentPositionMs.value
+                val resolved = WaveformViewportMath.resolveWindow(safeDur, viewWindowStartMs, viewWindowSpanMs, pos, followCursor)
                 val nextSpan = resolved.spanMs * 2L
                 if (nextSpan >= safeDur) {
                     resetViewToAll(true)
                     AccessibilityHelper.announceForAccessibility(context, "Zoomed out to fit all")
                 } else {
-                    applyTimeSpanWindow(nextSpan, currentPositionMs)
+                    applyTimeSpanWindow(nextSpan, pos)
                     AccessibilityHelper.announceForAccessibility(context, "Zoomed out")
                 }
             }
             AudioStudioCommand.Zoom10To1 -> {
                 val safeDur = durationMs.coerceAtLeast(100L)
-                applyTimeSpanWindow((safeDur / 10L).coerceAtLeast(100L), currentPositionMs)
+                applyTimeSpanWindow((safeDur / 10L).coerceAtLeast(100L), playerManager.currentPositionMs.value)
                 AccessibilityHelper.announceForAccessibility(context, "Time zoom 10 to 1")
             }
             AudioStudioCommand.Zoom1To1 -> {
                 val safeDur = durationMs.coerceAtLeast(100L)
-                applyTimeSpanWindow(minOf(1_000L, safeDur), currentPositionMs)
+                applyTimeSpanWindow(minOf(1_000L, safeDur), playerManager.currentPositionMs.value)
                 AccessibilityHelper.announceForAccessibility(context, "Time zoom 1 to 1")
             }
             is AudioStudioCommand.ViewTimeSpan -> {
@@ -1210,7 +1228,7 @@ fun AudioStudioScreen(
                 if (cmd.spanMs >= safeDur) {
                     resetViewToAll(true)
                 } else {
-                    applyTimeSpanWindow(cmd.spanMs, currentPositionMs)
+                    applyTimeSpanWindow(cmd.spanMs, playerManager.currentPositionMs.value)
                 }
                 AccessibilityHelper.announceForAccessibility(
                     context,
@@ -1291,7 +1309,7 @@ fun AudioStudioScreen(
                 if (!ensurePcmReadyForPlayback()) {
                     Toast.makeText(context, "Audio canvas is empty. Paste, mix, or record audio first.", Toast.LENGTH_SHORT).show()
                 } else {
-                    playerManager.play(startFromMs = currentPositionMs, endLimitMs = null)
+                    playerManager.play(startFromMs = playerManager.currentPositionMs.value, endLimitMs = null)
                 }
             }
             AudioStudioCommand.Play3Loop -> safePlaySelection(loopSegment = true)
@@ -1403,28 +1421,15 @@ fun AudioStudioScreen(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                 // Compact Minimal Status Indicators: Playhead | Duration | Sample Rate | Window/Zoom
-                val currentViewport = WaveformViewportMath.resolveWindow(
+                AudioStudioHeaderMetricsRow(
+                    positionFlow = playerManager.currentPositionMs,
                     durationMs = durationMs,
-                    viewStartMs = viewWindowStartMs,
-                    viewSpanMs = viewWindowSpanMs,
-                    currentMs = currentPositionMs,
-                    followCursor = followCursor
+                    workingSampleRate = workingSampleRate,
+                    viewWindowStartMs = viewWindowStartMs,
+                    viewWindowSpanMs = viewWindowSpanMs,
+                    followCursor = followCursor,
+                    isPlaying = isPlaying
                 )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("time_readout_card")
-                        .semantics(mergeDescendants = true) {
-                            contentDescription = "Playhead ${AccessibilityHelper.formatTimeSpoken(currentPositionMs)} of ${AccessibilityHelper.formatTimeSpoken(durationMs)}, sample rate $workingSampleRate Hertz"
-                        },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    StatusMetricCell("PLAYHEAD", AccessibilityHelper.formatTimeVisual(currentPositionMs), highlight = true)
-                    StatusMetricCell("DURATION", AccessibilityHelper.formatTimeVisual(durationMs), highlight = false)
-                    StatusMetricCell("SAMPLE RATE", "${workingSampleRate / 1000.0} kHz", highlight = false)
-                    StatusMetricCell("ZOOM", WaveformViewportMath.formatWindowLabel(currentViewport.spanMs, durationMs), highlight = false)
-                }
             }
         }
 
@@ -1462,7 +1467,7 @@ fun AudioStudioScreen(
 
         // 2. CENTER WORKSPACE: INTERACTIVE WAVEFORM & ACCESSIBLE TRIM HANDLES
         AccessibleAudioWaveform(
-            currentMs = currentPositionMs,
+            currentMs = 0L,
             durationMs = durationMs,
             trimStartMs = trimStartMs,
             trimEndMs = trimEndMs,
@@ -1477,14 +1482,16 @@ fun AudioStudioScreen(
             showZoomControls = showZoomControls,
             onVerticalZoomChange = { verticalZoom = it },
             onZoomInAction = {
-                val resolved = WaveformViewportMath.resolveWindow(durationMs, viewWindowStartMs, viewWindowSpanMs, currentPositionMs, followCursor)
-                applyTimeSpanWindow((resolved.spanMs / 2L).coerceAtLeast(50L), currentPositionMs)
+                val pos = playerManager.currentPositionMs.value
+                val resolved = WaveformViewportMath.resolveWindow(durationMs, viewWindowStartMs, viewWindowSpanMs, pos, followCursor)
+                applyTimeSpanWindow((resolved.spanMs / 2L).coerceAtLeast(50L), pos)
             },
             onZoomOutAction = {
                 val safeDur = durationMs.coerceAtLeast(100L)
-                val resolved = WaveformViewportMath.resolveWindow(safeDur, viewWindowStartMs, viewWindowSpanMs, currentPositionMs, followCursor)
+                val pos = playerManager.currentPositionMs.value
+                val resolved = WaveformViewportMath.resolveWindow(safeDur, viewWindowStartMs, viewWindowSpanMs, pos, followCursor)
                 val nextSpan = resolved.spanMs * 2L
-                if (nextSpan >= safeDur) resetViewToAll(true) else applyTimeSpanWindow(nextSpan, currentPositionMs)
+                if (nextSpan >= safeDur) resetViewToAll(true) else applyTimeSpanWindow(nextSpan, pos)
             },
             onZoomFitAction = {
                 pushViewHistory()
@@ -1501,14 +1508,17 @@ fun AudioStudioScreen(
             onSeek = { seekPos ->
                 playerManager.seekTo(seekPos)
                 if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
-            }
+            },
+            isPlaying = isPlaying,
+            positionFlow = playerManager.currentPositionMs
         )
 
         AccessibleTrimSection(
-            currentMs = currentPositionMs,
+            currentMs = 0L,
             durationMs = durationMs,
             trimStartMs = trimStartMs,
             trimEndMs = trimEndMs,
+            currentPositionMsProvider = { playerManager.currentPositionMs.value },
             onSetTrimStart = { pos ->
                 setTrimStartSafe(pos)
                 if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.DOUBLE_CLICK)
@@ -1576,7 +1586,7 @@ fun AudioStudioScreen(
                     },
                     onRewind5s = {
                         if (ensurePcmReadyForPlayback()) {
-                            val newPos = (currentPositionMs - 5000L).coerceAtLeast(0L)
+                            val newPos = (playerManager.currentPositionMs.value - 5000L).coerceAtLeast(0L)
                             playerManager.seekTo(newPos)
                             if (!isPlaying) playerManager.play(startFromMs = newPos)
                         }
@@ -1584,7 +1594,7 @@ fun AudioStudioScreen(
                     },
                     onForward5s = {
                         if (ensurePcmReadyForPlayback()) {
-                            val newPos = (currentPositionMs + 5000L).coerceAtMost(durationMs)
+                            val newPos = (playerManager.currentPositionMs.value + 5000L).coerceAtMost(durationMs)
                             playerManager.seekTo(newPos)
                             if (!isPlaying) playerManager.play(startFromMs = newPos)
                         }
@@ -1598,7 +1608,7 @@ fun AudioStudioScreen(
                     },
                     onNudge = { deltaMs ->
                         if (ensurePcmReadyForPlayback()) {
-                            val newPos = (currentPositionMs + deltaMs).coerceIn(0L, durationMs)
+                            val newPos = (playerManager.currentPositionMs.value + deltaMs).coerceIn(0L, durationMs)
                             playerManager.seekTo(newPos)
                             if (!isPlaying) playerManager.play(startFromMs = newPos)
                         }
@@ -1606,6 +1616,17 @@ fun AudioStudioScreen(
                     },
                     activeScrubDirection = activeScrubDirection,
                     scrubSpeed = scrubSpeed,
+                    onChangeScrubSpeed = { newSpeed ->
+                        val normalized = StudioPreferences.normalizeScrubSpeed(newSpeed)
+                        scrubSpeed = normalized
+                        playerManager.setScrubSpeed(normalized)
+                        StudioPreferences.saveAudioScrubSpeed(context, normalized)
+                        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
+                        AccessibilityHelper.announceForAccessibility(
+                            context,
+                            "Rewind and fast forward speed set to ${StudioPreferences.formatScrubSpeedLabel(normalized)}"
+                        )
+                    },
                     onToggleScrubRewind = {
                         if (!ensurePcmReadyForPlayback()) {
                             Toast.makeText(context, "Audio canvas is empty.", Toast.LENGTH_SHORT).show()
@@ -1635,7 +1656,7 @@ fun AudioStudioScreen(
                         if (!ensurePcmReadyForPlayback()) {
                             Toast.makeText(context, "Audio canvas is empty. Paste, mix, or record audio first.", Toast.LENGTH_SHORT).show()
                         } else {
-                            playerManager.play(startFromMs = currentPositionMs, endLimitMs = null)
+                            playerManager.play(startFromMs = playerManager.currentPositionMs.value, endLimitMs = null)
                         }
                     },
                     onPlayLoop = { safePlaySelection(loopSegment = true) }
@@ -1922,13 +1943,14 @@ fun AudioStudioScreen(
     }
 
     if (showSilenceDialog) {
+        val silenceInsertPosMs = playerManager.currentPositionMs.value
         StudioInsertSilenceDialog(
-            currentPositionMs = currentPositionMs,
+            currentPositionMs = silenceInsertPosMs,
             onDismiss = { showSilenceDialog = false },
             onConfirmInsert = { seconds ->
                 showSilenceDialog = false
                 applyTransform("Inserted $seconds seconds of silence") { pcm ->
-                    StudioAudioProcessor.insertSilence(pcm, currentPositionMs, seconds)
+                    StudioAudioProcessor.insertSilence(pcm, silenceInsertPosMs, seconds)
                 }
             }
         )
@@ -2012,6 +2034,17 @@ fun AudioStudioScreen(
     if (showMixAudioDialog) {
         syncActiveProjectTab()
         val otherTabs = openProjects.filterIndexed { idx, tab -> idx != activeProjectIndex && tab.pcm.isNotEmpty() }
+        val mixLivePlaying by playerManager.isPlaying.collectAsState()
+        var mixPreviewActive by remember { mutableStateOf(false) }
+
+        fun restoreTrackAfterMixPreview() {
+            playerManager.stop()
+            if (mixPreviewActive) {
+                rawOriginalPcm?.let { orig -> playerManager.loadPcmData(orig, workingSampleRate) }
+                mixPreviewActive = false
+            }
+        }
+
         StudioMixAudioDialog(
             currentTrackTitle = mainTrackTitle,
             clipboardPcm = clipboardPcm,
@@ -2019,9 +2052,44 @@ fun AudioStudioScreen(
             pickedMixTitle = pickedMixTitle,
             pickedMixPcm = pickedMixPcm,
             sampleRate = workingSampleRate,
-            currentCursorMs = currentPositionMs,
+            currentCursorMs = playerManager.currentPositionMs.value,
+            isPreviewPlaying = mixPreviewActive && mixLivePlaying,
+            onPreviewMix = { overlayPcm, startMs, mainVol, overlayVol, applyLimiter ->
+                val basePcm = rawOriginalPcm
+                if (basePcm != null && basePcm.isNotEmpty()) {
+                    scope.launch {
+                        playerManager.stop()
+                        val mixedPreview = withContext(Dispatchers.Default) {
+                            StudioAudioProcessor.mixAudioTracks(
+                                main = basePcm,
+                                overlay = overlayPcm,
+                                startMs = startMs,
+                                mainVolume = mainVol,
+                                overlayVolume = overlayVol,
+                                applyPeakLimiter = applyLimiter,
+                                sampleRate = workingSampleRate
+                            )
+                        }
+                        mixPreviewActive = true
+                        playerManager.loadPcmData(mixedPreview, workingSampleRate)
+                        if (startMs > 0L) {
+                            playerManager.seekTo((startMs - 500L).coerceAtLeast(0L))
+                        } else {
+                            playerManager.seekTo(0L)
+                        }
+                        playerManager.play()
+                    }
+                }
+            },
+            onStopPreview = {
+                restoreTrackAfterMixPreview()
+            },
             onPickFileToMix = { mixFilePickerLauncher.launch(arrayOf("audio/*")) },
             onConfirmMix = { overlayPcm, sourceName, startMs, mainVol, overlayVol, applyLimiter ->
+                if (mixPreviewActive) {
+                    playerManager.stop()
+                    mixPreviewActive = false
+                }
                 showMixAudioDialog = false
                 applyTransform("Mixed $sourceName into $mainTrackTitle") { pcm ->
                     StudioAudioProcessor.mixAudioTracks(
@@ -2035,7 +2103,10 @@ fun AudioStudioScreen(
                     )
                 }
             },
-            onDismiss = { showMixAudioDialog = false }
+            onDismiss = {
+                restoreTrackAfterMixPreview()
+                showMixAudioDialog = false
+            }
         )
     }
 
@@ -2072,11 +2143,12 @@ fun AudioStudioScreen(
     }
 
     if (showVoiceOverDialog) {
+        val voiceOverPosMs = playerManager.currentPositionMs.value
         StudioVoiceOverDialog(
             hasClipboard = clipboardPcm != null && clipboardPcm!!.isNotEmpty(),
             trimStartMs = trimStartMs,
             trimEndMs = trimEndMs,
-            currentPositionMs = currentPositionMs,
+            currentPositionMs = voiceOverPosMs,
             pickedAudioTitle = pickedVoiceOverTitle,
             pickedAudioDurationMs = pickedVoiceOverDurMs,
             isDecodingAudio = isDecodingVoiceOverFile,
@@ -2093,25 +2165,32 @@ fun AudioStudioScreen(
                 when {
                     cfg.sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC && pickedPcm != null && pickedPcm.isNotEmpty() -> {
                         val modeLabel = if (cfg.autoDuckEnabled) "Auto-Ducking" else "Steady"
+                        val alignedMusic = if (workingSampleRate != StudioAudioProcessor.SAMPLE_RATE) {
+                            StudioAudioProcessor.resamplePcmLinear(pickedPcm, StudioAudioProcessor.SAMPLE_RATE, workingSampleRate)
+                        } else pickedPcm
                         applyTransform("Applied ${cfg.preset.displayName} Voice Over ($modeLabel)") { pcm ->
                             AudioEffectsProEngine.applySmartMusicBedAutoDuck(
                                 voiceTrack = pcm,
-                                musicPcm = pickedPcm,
+                                musicPcm = alignedMusic,
                                 duckLevel = cfg.duckFactor,
                                 voiceGain = cfg.voiceGain,
                                 musicBaseVolume = cfg.musicVolume,
                                 autoDuckEnabled = cfg.autoDuckEnabled,
                                 loopMusic = cfg.loopMusic,
-                                sampleRate = workingSampleRate
+                                sampleRate = workingSampleRate,
+                                startOffsetMs = cfg.syncOffsetMs
                             )
                         }
                     }
                     cfg.sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_CLIP && pickedPcm != null && pickedPcm.isNotEmpty() -> {
+                        val alignedClip = if (workingSampleRate != StudioAudioProcessor.SAMPLE_RATE) {
+                            StudioAudioProcessor.resamplePcmLinear(pickedPcm, StudioAudioProcessor.SAMPLE_RATE, workingSampleRate)
+                        } else pickedPcm
                         applyTransform("Applied ${cfg.preset.displayName} Voice Over") { pcm ->
                             AudioEffectsProEngine.applyVoiceOverDuck(
                                 mainTrack = pcm,
-                                voiceClip = pickedPcm,
-                                insertAtMs = currentPositionMs,
+                                voiceClip = alignedClip,
+                                insertAtMs = voiceOverPosMs + cfg.syncOffsetMs,
                                 musicDuckFactor = if (cfg.autoDuckEnabled) cfg.duckFactor else 1.0f,
                                 voiceGain = cfg.voiceGain,
                                 sampleRate = workingSampleRate
@@ -2123,7 +2202,7 @@ fun AudioStudioScreen(
                             AudioEffectsProEngine.applyVoiceOverDuck(
                                 mainTrack = pcm,
                                 voiceClip = clip,
-                                insertAtMs = currentPositionMs,
+                                insertAtMs = voiceOverPosMs + cfg.syncOffsetMs,
                                 musicDuckFactor = if (cfg.autoDuckEnabled) cfg.duckFactor else 1.0f,
                                 voiceGain = cfg.voiceGain,
                                 sampleRate = workingSampleRate
@@ -2226,23 +2305,27 @@ fun AudioStudioScreen(
     }
 
     if (showCuePointsDialog) {
+        val cueDialogPosMs by playerManager.currentPositionMs.collectAsState()
         StudioCuePointsDialog(
             cuePoints = cuePoints,
-            currentMs = currentPositionMs,
+            currentMs = cueDialogPosMs,
             onDropCue = {
+                val posMs = playerManager.currentPositionMs.value
                 val cueNum = cuePoints.size + 1
-                val newCue = CuePoint(positionMs = currentPositionMs, name = "Cue $cueNum (${AccessibilityHelper.formatTimeMMSS(currentPositionMs)})")
+                val newCue = CuePoint(positionMs = posMs, name = "Cue $cueNum (${AccessibilityHelper.formatTimeMMSS(posMs)})")
                 cuePoints = (cuePoints + newCue).sortedBy { it.positionMs }
                 if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
                 AccessibilityHelper.announceForAccessibility(context, "Dropped cue point $cueNum")
             },
             onJumpPrevCue = {
-                cuePoints.filter { it.positionMs < currentPositionMs - 150L }.maxByOrNull { it.positionMs }?.let { prev ->
+                val posMs = playerManager.currentPositionMs.value
+                cuePoints.filter { it.positionMs < posMs - 150L }.maxByOrNull { it.positionMs }?.let { prev ->
                     playerManager.seekTo(prev.positionMs)
                 }
             },
             onJumpNextCue = {
-                cuePoints.filter { it.positionMs > currentPositionMs + 150L }.minByOrNull { it.positionMs }?.let { next ->
+                val posMs = playerManager.currentPositionMs.value
+                cuePoints.filter { it.positionMs > posMs + 150L }.minByOrNull { it.positionMs }?.let { next ->
                     playerManager.seekTo(next.positionMs)
                 }
             },
@@ -2370,7 +2453,7 @@ fun AudioStudioScreen(
                             hasClipboard = clipboardPcm != null && clipboardPcm!!.isNotEmpty(),
                             trimStartMs = trimStartMs,
                             trimEndMs = trimEndMs,
-                            currentPositionMs = currentPositionMs,
+                            currentPositionMs = playerManager.currentPositionMs.value,
                             currentSampleRate = workingSampleRate,
                             currentPlaybackRate = livePlaybackRate,
                             clipboardPcm = clipboardPcm,
@@ -2398,7 +2481,7 @@ fun AudioStudioScreen(
                             },
                             onApplyNoiseReduction = {
                                 applyTransform("Applied Noise Reduction") { pcm ->
-                                    audioProcessor.applyNoiseReduction(pcm, noiseReductionIntensity)
+                                    audioProcessor.applyNoiseReduction(pcm, noiseReductionIntensity, workingSampleRate)
                                 }
                             },
                             onApplyEqualizer = {
@@ -2431,7 +2514,7 @@ fun AudioStudioScreen(
             durationMs = durationMs,
             viewStartMs = viewWindowStartMs,
             viewSpanMs = viewWindowSpanMs,
-            currentMs = currentPositionMs,
+            currentMs = playerManager.currentPositionMs.value,
             followCursor = followCursor
         )
         StudioSpecifyViewDialog(
@@ -2479,5 +2562,47 @@ private fun StatusMetricCell(label: String, value: String, highlight: Boolean) {
                 else -> MaterialTheme.colorScheme.onSurface
             }
         )
+    }
+}
+
+@Composable
+private fun AudioStudioHeaderMetricsRow(
+    positionFlow: StateFlow<Long>,
+    durationMs: Long,
+    workingSampleRate: Int,
+    viewWindowStartMs: Long,
+    viewWindowSpanMs: Long?,
+    followCursor: Boolean,
+    isPlaying: Boolean
+) {
+    val livePosMs by positionFlow.collectAsState()
+    val currentViewport = WaveformViewportMath.resolveWindow(
+        durationMs = durationMs,
+        viewStartMs = viewWindowStartMs,
+        viewSpanMs = viewWindowSpanMs,
+        currentMs = livePosMs,
+        followCursor = followCursor
+    )
+    val rowSemantics = if (isPlaying) {
+        Modifier.clearAndSetSemantics {
+            contentDescription = "Playing audio, total duration ${AccessibilityHelper.formatTimeSpoken(durationMs)}, sample rate $workingSampleRate Hertz"
+        }
+    } else {
+        Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "Playhead ${AccessibilityHelper.formatTimeSpoken(livePosMs)} of ${AccessibilityHelper.formatTimeSpoken(durationMs)}, sample rate $workingSampleRate Hertz"
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("time_readout_card")
+            .then(rowSemantics),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        StatusMetricCell("PLAYHEAD", AccessibilityHelper.formatTimeVisual(livePosMs), highlight = true)
+        StatusMetricCell("DURATION", AccessibilityHelper.formatTimeVisual(durationMs), highlight = false)
+        StatusMetricCell("SAMPLE RATE", "${workingSampleRate / 1000.0} kHz", highlight = false)
+        StatusMetricCell("ZOOM", WaveformViewportMath.formatWindowLabel(currentViewport.spanMs, durationMs), highlight = false)
     }
 }

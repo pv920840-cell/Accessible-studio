@@ -79,15 +79,21 @@ class VideoPlayerManager(private val context: Context) {
 
         pollJob?.cancel()
         pollJob = scope.launch {
+            var lastEmittedPosMs = _currentPositionMs.value
             while (isActive && mp.isPlaying) {
                 val pos = mp.currentPosition.toLong()
-                _currentPositionMs.value = pos
                 if (endLimitMs != null && pos >= endLimitMs) {
+                    _currentPositionMs.value = pos
                     mp.pause()
                     _isPlaying.value = false
                     break
                 }
-                delay(40)
+                if (kotlin.math.abs(pos - lastEmittedPosMs) >= 120L) {
+                    lastEmittedPosMs = pos
+                    _currentPositionMs.value = pos
+                }
+                val nearEnd = endLimitMs != null && (endLimitMs - pos) in 1L..300L
+                delay(if (nearEnd) 45L else 120L)
             }
             _isPlaying.value = false
         }

@@ -80,6 +80,8 @@ import com.example.video.VideoToolkitProcessor
 import com.example.video.VideoVfx
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -179,10 +181,8 @@ fun StudioRootCoordinator(
     var hubExportedFile by remember { mutableStateOf<File?>(null) }
 
     val audioIsPlaying by audioPlayer.isPlaying.collectAsState()
-    val audioCurrentMs by audioPlayer.currentPositionMs.collectAsState()
     val audioDurationMs by audioPlayer.durationMs.collectAsState()
     val videoIsPlaying by videoPlayer.isPlaying.collectAsState()
-    val videoCurrentMs by videoPlayer.currentPositionMs.collectAsState()
     val videoDurationMs by videoPlayer.durationMs.collectAsState()
     var hubBaseSpeechBins by remember(activeVideoSession?.sourceUri) { mutableStateOf(BooleanArray(0)) }
 
@@ -199,21 +199,28 @@ fun StudioRootCoordinator(
     LaunchedEffect(
         destination,
         videoIsPlaying,
-        videoCurrentMs,
         activeVideoSession,
         hubBaseSpeechBins
     ) {
         val vs = activeVideoSession
         if (destination == StudioRootDestination.PROJECT_HUB && vs != null) {
-            videoMultiMusicPreview.syncTimelinePlayback(
-                isVideoPlaying = videoIsPlaying,
-                videoPositionMs = videoCurrentMs,
-                musicTracks = vs.musicTracks,
-                smartDucking = vs.smartDucking,
-                narrations = vs.narrations,
-                audioOption = vs.audioOption,
-                baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(hubBaseSpeechBins, videoCurrentMs)
-            )
+            fun syncNow() {
+                val posMs = videoPlayer.currentPositionMs.value
+                videoMultiMusicPreview.syncTimelinePlayback(
+                    isVideoPlaying = videoIsPlaying,
+                    videoPositionMs = posMs,
+                    musicTracks = vs.musicTracks,
+                    smartDucking = vs.smartDucking,
+                    narrations = vs.narrations,
+                    audioOption = vs.audioOption,
+                    baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(hubBaseSpeechBins, posMs)
+                )
+            }
+            syncNow()
+            while (isActive && videoIsPlaying) {
+                delay(200L)
+                syncNow()
+            }
         }
     }
 
@@ -546,7 +553,8 @@ fun StudioRootCoordinator(
                         ProjectHubScreen(
                             project = proj,
                             durationMs = dur,
-                            currentPositionMs = videoCurrentMs,
+                            currentPositionMs = 0L,
+                            positionFlow = videoPlayer.currentPositionMs,
                             isPlaying = videoIsPlaying,
                             hasUnsavedChanges = vSession?.hasUnsavedChanges ?: false,
                             onTogglePreviewPlay = {
@@ -606,7 +614,8 @@ fun StudioRootCoordinator(
                         ProjectHubScreen(
                             project = proj,
                             durationMs = dur,
-                            currentPositionMs = audioCurrentMs,
+                            currentPositionMs = 0L,
+                            positionFlow = audioPlayer.currentPositionMs,
                             isPlaying = audioIsPlaying,
                             hasUnsavedChanges = aSession?.hasUnsavedChanges ?: false,
                             onTogglePreviewPlay = {

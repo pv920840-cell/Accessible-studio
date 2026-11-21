@@ -152,6 +152,10 @@ class AudioPlayerManager(private val context: Context) {
         _scrubDirection.value = ScrubDirection.NONE
     }
 
+    fun setScrubSpeed(speed: Float) {
+        scrubSpeedMultiplier = speed.coerceIn(1.5f, 8.0f)
+    }
+
     /**
      * Toggles continuous audible Forward or Reverse Rewind scrubbing (for tap & TalkBack).
      */
@@ -378,6 +382,8 @@ class AudioPlayerManager(private val context: Context) {
             val scrubBuf = ShortArray(scrubChunkSize)
             var currentIdx = startSample
             var scrubActivated = false
+            var lastEmittedPosMs = ((startSample.toDouble() / sr) * 1000.0).toLong()
+            val minEmitDeltaMs = 120L
 
             while (isActive && _isPlaying.value && playbackGeneration.get() == myGen) {
                 while (isActive && _isPlaying.value && playbackGeneration.get() == myGen) {
@@ -390,7 +396,9 @@ class AudioPlayerManager(private val context: Context) {
                             track.flush()
                             track.play()
                         } catch (_: Throwable) {}
-                        _currentPositionMs.value = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                        val seekPosMs = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                        lastEmittedPosMs = seekPosMs
+                        _currentPositionMs.value = seekPosMs
                     }
 
                     val activeScrub = _scrubDirection.value
@@ -415,7 +423,11 @@ class AudioPlayerManager(private val context: Context) {
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
                                 currentIdx += written
-                                _currentPositionMs.value = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                                val posMs = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                                if (kotlin.math.abs(posMs - lastEmittedPosMs) >= minEmitDeltaMs || currentIdx >= activeLimit) {
+                                    lastEmittedPosMs = posMs
+                                    _currentPositionMs.value = posMs
+                                }
                             } else {
                                 break
                             }
@@ -451,7 +463,11 @@ class AudioPlayerManager(private val context: Context) {
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
                                 currentIdx = (currentIdx + (scrubChunkSize * speed).toInt()).coerceAtMost(samples.size)
-                                _currentPositionMs.value = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                                val posMs = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                                if (kotlin.math.abs(posMs - lastEmittedPosMs) >= minEmitDeltaMs || currentIdx >= samples.size) {
+                                    lastEmittedPosMs = posMs
+                                    _currentPositionMs.value = posMs
+                                }
                             } else {
                                 break
                             }
@@ -459,7 +475,10 @@ class AudioPlayerManager(private val context: Context) {
                         ScrubDirection.REWIND -> {
                             val speed = scrubSpeedMultiplier.coerceIn(1.5f, 8.0f)
                             if (currentIdx <= 0) {
-                                _currentPositionMs.value = 0L
+                                if (lastEmittedPosMs != 0L) {
+                                    lastEmittedPosMs = 0L
+                                    _currentPositionMs.value = 0L
+                                }
                                 scrubBuf.fill(0)
                                 val written = synchronized(trackLock) {
                                     if (customAudioTrack === track && playbackGeneration.get() == myGen) {
@@ -499,7 +518,11 @@ class AudioPlayerManager(private val context: Context) {
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
                                 currentIdx = (currentIdx - (scrubChunkSize * speed).toInt()).coerceAtLeast(0)
-                                _currentPositionMs.value = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                                val posMs = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                                if (kotlin.math.abs(posMs - lastEmittedPosMs) >= minEmitDeltaMs || currentIdx <= 0) {
+                                    lastEmittedPosMs = posMs
+                                    _currentPositionMs.value = posMs
+                                }
                             } else {
                                 break
                             }
@@ -509,6 +532,7 @@ class AudioPlayerManager(private val context: Context) {
 
                 if (loopSegment && isActive && _isPlaying.value && _scrubDirection.value == ScrubDirection.NONE && playbackGeneration.get() == myGen) {
                     currentIdx = startSample
+                    lastEmittedPosMs = startMs
                     _currentPositionMs.value = startMs
                 } else {
                     break
@@ -559,13 +583,16 @@ class AudioPlayerManager(private val context: Context) {
         playbackJob = scope.launch {
             delay(80L)
             var lastAppliedScrub = ScrubDirection.NONE
+            var lastAppliedForwardSpeed = scrubSpeedMultiplier
+            var lastEmittedPosMs = safeStart
             while (isActive && playbackGeneration.get() == myGen && (mp.isPlaying || _scrubDirection.value != ScrubDirection.NONE)) {
                 val activeScrub = _scrubDirection.value
-                if (activeScrub != lastAppliedScrub) {
+                val targetForwardSpeed = scrubSpeedMultiplier.coerceIn(1.5f, 4.0f)
+                if (activeScrub != lastAppliedScrub || (activeScrub == ScrubDirection.FORWARD && lastAppliedForwardSpeed != targetForwardSpeed)) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         try {
                             val targetSpeed = if (activeScrub == ScrubDirection.FORWARD) {
-                                scrubSpeedMultiplier.coerceIn(1.5f, 4.0f)
+                                targetForwardSpeed
                             } else {
                                 _playbackRate.value
                             }
@@ -573,6 +600,7 @@ class AudioPlayerManager(private val context: Context) {
                         } catch (_: Throwable) {}
                     }
                     lastAppliedScrub = activeScrub
+                    lastAppliedForwardSpeed = targetForwardSpeed
                 }
                 if (activeScrub == ScrubDirection.FORWARD && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
                     val next = (mp.currentPosition + (180 * scrubSpeedMultiplier).toInt()).coerceAtMost(mp.duration)
@@ -582,12 +610,16 @@ class AudioPlayerManager(private val context: Context) {
                     mp.seekTo(prev)
                 }
                 val current = mp.currentPosition.toLong()
-                _currentPositionMs.value = current
+                if (kotlin.math.abs(current - lastEmittedPosMs) >= 120L || activeScrub != ScrubDirection.NONE) {
+                    lastEmittedPosMs = current
+                    _currentPositionMs.value = current
+                }
                 if (endLimitMs != null && current >= endLimitMs && activeScrub == ScrubDirection.NONE && lastAppliedScrub == ScrubDirection.NONE) {
+                    _currentPositionMs.value = current
                     try { mp.pause() } catch (_: Throwable) {}
                     break
                 }
-                delay(if (activeScrub == ScrubDirection.REWIND) 160L else 50L)
+                delay(if (activeScrub == ScrubDirection.REWIND) 160L else 110L)
             }
             if (isActive && playbackGeneration.get() == myGen) {
                 _isPlaying.value = false

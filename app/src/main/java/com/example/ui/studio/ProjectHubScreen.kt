@@ -51,11 +51,13 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -65,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.accessibility.AccessibilityHelper
 import com.example.ui.theme.LocalHighContrast
+import kotlinx.coroutines.flow.StateFlow
 
 @Composable
 fun ProjectHubScreen(
@@ -79,7 +82,8 @@ fun ProjectHubScreen(
     onExportProject: () -> Unit,
     onBackToHome: () -> Unit,
     onSaveProject: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    positionFlow: StateFlow<Long>? = null
 ) {
     val isHighContrast = LocalHighContrast.current
     val isVideo = project.mediaType == ProjectMediaType.VIDEO
@@ -226,11 +230,11 @@ fun ProjectHubScreen(
                                     .testTag("hub_project_title")
                                     .semantics { heading() }
                             )
-                            Text(
-                                text = "${AccessibilityHelper.formatTimeVisual(currentPositionMs)} / ${AccessibilityHelper.formatTimeVisual(durationMs)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
+                            ProjectHubTimeText(
+                                currentPositionMs = currentPositionMs,
+                                durationMs = durationMs,
+                                isPlaying = isPlaying,
+                                positionFlow = positionFlow
                             )
                         }
 
@@ -326,6 +330,30 @@ fun ProjectHubScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ProjectHubTimeText(
+    currentPositionMs: Long,
+    durationMs: Long,
+    isPlaying: Boolean,
+    positionFlow: StateFlow<Long>?
+) {
+    val livePosMs = if (positionFlow != null) positionFlow.collectAsState().value else currentPositionMs
+    val timeSemantics = if (isPlaying) {
+        Modifier.clearAndSetSemantics {
+            contentDescription = "Playing preview, total ${AccessibilityHelper.formatTimeSpoken(durationMs)}"
+        }
+    } else {
+        Modifier
+    }
+    Text(
+        text = "${AccessibilityHelper.formatTimeVisual(livePosMs)} / ${AccessibilityHelper.formatTimeVisual(durationMs)}",
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = timeSemantics
+    )
 }
 
 @Composable

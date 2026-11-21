@@ -80,7 +80,8 @@ data class StudioSettingsState(
     val recordingBitrateKbps: Int = StudioPreferences.BITRATE_AUTO,
     val recordingAudioSource: RecordingAudioSource = RecordingAudioSource.DEFAULT,
     val recordingAutoGainEnabled: Boolean = true,
-    val recordingInputGain: Float = 1.0f
+    val recordingInputGain: Float = 1.0f,
+    val audioScrubSpeed: Float = StudioPreferences.DEFAULT_SCRUB_SPEED
 ) {
     fun withResetRecordingDefaults(): StudioSettingsState {
         return copy(
@@ -123,6 +124,7 @@ object StudioPreferences {
     private const val KEY_RECORDING_AUDIO_SOURCE = "recording_audio_source"
     private const val KEY_RECORDING_AUTO_GAIN = "recording_auto_gain_enabled"
     private const val KEY_RECORDING_INPUT_GAIN = "recording_input_gain"
+    private const val KEY_AUDIO_SCRUB_SPEED = "audio_scrub_speed"
 
     const val UPDATE_PROVIDER_AUTO = "auto"
     const val UPDATE_PROVIDER_GITHUB = "github"
@@ -133,6 +135,9 @@ object StudioPreferences {
 
     const val BITRATE_AUTO = 0
     val SUPPORTED_BITRATE_OPTIONS = listOf(0, 64, 128, 192, 256, 320)
+
+    const val DEFAULT_SCRUB_SPEED = 3.5f
+    val SUPPORTED_SCRUB_SPEED_OPTIONS = listOf(1.5f, 2.0f, 3.5f, 5.0f, 8.0f)
 
     const val MIN_INPUT_GAIN = 0.25f
     const val MAX_INPUT_GAIN = 2.0f
@@ -160,6 +165,15 @@ object StudioPreferences {
     fun normalizeInputGain(gain: Float): Float {
         if (!gain.isFinite()) return 1.0f
         return gain.coerceIn(MIN_INPUT_GAIN, MAX_INPUT_GAIN)
+    }
+
+    fun normalizeScrubSpeed(speed: Float): Float {
+        if (!speed.isFinite()) return DEFAULT_SCRUB_SPEED
+        return speed.coerceIn(1.5f, 8.0f)
+    }
+
+    fun formatScrubSpeedLabel(speed: Float): String {
+        return "${"%.1f".format(java.util.Locale.US, normalizeScrubSpeed(speed))}x"
     }
 
     fun formatSampleRateLabel(sampleRateHz: Int): String {
@@ -221,7 +235,8 @@ object StudioPreferences {
             recordingBitrateKbps = normalizeBitrateKbps(prefs.getInt(KEY_RECORDING_BITRATE, BITRATE_AUTO)),
             recordingAudioSource = RecordingAudioSource.fromStored(prefs.getString(KEY_RECORDING_AUDIO_SOURCE, RecordingAudioSource.DEFAULT.name)),
             recordingAutoGainEnabled = prefs.getBoolean(KEY_RECORDING_AUTO_GAIN, true),
-            recordingInputGain = normalizeInputGain(prefs.getFloat(KEY_RECORDING_INPUT_GAIN, 1.0f))
+            recordingInputGain = normalizeInputGain(prefs.getFloat(KEY_RECORDING_INPUT_GAIN, 1.0f)),
+            audioScrubSpeed = normalizeScrubSpeed(prefs.getFloat(KEY_AUDIO_SCRUB_SPEED, DEFAULT_SCRUB_SPEED))
         )
     }
 
@@ -246,6 +261,14 @@ object StudioPreferences {
             .putString(KEY_RECORDING_AUDIO_SOURCE, settings.recordingAudioSource.name)
             .putBoolean(KEY_RECORDING_AUTO_GAIN, settings.recordingAutoGainEnabled)
             .putFloat(KEY_RECORDING_INPUT_GAIN, normalizeInputGain(settings.recordingInputGain))
+            .putFloat(KEY_AUDIO_SCRUB_SPEED, normalizeScrubSpeed(settings.audioScrubSpeed))
+            .apply()
+    }
+
+    fun saveAudioScrubSpeed(context: Context, speed: Float) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putFloat(KEY_AUDIO_SCRUB_SPEED, normalizeScrubSpeed(speed))
             .apply()
     }
 

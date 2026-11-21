@@ -84,6 +84,8 @@ import com.example.video.VideoRenderEngine
 import com.example.video.VideoToolkitProcessor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -134,7 +136,6 @@ fun VideoFeatureWorkspaceScreen(
     var baseSpeechBins by remember(draft.sourceUri) { mutableStateOf(BooleanArray(0)) }
 
     val isPlaying by videoPlayer.isPlaying.collectAsState()
-    val currentPositionMs by videoPlayer.currentPositionMs.collectAsState()
     val durationMs by videoPlayer.durationMs.collectAsState()
     val isPreparedDuration by videoPlayer.isPreparedDuration.collectAsState()
     val playerAspectRatio by videoPlayer.videoAspectRatio.collectAsState()
@@ -156,22 +157,29 @@ fun VideoFeatureWorkspaceScreen(
 
     LaunchedEffect(
         isPlaying,
-        currentPositionMs,
         draft.musicTracks,
         draft.smartDucking,
         draft.narrations,
         draft.audioOption,
         baseSpeechBins
     ) {
-        activeMusicPreview.syncTimelinePlayback(
-            isVideoPlaying = isPlaying,
-            videoPositionMs = currentPositionMs,
-            musicTracks = draft.musicTracks,
-            smartDucking = draft.smartDucking,
-            narrations = draft.narrations,
-            audioOption = draft.audioOption,
-            baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(baseSpeechBins, currentPositionMs)
-        )
+        fun syncNow() {
+            val posMs = videoPlayer.currentPositionMs.value
+            activeMusicPreview.syncTimelinePlayback(
+                isVideoPlaying = isPlaying,
+                videoPositionMs = posMs,
+                musicTracks = draft.musicTracks,
+                smartDucking = draft.smartDucking,
+                narrations = draft.narrations,
+                audioOption = draft.audioOption,
+                baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(baseSpeechBins, posMs)
+            )
+        }
+        syncNow()
+        while (isActive && isPlaying) {
+            delay(200L)
+            syncNow()
+        }
     }
 
     LaunchedEffect(draft.musicTracks) {
@@ -408,9 +416,11 @@ fun VideoFeatureWorkspaceScreen(
                 }
                 Box(modifier = Modifier.weight(1f)) {
                     AccessibleTimeReadout(
-                        currentMs = currentPositionMs,
+                        currentMs = 0L,
                         durationMs = effectiveDuration,
-                        label = "Playhead"
+                        label = "Playhead",
+                        isPlaying = isPlaying,
+                        positionFlow = videoPlayer.currentPositionMs
                     )
                 }
             }
@@ -422,21 +432,25 @@ fun VideoFeatureWorkspaceScreen(
             )
 
             VideoTimelineScrubber(
-                currentPositionMs = currentPositionMs,
+                currentPositionMs = 0L,
                 durationMs = effectiveDuration,
                 trimStartMs = draft.trimStartMs,
                 trimEndMs = draft.trimEndMs,
                 cutSegments = draft.cutSegments,
-                onSeekTo = { videoPlayer.seekTo(it) }
+                onSeekTo = { videoPlayer.seekTo(it) },
+                isPlaying = isPlaying,
+                positionFlow = videoPlayer.currentPositionMs
             )
 
             when (tool) {
                 VideoFeatureTool.TRIM_TIMELINE -> VideoTimelineToolsPanel(
-                    currentPositionMs = currentPositionMs,
+                    currentPositionMs = 0L,
                     durationMs = effectiveDuration,
                     trimStartMs = draft.trimStartMs,
                     trimEndMs = draft.trimEndMs,
                     streamCopyTrim = draft.streamCopyTrim,
+                    positionFlow = videoPlayer.currentPositionMs,
+                    currentPositionMsProvider = { videoPlayer.currentPositionMs.value },
                     onUpdateTrimRange = { s, e -> draft = draft.copy(trimStartMs = s, trimEndMs = e, hasUnsavedChanges = true) },
                     onToggleStreamCopyTrim = { draft = draft.copy(streamCopyTrim = it, hasUnsavedChanges = true) },
                     onExportTrimmed = null,
@@ -504,7 +518,7 @@ fun VideoFeatureWorkspaceScreen(
                     },
                     snapshots = draft.snapshots,
                     onCaptureSnapshot = {
-                        val s = currentPositionMs
+                        val s = videoPlayer.currentPositionMs.value
                         val e = (s + 2000L).coerceAtMost(effectiveDuration.coerceAtLeast(2000L))
                         draft = draft.copy(
                             snapshots = draft.snapshots + SnapshotGlimpseItem(label = "Glimpse #${draft.snapshots.size + 1}", startMs = s, endMs = e),
@@ -522,11 +536,13 @@ fun VideoFeatureWorkspaceScreen(
                 )
 
                 VideoFeatureTool.AUDIO_MUSIC -> VideoAudioMusicPanel(
-                    currentPositionMs = currentPositionMs,
+                    currentPositionMs = 0L,
                     isRecordingNarration = isRecordingNarration,
                     recordingDurationMs = recordingDurMs,
                     recordingAmplitude = recordingAmp,
                     narrations = draft.narrations,
+                    isPlaying = isPlaying,
+                    positionFlow = videoPlayer.currentPositionMs,
                     onToggleRecordNarration = {
                         if (isRecordingNarration) {
                             val pcm = recorder.stopRecording()
@@ -542,7 +558,7 @@ fun VideoFeatureWorkspaceScreen(
                                 )
                             }
                         } else {
-                            narrationStartMs = currentPositionMs
+                            narrationStartMs = videoPlayer.currentPositionMs.value
                             recorder.startRecording(onSuccess = {}, onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() })
                         }
                     },
@@ -598,7 +614,7 @@ fun VideoFeatureWorkspaceScreen(
                                 name = preset.displayName,
                                 preset = preset,
                                 customUri = uri,
-                                timestampMs = currentPositionMs,
+                                timestampMs = videoPlayer.currentPositionMs.value,
                                 durationMs = dur,
                                 freezeFrameAtTimestamp = freeze
                             ),
@@ -739,7 +755,7 @@ fun VideoFeatureWorkspaceScreen(
                     onExtractFrameAtPlayhead = {
                         val uri = draft.sourceUri ?: return@VideoConvertAndMetaPanel
                         runAsyncTask("Capturing Frame JPEG...") { _ ->
-                            val jpg = toolkit.extractSingleFrame(uri, currentPositionMs, "Frame_${timestamp}.jpg")
+                            val jpg = toolkit.extractSingleFrame(uri, videoPlayer.currentPositionMs.value, "Frame_${timestamp}.jpg")
                             Toast.makeText(context, "Saved Frame: Pictures/Accessible Studio/${jpg.name}", Toast.LENGTH_LONG).show()
                             null
                         }

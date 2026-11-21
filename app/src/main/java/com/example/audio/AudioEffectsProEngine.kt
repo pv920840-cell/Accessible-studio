@@ -270,19 +270,22 @@ object AudioEffectsProEngine {
         sampleRate: Int = SAMPLE_RATE
     ): ShortArray {
         if (voiceClip.isEmpty()) return mainTrack
-        val insertSample = ((insertAtMs.toDouble() / 1000.0) * sampleRate).toInt().coerceAtLeast(0)
-        val outLen = max(mainTrack.size, insertSample + voiceClip.size)
+        val rawInsertSample = ((insertAtMs.toDouble() / 1000.0) * sampleRate).toInt()
+        val skipStart = if (rawInsertSample < 0) (-rawInsertSample).coerceAtMost(voiceClip.size) else 0
+        val effectiveStart = if (rawInsertSample >= 0) rawInsertSample else 0
+        val remainingLen = (voiceClip.size - skipStart).coerceAtLeast(0)
+        val outLen = max(mainTrack.size, effectiveStart + remainingLen)
         val out = ShortArray(outLen)
-        val fadeSamples = min(4096, voiceClip.size / 4)
+        val fadeSamples = min(4096, remainingLen / 4)
 
         for (i in 0 until outLen) {
             val base = if (i < mainTrack.size) mainTrack[i].toFloat() else 0f
-            val voiceIdx = i - insertSample
-            if (voiceIdx in voiceClip.indices) {
-                // Smooth envelope duck around voice clip boundaries
+            val relIdx = i - effectiveStart
+            val voiceIdx = relIdx + skipStart
+            if (relIdx >= 0 && voiceIdx in voiceClip.indices) {
                 val edgeT = when {
-                    voiceIdx < fadeSamples -> voiceIdx.toFloat() / fadeSamples.coerceAtLeast(1)
-                    voiceClip.size - voiceIdx < fadeSamples -> (voiceClip.size - voiceIdx).toFloat() / fadeSamples.coerceAtLeast(1)
+                    relIdx < fadeSamples -> relIdx.toFloat() / fadeSamples.coerceAtLeast(1)
+                    remainingLen - relIdx < fadeSamples -> (remainingLen - relIdx).toFloat() / fadeSamples.coerceAtLeast(1)
                     else -> 1f
                 }
                 val duck = 1f - edgeT * (1f - musicDuckFactor.coerceIn(0.05f, 1f))
@@ -361,7 +364,8 @@ object AudioEffectsProEngine {
         autoDuckEnabled: Boolean = true,
         loopMusic: Boolean = true,
         fadeOutTailMs: Long = 800L,
-        sampleRate: Int = SAMPLE_RATE
+        sampleRate: Int = SAMPLE_RATE,
+        startOffsetMs: Long = 0L
     ): ShortArray {
         if (voiceTrack.isEmpty() || musicPcm.isEmpty()) return voiceTrack
 
@@ -396,6 +400,7 @@ object AudioEffectsProEngine {
             }
         }
 
+        val offsetSamples = kotlin.math.round((startOffsetMs.toDouble() / 1000.0) * sampleRate).toInt()
         val tailFadeSamples = ((fadeOutTailMs.toDouble() / 1000.0) * sampleRate).toInt().coerceIn(0, voiceTrack.size / 4)
         val out = ShortArray(voiceTrack.size)
         for (f in 0 until numFrames) {
@@ -407,9 +412,11 @@ object AudioEffectsProEngine {
             for (i in start until end) {
                 val t = (i - start) / span
                 val duckFactor = d0 + (d1 - d0) * t
+                val musicPos = i - offsetSamples
                 val musicSample = when {
-                    i < musicPcm.size -> musicPcm[i].toFloat()
-                    loopMusic -> musicPcm[i % musicPcm.size].toFloat()
+                    musicPos < 0 -> 0f
+                    musicPos < musicPcm.size -> musicPcm[musicPos].toFloat()
+                    loopMusic -> musicPcm[musicPos % musicPcm.size].toFloat()
                     else -> 0f
                 }
                 val tailScale = if (tailFadeSamples > 0 && voiceTrack.size - i < tailFadeSamples) {

@@ -1138,87 +1138,123 @@ class WavAudioProcessor(private val context: Context? = null) {
     }
 
     /**
-     * Noise Gate: Silences / attenuates signal below threshold
+     * Smooth Hold-Protected Noise Gate: Attenuates room floor below threshold without chopping word endings
      */
-    fun applyNoiseGate(input: ShortArray, threshold: Float): ShortArray {
+    fun applyNoiseGate(input: ShortArray, threshold: Float): ShortArray =
+        applyNoiseGate(input, threshold, this.sampleRate, 1)
+
+    fun applyNoiseGate(
+        input: ShortArray,
+        threshold: Float,
+        sampleRate: Int = this.sampleRate,
+        channels: Int = 1
+    ): ShortArray {
         if (input.isEmpty()) return input
+        val sr = sampleRate.coerceIn(8000, 96000)
+        val ch = channels.coerceIn(1, 2)
         val output = ShortArray(input.size)
-        val threshInt = (threshold * 32767f).toInt().coerceAtLeast(300)
-        val window = 220 // ~5ms
+        val threshFloat = (threshold.coerceIn(0.001f, 0.95f) * 32767f).coerceAtLeast(180f)
+
+        // Attack ~3ms, Hold ~45ms, Release ~140ms so syllables and breaths decay naturally
+        val attackAlpha = (1f - kotlin.math.exp(-1.0 / (0.003 * sr))).toFloat().coerceIn(0.02f, 0.45f)
+        val releaseAlpha = (1f - kotlin.math.exp(-1.0 / (0.140 * sr))).toFloat().coerceIn(0.0005f, 0.05f)
+        val holdFrames = (sr * 0.045).toInt().coerceAtLeast(1)
+
         var envelope = 0f
+        var holdCounter = 0
 
-        for (i in input.indices) {
-            val sampleAbs = abs(input[i].toInt()).toFloat()
-            envelope = if (sampleAbs > envelope) {
-                (envelope * 0.9f) + (sampleAbs * 0.1f) // fast attack
-            } else {
-                (envelope * 0.999f) + (sampleAbs * 0.001f) // gentle release
+        if (ch == 2 && input.size >= 2) {
+            val frames = input.size / 2
+            for (f in 0 until frames) {
+                val i0 = f * 2
+                val i1 = i0 + 1
+                val framePeak = max(abs(input[i0].toInt()), abs(input[i1].toInt())).toFloat()
+                if (framePeak >= threshFloat) {
+                    holdCounter = holdFrames
+                    envelope += attackAlpha * (framePeak - envelope)
+                } else if (holdCounter > 0) {
+                    holdCounter--
+                    envelope += attackAlpha * 0.25f * (framePeak - envelope)
+                } else {
+                    envelope += releaseAlpha * (framePeak - envelope)
+                }
+
+                val gain = if (envelope < threshFloat) {
+                    val ratio = (envelope / threshFloat).coerceIn(0f, 1f)
+                    val smooth = ratio * ratio * (3f - 2f * ratio)
+                    0.06f + 0.94f * smooth * smooth
+                } else {
+                    1.0f
+                }
+
+                output[i0] = (input[i0] * gain).toInt().coerceIn(-32767, 32767).toShort()
+                output[i1] = (input[i1] * gain).toInt().coerceIn(-32767, 32767).toShort()
             }
-
-            val gain = if (envelope < threshInt) {
-                val ratio = (envelope / threshInt).coerceIn(0f, 1f)
-                ratio * ratio * 0.2f // soft knee attenuation
-            } else {
-                1.0f
+            if (input.size % 2 != 0) {
+                output[input.lastIndex] = input[input.lastIndex]
             }
+        } else {
+            for (i in input.indices) {
+                val sampleAbs = abs(input[i].toInt()).toFloat()
+                if (sampleAbs >= threshFloat) {
+                    holdCounter = holdFrames
+                    envelope += attackAlpha * (sampleAbs - envelope)
+                } else if (holdCounter > 0) {
+                    holdCounter--
+                    envelope += attackAlpha * 0.25f * (sampleAbs - envelope)
+                } else {
+                    envelope += releaseAlpha * (sampleAbs - envelope)
+                }
 
-            output[i] = (input[i] * gain).toInt().coerceIn(-32767, 32767).toShort()
+                val gain = if (envelope < threshFloat) {
+                    val ratio = (envelope / threshFloat).coerceIn(0f, 1f)
+                    val smooth = ratio * ratio * (3f - 2f * ratio)
+                    0.06f + 0.94f * smooth * smooth
+                } else {
+                    1.0f
+                }
+
+                output[i] = (input[i] * gain).toInt().coerceIn(-32767, 32767).toShort()
+            }
         }
         return output
     }
 
     /**
-     * Smooth Natural Noise Reduction:
-     * Eliminates hiss, air conditioning, and electrical noise without robotic artifacts or crackles.
-     * Uses smooth envelope tracking with attack and release smoothing and soft-knee attenuation.
+     * Studio-Clean Spectral Noise Reduction:
+     * Removes hiss, fan, air conditioning, room tone, and 50/60 Hz hum using
+     * Decision-Directed Wiener STFT filtering while preserving natural voice presence,
+     * high-frequency sibilance/air, and zero robotic or metallic artifacts.
      */
-    fun applyNoiseReduction(input: ShortArray, intensity: Float): ShortArray {
-        if (input.isEmpty()) return input
-        val output = ShortArray(input.size)
-        val strength = intensity.coerceIn(0.1f, 1.0f)
+    fun applyNoiseReduction(input: ShortArray, intensity: Float): ShortArray =
+        applyNoiseReduction(input, intensity, this.sampleRate, 1)
 
-        // Soft noise floor calibrated between 600 (Low) and 1800 (High)
-        val noiseFloor = 600f + (1400f * strength)
-        val maxAttenuation = (0.35f + 0.45f * strength) // Keeps natural vocal timbre intact
+    fun applyNoiseReduction(
+        input: ShortArray,
+        intensity: Float,
+        sampleRate: Int = this.sampleRate,
+        channels: Int = 1
+    ): ShortArray {
+        if (input.isEmpty() || intensity < 0.02f) return input
+        val strength = intensity.coerceIn(0.05f, 1.0f)
 
-        var envelope = 0f
-        val attackAlpha = 0.08f   // fast response to voice onset (no clipping speech)
-        val releaseAlpha = 0.002f // smooth decay so background doesn't pump or crackle
+        val config = StudioNoiseReductionConfig(
+            strength = strength,
+            humRemovalStrength = (0.35f + strength * 0.45f).coerceIn(0f, 0.85f),
+            spectralFloorOverride = (0.30f - strength * 0.24f).coerceIn(0.06f, 0.32f),
+            pauseAttenuationFloor = (0.86f - strength * 0.48f).coerceIn(0.38f, 0.90f),
+            lowCutHz = 38f + strength * 24f,
+            lowCutAttenuation = 0.18f + strength * 0.25f,
+            preserveHighFrequencies = true,
+            vocalClarityBoost = 0f
+        )
 
-        // Gentle sub-bass rumble filter (~70Hz)
-        var prevIn = 0f
-        var prevOut = 0f
-        val hpAlpha = 0.97f
-
-        for (i in input.indices) {
-            val curr = input[i].toFloat()
-            // 1. Rumble removal
-            val hp = hpAlpha * (prevOut + curr - prevIn)
-            prevIn = curr
-            prevOut = hp
-
-            val absVal = abs(hp)
-            // 2. Continuous envelope
-            envelope = if (absVal > envelope) {
-                envelope * (1f - attackAlpha) + absVal * attackAlpha
-            } else {
-                envelope * (1f - releaseAlpha) + absVal * releaseAlpha
-            }
-
-            // 3. Smooth soft-knee gain calculation (never abrupt 0/1 switching)
-            val gain = if (envelope < noiseFloor) {
-                val ratio = (envelope / noiseFloor).coerceIn(0f, 1f)
-                // Smooth polynomial curve (hermite interpolation)
-                val smoothRatio = ratio * ratio * (3f - 2f * ratio)
-                (1f - maxAttenuation) + (maxAttenuation * smoothRatio)
-            } else {
-                1.0f
-            }
-
-            val filtered = hp * gain
-            output[i] = filtered.toInt().coerceIn(-32767, 32767).toShort()
-        }
-        return output
+        return StudioNoiseReducer.reduceNoise(
+            samples = input,
+            sampleRate = sampleRate,
+            channels = channels,
+            config = config
+        )
     }
 
     /**
@@ -1276,18 +1312,26 @@ class WavAudioProcessor(private val context: Context? = null) {
     /**
      * Full DSP processing pipeline on PCM data
      */
-    fun processPcm(rawPcm: ShortArray, settings: AudioEditSettings): ShortArray {
+    fun processPcm(rawPcm: ShortArray, settings: AudioEditSettings): ShortArray =
+        processPcm(rawPcm, settings, this.sampleRate, 1)
+
+    fun processPcm(
+        rawPcm: ShortArray,
+        settings: AudioEditSettings,
+        sampleRate: Int = this.sampleRate,
+        channels: Int = 1
+    ): ShortArray {
         if (rawPcm.isEmpty()) return rawPcm
         var pcm = rawPcm
 
         // 1. Noise Gate
         if (settings.noiseGateEnabled) {
-            pcm = applyNoiseGate(pcm, settings.noiseGateThreshold)
+            pcm = applyNoiseGate(pcm, settings.noiseGateThreshold, sampleRate, channels)
         }
 
         // 2. Noise Reduction
         if (settings.noiseReductionEnabled) {
-            pcm = applyNoiseReduction(pcm, settings.noiseReductionIntensity)
+            pcm = applyNoiseReduction(pcm, settings.noiseReductionIntensity, sampleRate, channels)
         }
 
         // 3. Bass & Treble booster

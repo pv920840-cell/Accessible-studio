@@ -57,6 +57,7 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -68,6 +69,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -80,6 +82,7 @@ import com.example.ui.theme.LocalHighContrast
 import com.example.video.VideoCutMath
 import com.example.video.VideoCutSegment
 import com.example.video.VideoMetadataDetails
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Displays non-destructive video clip metadata (file name, duration, resolution/FPS if known).
@@ -162,10 +165,13 @@ fun VideoTimelineScrubber(
     trimEndMs: Long,
     cutSegments: List<VideoCutSegment> = emptyList(),
     onSeekTo: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isPlaying: Boolean = false,
+    positionFlow: StateFlow<Long>? = null
 ) {
+    val livePosMs = if (positionFlow != null) positionFlow.collectAsState().value else currentPositionMs
     val safeDuration = durationMs.coerceAtLeast(1000L)
-    val clampedPos = currentPositionMs.coerceIn(0L, safeDuration)
+    val clampedPos = livePosMs.coerceIn(0L, safeDuration)
     val isHighContrast = LocalHighContrast.current
 
     Card(
@@ -186,7 +192,17 @@ fun VideoTimelineScrubber(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(
+                        if (isPlaying) {
+                            Modifier.clearAndSetSemantics {
+                                contentDescription = "Timeline Scrubber, playing, total ${AccessibilityHelper.formatTimeSpoken(safeDuration)}"
+                            }
+                        } else {
+                            Modifier
+                        }
+                    ),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -210,10 +226,18 @@ fun VideoTimelineScrubber(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("slider_video_timeline_scrubber")
-                    .semantics {
-                        contentDescription = "Video timeline scrubber"
-                        stateDescription = "${AccessibilityHelper.formatTimeSpoken(clampedPos)} of ${AccessibilityHelper.formatTimeSpoken(safeDuration)}"
-                    }
+                    .then(
+                        if (isPlaying) {
+                            Modifier.clearAndSetSemantics {
+                                contentDescription = "Video timeline scrubber, playing. Pause video to adjust position."
+                            }
+                        } else {
+                            Modifier.semantics {
+                                contentDescription = "Video timeline scrubber"
+                                stateDescription = "${AccessibilityHelper.formatTimeSpoken(clampedPos)} of ${AccessibilityHelper.formatTimeSpoken(safeDuration)}"
+                            }
+                        }
+                    )
             )
 
             Row(
@@ -258,7 +282,8 @@ fun VideoCutterSection(
     onAddCutSegment: (Long, Long) -> Unit,
     onRemoveCutSegment: (String) -> Unit,
     onClearCutSegments: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPositionMsProvider: (() -> Long)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
     val safeDuration = durationMs.coerceAtLeast(0L)
@@ -323,7 +348,10 @@ fun VideoCutterSection(
                 label = "Rewind 5s",
                 tooltip = "Rewind 5 seconds",
                 icon = Icons.Default.FastRewind,
-                onClick = { onSeekTo((currentPositionMs - 5_000L).coerceIn(0L, safeDuration)) },
+                onClick = {
+                    val pos = currentPositionMsProvider?.invoke() ?: currentPositionMs
+                    onSeekTo((pos - 5_000L).coerceIn(0L, safeDuration))
+                },
                 testTag = "btn_cutter_rewind_5s"
             )
             CutterTooltipActionButton(
@@ -339,7 +367,10 @@ fun VideoCutterSection(
                 label = "Forward 5s",
                 tooltip = "Fast forward 5 seconds",
                 icon = Icons.Default.FastForward,
-                onClick = { onSeekTo((currentPositionMs + 5_000L).coerceIn(0L, safeDuration)) },
+                onClick = {
+                    val pos = currentPositionMsProvider?.invoke() ?: currentPositionMs
+                    onSeekTo((pos + 5_000L).coerceIn(0L, safeDuration))
+                },
                 testTag = "btn_cutter_forward_5s"
             )
             CutterTooltipActionButton(
@@ -369,14 +400,20 @@ fun VideoCutterSection(
                 label = "Seek Back ${stepOption.shortLabel}",
                 tooltip = "Seek backward ${stepOption.spokenLabel}",
                 icon = Icons.Default.SkipPrevious,
-                onClick = { onSeekTo((currentPositionMs - stepMs).coerceIn(0L, safeDuration)) },
+                onClick = {
+                    val pos = currentPositionMsProvider?.invoke() ?: currentPositionMs
+                    onSeekTo((pos - stepMs).coerceIn(0L, safeDuration))
+                },
                 testTag = "btn_cutter_step_back"
             )
             CutterTooltipActionButton(
                 label = "Seek Fwd ${stepOption.shortLabel}",
                 tooltip = "Seek forward ${stepOption.spokenLabel}",
                 icon = Icons.Default.SkipNext,
-                onClick = { onSeekTo((currentPositionMs + stepMs).coerceIn(0L, safeDuration)) },
+                onClick = {
+                    val pos = currentPositionMsProvider?.invoke() ?: currentPositionMs
+                    onSeekTo((pos + stepMs).coerceIn(0L, safeDuration))
+                },
                 testTag = "btn_cutter_step_forward"
             )
             CutterTooltipActionButton(
@@ -459,10 +496,15 @@ fun VideoCutterSection(
             )
             CutterTooltipActionButton(
                 label = "At Playhead",
-                tooltip = "Set start cut marker to current playhead position (${AccessibilityHelper.formatTimeVisual(currentPositionMs)})",
+                tooltip = if (currentPositionMsProvider != null || isPlaying) {
+                    "Set start cut marker to current playhead position"
+                } else {
+                    "Set start cut marker to current playhead position (${AccessibilityHelper.formatTimeVisual(currentPositionMs)})"
+                },
                 icon = Icons.Default.Bookmark,
                 onClick = {
-                    val (s, e) = VideoCutMath.clampStartCutMarker(currentPositionMs, cutEndMs, safeDuration)
+                    val pos = currentPositionMsProvider?.invoke() ?: currentPositionMs
+                    val (s, e) = VideoCutMath.clampStartCutMarker(pos, cutEndMs, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
                 },
@@ -538,10 +580,15 @@ fun VideoCutterSection(
             )
             CutterTooltipActionButton(
                 label = "At Playhead",
-                tooltip = "Set end cut marker to current playhead position (${AccessibilityHelper.formatTimeVisual(currentPositionMs)})",
+                tooltip = if (currentPositionMsProvider != null || isPlaying) {
+                    "Set end cut marker to current playhead position"
+                } else {
+                    "Set end cut marker to current playhead position (${AccessibilityHelper.formatTimeVisual(currentPositionMs)})"
+                },
                 icon = Icons.Default.Bookmark,
                 onClick = {
-                    val (s, e) = VideoCutMath.clampEndCutMarker(cutStartMs, currentPositionMs, safeDuration)
+                    val pos = currentPositionMsProvider?.invoke() ?: currentPositionMs
+                    val (s, e) = VideoCutMath.clampEndCutMarker(cutStartMs, pos, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
                 },

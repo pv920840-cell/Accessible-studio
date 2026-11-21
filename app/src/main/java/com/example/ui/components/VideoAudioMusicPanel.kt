@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +67,7 @@ import com.example.video.NarrationSegment
 import com.example.video.SoundEffectOverlay
 import com.example.video.SoundEffectPreset
 import com.example.video.VideoAudioOption
+import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -102,7 +104,9 @@ fun VideoAudioMusicPanel(
     onToggleDefaultLoopNewTracks: (Boolean) -> Unit = {},
     previewingMusicTrackId: String? = null,
     onTogglePreviewMusicTrack: (MusicLayerTrack) -> Unit = {},
-    videoDurationMs: Long = 0L
+    videoDurationMs: Long = 0L,
+    isPlaying: Boolean = false,
+    positionFlow: StateFlow<Long>? = null
 ) {
     val context = LocalContext.current
     val isHighContrast = LocalHighContrast.current
@@ -162,11 +166,20 @@ fun VideoAudioMusicPanel(
             ) {
                 Icon(if (isRecordingNarration) Icons.Default.Stop else Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    if (isRecordingNarration) "Stop Narration (${AccessibilityHelper.formatTimeVisual(recordingDurationMs)})"
-                    else "Record Narration at ${AccessibilityHelper.formatTimeVisual(currentPositionMs)}",
-                    fontWeight = FontWeight.Bold
-                )
+                if (isRecordingNarration) {
+                    Text(
+                        "Stop Narration (${AccessibilityHelper.formatTimeVisual(recordingDurationMs)})",
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    PlayheadActionButtonText(
+                        prefix = "Record Narration at",
+                        playingFallback = "Record Narration at Playhead",
+                        currentPositionMs = currentPositionMs,
+                        isPlaying = isPlaying,
+                        positionFlow = positionFlow
+                    )
+                }
             }
 
             if (isRecordingNarration) {
@@ -409,7 +422,13 @@ fun VideoAudioMusicPanel(
                 ) {
                     Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Insert SFX @ ${AccessibilityHelper.formatTimeVisual(currentPositionMs)}", fontWeight = FontWeight.Bold)
+                    PlayheadActionButtonText(
+                        prefix = "Insert SFX @",
+                        playingFallback = "Insert SFX @ Playhead",
+                        currentPositionMs = currentPositionMs,
+                        isPlaying = isPlaying,
+                        positionFlow = positionFlow
+                    )
                 }
                 OutlinedButton(
                     onClick = { customSfxPicker.launch("audio/*") },
@@ -522,5 +541,21 @@ fun VideoAudioMusicPanel(
                 Text("Extract Audio as $extractAudioFormat", fontWeight = FontWeight.Bold)
             }
         }
+    }
+}
+
+@Composable
+private fun PlayheadActionButtonText(
+    prefix: String,
+    playingFallback: String,
+    currentPositionMs: Long,
+    isPlaying: Boolean,
+    positionFlow: StateFlow<Long>?
+) {
+    if (isPlaying) {
+        Text(playingFallback, fontWeight = FontWeight.Bold)
+    } else {
+        val livePosMs = if (positionFlow != null) positionFlow.collectAsState().value else currentPositionMs
+        Text("$prefix ${AccessibilityHelper.formatTimeVisual(livePosMs)}", fontWeight = FontWeight.Bold)
     }
 }

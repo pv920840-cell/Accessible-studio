@@ -801,7 +801,8 @@ data class VoiceOverApplyConfig(
     val duckFactor: Float,
     val voiceGain: Float,
     val musicVolume: Float,
-    val loopMusic: Boolean
+    val loopMusic: Boolean,
+    val syncOffsetMs: Long = 0L
 )
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -835,6 +836,7 @@ fun StudioVoiceOverDialog(
     var voiceGain by remember { mutableFloatStateOf(selectedPreset.voiceGain) }
     var musicVolume by remember { mutableFloatStateOf(selectedPreset.musicVolume) }
     var loopMusic by remember { mutableStateOf(true) }
+    var syncOffsetMs by remember { mutableStateOf(0L) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1060,14 +1062,23 @@ fun StudioVoiceOverDialog(
                     }
                 }
 
+                if (hasPickedAudio || (hasClipboard && sourceChoice == VoiceOverSourceChoice.CLIPBOARD_CLIP)) {
+                    MixSyncOffsetControl(
+                        offsetMs = syncOffsetMs,
+                        onOffsetChange = { syncOffsetMs = it },
+                        baseStartMs = if (sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC) 0L else currentPositionMs,
+                        title = "Added Audio Sync Timing (Increase / Decrease)"
+                    )
+                }
+
                 Text(
                     text = when {
                         hasPickedAudio && sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC ->
                             "Mixes added music behind your Voice track with ${if (autoDuckEnabled) "Smart Auto-Ducking" else "steady volume"}."
                         hasPickedAudio && sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_CLIP ->
-                            "Overdubs added clip at ${AccessibilityHelper.formatTimeVisual(currentPositionMs)} while ducking backing track."
+                            "Overdubs added clip at ${AccessibilityHelper.formatTimeVisual((currentPositionMs + syncOffsetMs).coerceAtLeast(0L))} while ducking backing track."
                         hasClipboard && sourceChoice == VoiceOverSourceChoice.CLIPBOARD_CLIP ->
-                            "Overdubs clipboard clip at ${AccessibilityHelper.formatTimeVisual(currentPositionMs)} while ducking backing track."
+                            "Overdubs clipboard clip at ${AccessibilityHelper.formatTimeVisual((currentPositionMs + syncOffsetMs).coerceAtLeast(0L))} while ducking backing track."
                         else ->
                             "No file or clipboard picked — applies ducking curve across selection (${AccessibilityHelper.formatTimeVisual(trimStartMs)} – ${AccessibilityHelper.formatTimeVisual(trimEndMs)})."
                     },
@@ -1087,7 +1098,8 @@ fun StudioVoiceOverDialog(
                             duckFactor = duckFactor,
                             voiceGain = voiceGain,
                             musicVolume = musicVolume,
-                            loopMusic = loopMusic
+                            loopMusic = loopMusic,
+                            syncOffsetMs = syncOffsetMs
                         )
                     )
                 },

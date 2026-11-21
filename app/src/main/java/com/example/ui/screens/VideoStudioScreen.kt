@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -115,6 +116,9 @@ import com.example.video.VideoToolSection
 import com.example.video.VideoToolkitProcessor
 import com.example.video.VideoVfx
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -160,7 +164,6 @@ fun VideoStudioScreen(
     var taskProgress by remember { mutableFloatStateOf(0f) }
 
     val isPlaying by videoPlayer.isPlaying.collectAsState()
-    val currentPositionMs by videoPlayer.currentPositionMs.collectAsState()
     val durationMs by videoPlayer.durationMs.collectAsState()
     val playerAspectRatio by videoPlayer.videoAspectRatio.collectAsState()
 
@@ -252,22 +255,29 @@ fun VideoStudioScreen(
 
     LaunchedEffect(
         isPlaying,
-        currentPositionMs,
         musicTracks,
         smartDucking,
         narrations,
         audioOption,
         baseSpeechBins
     ) {
-        multiMusicPreview.syncTimelinePlayback(
-            isVideoPlaying = isPlaying,
-            videoPositionMs = currentPositionMs,
-            musicTracks = musicTracks,
-            smartDucking = smartDucking,
-            narrations = narrations,
-            audioOption = audioOption,
-            baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(baseSpeechBins, currentPositionMs)
-        )
+        fun syncNow() {
+            val posMs = videoPlayer.currentPositionMs.value
+            multiMusicPreview.syncTimelinePlayback(
+                isVideoPlaying = isPlaying,
+                videoPositionMs = posMs,
+                musicTracks = musicTracks,
+                smartDucking = smartDucking,
+                narrations = narrations,
+                audioOption = audioOption,
+                baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(baseSpeechBins, posMs)
+            )
+        }
+        syncNow()
+        while (isActive && isPlaying) {
+            delay(200L)
+            syncNow()
+        }
     }
 
     LaunchedEffect(musicTracks) {
@@ -553,27 +563,26 @@ fun VideoStudioScreen(
                 }
             }
 
-            Surface(
-                color = Color.Black.copy(alpha = 0.75f),
-                shape = RoundedCornerShape(8.dp),
+            VideoPreviewTimeBadge(
+                isPlaying = isPlaying,
+                durationMs = durationMs,
+                positionFlow = videoPlayer.currentPositionMs,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
-            ) {
-                Text(
-                    text = "${AccessibilityHelper.formatTimeVisual(currentPositionMs)} / ${AccessibilityHelper.formatTimeVisual(durationMs)}",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
+            )
         }
 
         // Playhead & Transport + Trimmer Handles
-        AccessibleTimeReadout(currentMs = currentPositionMs, durationMs = durationMs, label = "Video Playhead")
+        AccessibleTimeReadout(
+            currentMs = 0L,
+            durationMs = durationMs,
+            label = "Video Playhead",
+            isPlaying = isPlaying,
+            positionFlow = videoPlayer.currentPositionMs
+        )
         AccessibleTransportControls(
             isPlaying = isPlaying,
             onPlayPause = { if (isPlaying) videoPlayer.pause() else videoPlayer.play() },
-            onNudge = { d -> videoPlayer.seekTo((currentPositionMs + d).coerceIn(0L, durationMs)) },
+            onNudge = { d -> videoPlayer.seekTo((videoPlayer.currentPositionMs.value + d).coerceIn(0L, durationMs)) },
             onJumpStart = { videoPlayer.seekTo(0L) },
             onJumpEnd = { videoPlayer.seekTo(durationMs) },
             onPlaySelection = {
@@ -585,15 +594,16 @@ fun VideoStudioScreen(
                 }
             },
             onPlayContinuous = {
-                if (durationMs > 0L) videoPlayer.play(startMs = currentPositionMs, endLimitMs = null)
+                if (durationMs > 0L) videoPlayer.play(startMs = videoPlayer.currentPositionMs.value, endLimitMs = null)
             }
         )
 
         AccessibleTrimSection(
-            currentMs = currentPositionMs,
+            currentMs = 0L,
             durationMs = durationMs,
             trimStartMs = trimStartMs,
             trimEndMs = trimEndMs,
+            currentPositionMsProvider = { videoPlayer.currentPositionMs.value },
             onSetTrimStart = {
                 val maxS = (trimEndMs - 500L.coerceAtMost(durationMs)).coerceIn(0L, durationMs)
                 trimStartMs = it.coerceIn(0L, maxS)
@@ -643,11 +653,13 @@ fun VideoStudioScreen(
 
         when (activeSection) {
             VideoToolSection.TIMELINE -> VideoTimelineToolsPanel(
-                currentPositionMs = currentPositionMs,
+                currentPositionMs = 0L,
                 durationMs = durationMs,
                 trimStartMs = trimStartMs,
                 trimEndMs = trimEndMs,
                 streamCopyTrim = streamCopyTrim,
+                positionFlow = videoPlayer.currentPositionMs,
+                currentPositionMsProvider = { videoPlayer.currentPositionMs.value },
                 onUpdateTrimRange = { s, e -> trimStartMs = s; trimEndMs = e },
                 onToggleStreamCopyTrim = { streamCopyTrim = it },
                 onExportTrimmed = {
@@ -711,7 +723,7 @@ fun VideoStudioScreen(
                 },
                 snapshots = snapshots,
                 onCaptureSnapshot = {
-                    val s = currentPositionMs
+                    val s = videoPlayer.currentPositionMs.value
                     val e = (s + 2000L).coerceAtMost(durationMs.coerceAtLeast(2000L))
                     snapshots = snapshots + SnapshotGlimpseItem(label = "Glimpse #${snapshots.size + 1}", startMs = s, endMs = e)
                 },
@@ -726,11 +738,13 @@ fun VideoStudioScreen(
             )
 
             VideoToolSection.AUDIO_MUSIC -> VideoAudioMusicPanel(
-                currentPositionMs = currentPositionMs,
+                currentPositionMs = 0L,
                 isRecordingNarration = isRecordingNarration,
                 recordingDurationMs = recordingDurMs,
                 recordingAmplitude = recordingAmp,
                 narrations = narrations,
+                isPlaying = isPlaying,
+                positionFlow = videoPlayer.currentPositionMs,
                 onToggleRecordNarration = {
                     if (isRecordingNarration) {
                         val pcm = recorder.stopRecording()
@@ -743,7 +757,7 @@ fun VideoStudioScreen(
                             )
                         }
                     } else {
-                        narrationStartMs = currentPositionMs
+                        narrationStartMs = videoPlayer.currentPositionMs.value
                         recorder.startRecording(onSuccess = {}, onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() })
                     }
                 },
@@ -789,7 +803,7 @@ fun VideoStudioScreen(
                         name = preset.displayName,
                         preset = preset,
                         customUri = uri,
-                        timestampMs = currentPositionMs,
+                        timestampMs = videoPlayer.currentPositionMs.value,
                         durationMs = dur,
                         freezeFrameAtTimestamp = freeze
                     )
@@ -925,7 +939,7 @@ fun VideoStudioScreen(
                 onExtractFrameAtPlayhead = {
                     val uri = currentVideoUri ?: return@VideoConvertAndMetaPanel
                     runAsyncTask("Capturing Frame JPEG...") { _ ->
-                        val jpg = toolkit.extractSingleFrame(uri, currentPositionMs, "Frame_${timestamp}.jpg")
+                        val jpg = toolkit.extractSingleFrame(uri, videoPlayer.currentPositionMs.value, "Frame_${timestamp}.jpg")
                         Toast.makeText(context, "Saved Frame: Pictures/Accessible Studio/${jpg.name}", Toast.LENGTH_LONG).show()
                         null
                     }
@@ -1010,6 +1024,34 @@ fun VideoStudioScreen(
                     Toast.makeText(context, "Could not share video: ${t.localizedMessage ?: "File location restricted"}", Toast.LENGTH_LONG).show()
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun VideoPreviewTimeBadge(
+    isPlaying: Boolean,
+    durationMs: Long,
+    positionFlow: StateFlow<Long>,
+    modifier: Modifier = Modifier
+) {
+    val livePosMs by positionFlow.collectAsState()
+    val badgeSemantics = if (isPlaying) {
+        Modifier.clearAndSetSemantics {}
+    } else {
+        Modifier
+    }
+    Surface(
+        color = Color.Black.copy(alpha = 0.75f),
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier.then(badgeSemantics)
+    ) {
+        Text(
+            text = "${AccessibilityHelper.formatTimeVisual(livePosMs)} / ${AccessibilityHelper.formatTimeVisual(durationMs)}",
+            color = Color.White,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
 }

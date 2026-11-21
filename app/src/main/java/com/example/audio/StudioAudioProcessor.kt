@@ -475,7 +475,33 @@ object StudioAudioProcessor {
     }
 
     /**
-     * Mixes two PCM audio buffers with independent gain controls and optional anti-clip peak limiting.
+     * Resamples a mono 16-bit PCM array between different sample rates using linear interpolation
+     * so tracks from heterogeneous sample rates stay strictly time-aligned when mixing.
+     */
+    fun resamplePcmLinear(samples: ShortArray, fromRate: Int, toRate: Int): ShortArray {
+        val safeFrom = fromRate.coerceIn(8000, 192000)
+        val safeTo = toRate.coerceIn(8000, 192000)
+        if (samples.isEmpty() || safeFrom == safeTo) return samples
+        if (samples.size < 2) return samples
+        val ratio = safeTo.toDouble() / safeFrom.toDouble()
+        val outLen = kotlin.math.round(samples.size * ratio).toInt().coerceAtLeast(1)
+        val out = ShortArray(outLen)
+        val maxIdx = (samples.size - 1).toDouble()
+        for (i in 0 until outLen) {
+            val srcPos = (i.toDouble() / ratio).coerceIn(0.0, maxIdx)
+            val i0 = srcPos.toInt()
+            val i1 = min(i0 + 1, samples.size - 1)
+            val frac = srcPos - i0
+            val interpolated = samples[i0] * (1.0 - frac) + samples[i1] * frac
+            out[i] = kotlin.math.round(interpolated).toInt().coerceIn(-32767, 32767).toShort()
+        }
+        return out
+    }
+
+    /**
+     * Mixes two PCM audio buffers with independent gain controls, signed start timing offset
+     * (positive shifts overlay later; negative skips leading overlay samples so it aligns earlier),
+     * click-free entry taper on trimmed starts, and optional anti-clip peak limiting.
      */
     fun mixAudioTracks(
         main: ShortArray,
@@ -488,17 +514,35 @@ object StudioAudioProcessor {
     ): ShortArray {
         if (overlay.isEmpty() && main.isEmpty()) return ShortArray(0)
         val safeSr = sampleRate.coerceAtLeast(8000)
-        val posSample = ((startMs.toDouble() / 1000.0) * safeSr).toInt().coerceIn(0, main.size)
-        val neededLength = max(main.size, posSample + overlay.size)
+        val rawPosSample = kotlin.math.round((startMs.toDouble() / 1000.0) * safeSr).toInt()
+        val skipOverlayStart = if (rawPosSample < 0) (-rawPosSample).coerceAtMost(overlay.size) else 0
+        val effectivePosSample = if (rawPosSample >= 0) rawPosSample else 0
+        val effectiveOverlayLen = (overlay.size - skipOverlayStart).coerceAtLeast(0)
+        val neededLength = max(main.size, effectivePosSample + effectiveOverlayLen)
         val output = ShortArray(neededLength)
 
         val safeMainVol = mainVolume.coerceIn(0f, 2.0f)
         val safeOverlayVol = overlayVolume.coerceIn(0f, 2.0f)
+        val trimFadeSamples = if (skipOverlayStart > 0 && effectiveOverlayLen > 0) {
+            min(effectiveOverlayLen, (safeSr * 0.005).toInt().coerceAtLeast(1))
+        } else {
+            0
+        }
 
         for (i in 0 until neededLength) {
             val baseVal = if (i < main.size) main[i] * safeMainVol else 0f
-            val overIdx = i - posSample
-            val overlayVal = if (overIdx in overlay.indices) overlay[overIdx] * safeOverlayVol else 0f
+            val relIdx = i - effectivePosSample
+            val overIdx = relIdx + skipOverlayStart
+            val overlayVal = if (relIdx >= 0 && overIdx in overlay.indices) {
+                val edgeFade = if (trimFadeSamples > 0 && relIdx < trimFadeSamples) {
+                    relIdx.toFloat() / trimFadeSamples.toFloat()
+                } else {
+                    1.0f
+                }
+                overlay[overIdx] * safeOverlayVol * edgeFade
+            } else {
+                0f
+            }
             output[i] = (baseVal + overlayVal).toInt().coerceIn(-32767, 32767).toShort()
         }
 

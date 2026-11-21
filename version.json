@@ -1,9 +1,9 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 16,
-  "versionName": "1.2.3",
-  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.apk",
+  "versionCode": 17,
+  "versionName": "1.2.4",
+  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.4.apk",
   "pageUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/",
-  "apkSizeBytes": 20900714,
-  "releaseNotes": "Studio-grade -1 Vocal Remover & Clean Karaoke engine for both Stereo (L/R balance drift alignment, Mid/Side Wiener coherence, reverb ducking) and Mono (2048-pt 4x-overlap STFT, dual-scale vibrato HPSS + dual-F0 harmony comb & formant-bed suppression with drum transient protection), Save button saves studio projects directly without triggering final export, plus Play Protect HTTPS hardening and Settings -> About updater."
+  "apkSizeBytes": 20049485,
+  "releaseNotes": "Fix TalkBack swiping lag during audio/video playback (throttled playhead ticks, isolated recomposition, suppressed accessibility node churn while playing) and added customizable Rewind & Fast-Forward scrub speed controls (1.5x, 2.0x, 3.5x, 5.0x, 8.0x) in Audio Editing."
 }

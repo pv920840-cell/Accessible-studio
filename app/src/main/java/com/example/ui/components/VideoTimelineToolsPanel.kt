@@ -27,7 +27,6 @@ import androidx.compose.material.icons.filled.MergeType
 import androidx.compose.material.icons.filled.Slideshow
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -39,7 +38,6 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,6 +53,8 @@ import androidx.compose.ui.unit.dp
 import com.example.accessibility.AccessibilityHelper
 import com.example.ui.theme.LocalHighContrast
 import com.example.video.SnapshotGlimpseItem
+import com.example.video.VideoCutSegment
+import com.example.video.VideoMetadataDetails
 
 @Composable
 fun VideoTimelineToolsPanel(
@@ -65,8 +65,8 @@ fun VideoTimelineToolsPanel(
     streamCopyTrim: Boolean,
     onUpdateTrimRange: (Long, Long) -> Unit,
     onToggleStreamCopyTrim: (Boolean) -> Unit,
-    onExportTrimmed: () -> Unit,
-    onCutMiddleSegment: (Long, Long) -> Unit,
+    onExportTrimmed: (() -> Unit)? = null,
+    onCutMiddleSegment: ((Long, Long) -> Unit)? = null,
     mergeClipUris: List<Uri>,
     onAddMergeClips: (List<Uri>) -> Unit,
     onMoveMergeClip: (Int, Int) -> Unit,
@@ -83,15 +83,24 @@ fun VideoTimelineToolsPanel(
     snapshots: List<SnapshotGlimpseItem>,
     onCaptureSnapshot: () -> Unit,
     onRemoveSnapshot: (String) -> Unit,
-    onExportSnapshots: (prependToVideo: Boolean) -> Unit
+    onExportSnapshots: (prependToVideo: Boolean) -> Unit,
+    videoFileName: String = "",
+    videoMetadata: VideoMetadataDetails = VideoMetadataDetails(),
+    isPlaying: Boolean = false,
+    onPlayPause: () -> Unit = {},
+    onSeekTo: (Long) -> Unit = {},
+    onReplayFromStart: () -> Unit = {},
+    cutSegments: List<VideoCutSegment> = emptyList(),
+    onAddCutSegment: (Long, Long) -> Unit = { _, _ -> },
+    onRemoveCutSegment: (String) -> Unit = {},
+    onClearCutSegments: () -> Unit = {},
+    showHeaderMetadataAndScrubber: Boolean = true,
+    showTrimmerExportButton: Boolean = true
 ) {
     val isHighContrast = LocalHighContrast.current
 
     var trimStartSecText by remember(trimStartMs) { mutableStateOf((trimStartMs / 1000).toString()) }
     var trimEndSecText by remember(trimEndMs) { mutableStateOf((trimEndMs / 1000).toString()) }
-
-    var cutStartSec by remember { mutableStateOf("2") }
-    var cutEndSec by remember { mutableStateOf("4") }
 
     val multiVideoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia(10)
@@ -113,8 +122,29 @@ fun VideoTimelineToolsPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
+        if (showHeaderMetadataAndScrubber) {
+            VideoMetadataBanner(
+                fileName = videoFileName,
+                durationMs = durationMs,
+                metadata = videoMetadata
+            )
+            VideoTimelineScrubber(
+                currentPositionMs = currentPositionMs,
+                durationMs = durationMs,
+                trimStartMs = trimStartMs,
+                trimEndMs = trimEndMs,
+                cutSegments = cutSegments,
+                onSeekTo = onSeekTo
+            )
+        }
+
         // 1. Video Trimmer (Direct Time Entry & Stream Copy vs Re-encode)
-        SectionToolCard(title = "Video Trimmer", subtitle = "Direct time entry or markers • Re-encode or Fast Stream Copy", isHighContrast = isHighContrast) {
+        SectionToolCard(
+            title = "Video Trimmer",
+            subtitle = "Direct time entry or markers • Re-encode or Fast Stream Copy",
+            isHighContrast = isHighContrast,
+            modifier = Modifier.testTag("section_video_trimmer")
+        ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = trimStartSecText,
@@ -160,50 +190,41 @@ fun VideoTimelineToolsPanel(
                 )
             }
 
-            Button(
-                onClick = onExportTrimmed,
-                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_trim_export_now")
-            ) {
-                Icon(Icons.Default.ContentCut, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Export Trimmed Clip (${AccessibilityHelper.formatTimeVisual(trimStartMs)} - ${AccessibilityHelper.formatTimeVisual(trimEndMs)})", fontWeight = FontWeight.Bold)
+            Text(
+                text = "Active Trim Range: ${AccessibilityHelper.formatTimeVisual(trimStartMs)} - ${AccessibilityHelper.formatTimeVisual(trimEndMs)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.testTag("txt_active_trim_summary")
+            )
+
+            if (showTrimmerExportButton && onExportTrimmed != null) {
+                Button(
+                    onClick = onExportTrimmed,
+                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_trim_export_now")
+                ) {
+                    Icon(Icons.Default.ContentCut, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Export Trimmed Clip (${AccessibilityHelper.formatTimeVisual(trimStartMs)} - ${AccessibilityHelper.formatTimeVisual(trimEndMs)})", fontWeight = FontWeight.Bold)
+                }
             }
         }
 
-        // 2. Video Cutter (Remove Middle Segment & Join Remaining Parts)
-        SectionToolCard(title = "Video Cutter (Remove Middle)", subtitle = "Delete an unwanted middle segment and stitch the ends seamlessly", isHighContrast = isHighContrast) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = cutStartSec,
-                    onValueChange = { cutStartSec = it.filter { c -> c.isDigit() } },
-                    label = { Text("Delete From (sec)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f).testTag("input_cut_middle_start")
-                )
-                OutlinedTextField(
-                    value = cutEndSec,
-                    onValueChange = { cutEndSec = it.filter { c -> c.isDigit() } },
-                    label = { Text("Delete To (sec)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f).testTag("input_cut_middle_end")
-                )
-            }
-            Button(
-                onClick = {
-                    val sMs = (cutStartSec.toLongOrNull() ?: 1L) * 1000L
-                    val eMs = (cutEndSec.toLongOrNull() ?: 3L) * 1000L
-                    onCutMiddleSegment(sMs, eMs)
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_cut_middle_segment")
-            ) {
-                Icon(Icons.Default.ContentCut, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Remove Middle & Join Parts", fontWeight = FontWeight.Bold)
-            }
-        }
+        // 2. Non-Destructive Video Cutter (Playback, Step, Markers, Readouts & Cut List — no export button here)
+        VideoCutterSection(
+            currentPositionMs = currentPositionMs,
+            durationMs = durationMs,
+            trimStartMs = trimStartMs,
+            trimEndMs = trimEndMs,
+            isPlaying = isPlaying,
+            cutSegments = cutSegments,
+            onPlayPause = onPlayPause,
+            onSeekTo = onSeekTo,
+            onReplayFromStart = onReplayFromStart,
+            onAddCutSegment = onAddCutSegment,
+            onRemoveCutSegment = onRemoveCutSegment,
+            onClearCutSegments = onClearCutSegments
+        )
 
         // 3. Snapshot & Glimpse Creator
         SectionToolCard(title = "Snapshot & Glimpse Creator", subtitle = "Capture clip highlights at playhead, extract separately or prepend", isHighContrast = isHighContrast) {
@@ -346,10 +367,11 @@ fun SectionToolCard(
     title: String,
     subtitle: String,
     isHighContrast: Boolean,
+    modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = if (isHighContrast) Color(0xFF101010) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
         ),

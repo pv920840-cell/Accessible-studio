@@ -64,12 +64,20 @@ import com.example.ui.components.AccessibleExportDialog
 import com.example.ui.screens.ExportedFilesScreen
 import com.example.ui.theme.LocalHighContrast
 import com.example.video.FullRenderRequest
+import com.example.video.MultiMusicPreviewController
+import com.example.video.VideoAspectRatio
 import com.example.video.VideoAudioMixer
+import com.example.video.VideoAudioOption
+import com.example.video.VideoCutMath
 import com.example.video.VideoEditSettings
+import com.example.video.VideoFilter
 import com.example.video.VideoPlayerManager
 import com.example.video.VideoProcessor
 import com.example.video.VideoRenderEngine
+import com.example.video.VideoResolutionPreset
+import com.example.video.VideoRotation
 import com.example.video.VideoToolkitProcessor
+import com.example.video.VideoVfx
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -109,10 +117,12 @@ fun StudioRootCoordinator(
     val videoToolkit = remember { VideoToolkitProcessor(context) }
     val videoAudioMixer = remember { VideoAudioMixer(context) }
     val videoPlayer = remember { VideoPlayerManager(context) }
+    val videoMultiMusicPreview = remember { MultiMusicPreviewController(context) }
 
     DisposableEffect(Unit) {
         onDispose {
             audioPlayer.release()
+            videoMultiMusicPreview.stopAll()
             videoPlayer.release()
             if (recorderManager.isRecording.value) recorderManager.stopRecording()
         }
@@ -174,6 +184,38 @@ fun StudioRootCoordinator(
     val videoIsPlaying by videoPlayer.isPlaying.collectAsState()
     val videoCurrentMs by videoPlayer.currentPositionMs.collectAsState()
     val videoDurationMs by videoPlayer.durationMs.collectAsState()
+    var hubBaseSpeechBins by remember(activeVideoSession?.sourceUri) { mutableStateOf(BooleanArray(0)) }
+
+    LaunchedEffect(activeVideoSession?.sourceUri) {
+        val uri = activeVideoSession?.sourceUri ?: return@LaunchedEffect
+        try {
+            val pcm = withContext(Dispatchers.IO) { videoAudioMixer.decodeUriToPcm(uri) }
+            hubBaseSpeechBins = MultiMusicPreviewController.computeSpeechActivityBins(pcm)
+        } catch (_: Throwable) {
+            hubBaseSpeechBins = BooleanArray(0)
+        }
+    }
+
+    LaunchedEffect(
+        destination,
+        videoIsPlaying,
+        videoCurrentMs,
+        activeVideoSession,
+        hubBaseSpeechBins
+    ) {
+        val vs = activeVideoSession
+        if (destination == StudioRootDestination.PROJECT_HUB && vs != null) {
+            videoMultiMusicPreview.syncTimelinePlayback(
+                isVideoPlaying = videoIsPlaying,
+                videoPositionMs = videoCurrentMs,
+                musicTracks = vs.musicTracks,
+                smartDucking = vs.smartDucking,
+                narrations = vs.narrations,
+                audioOption = vs.audioOption,
+                baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(hubBaseSpeechBins, videoCurrentMs)
+            )
+        }
+    }
 
     fun upsertSessionProject(summary: StudioProjectSummary) {
         val idx = sessionProjects.indexOfFirst { it.id == summary.id }
@@ -185,6 +227,7 @@ fun StudioRootCoordinator(
         scope.launch {
             try {
                 audioPlayer.stop()
+                videoMultiMusicPreview.stopAll()
                 videoPlayer.pause()
                 val pcm = preloadedPcm ?: run {
                     val uri = project.sourceUri ?: project.filePath?.let { Uri.fromFile(File(it)) }
@@ -222,6 +265,7 @@ fun StudioRootCoordinator(
         scope.launch {
             try {
                 audioPlayer.stop()
+                videoMultiMusicPreview.stopAll()
                 val uri = project.sourceUri ?: project.filePath?.let { Uri.fromFile(File(it)) }
                 val baseName = StudioPreferences.extractBaseFileName(project.title).takeIf { it.isNotBlank() }
                 val meta = if (uri != null) videoToolkit.inspectDetailedMetadata(uri) else com.example.video.VideoMetadataDetails()
@@ -334,6 +378,7 @@ fun StudioRootCoordinator(
     if (destination != StudioRootDestination.HOME && destination != StudioRootDestination.FEATURE_WORKSPACE) {
         BackHandler {
             audioPlayer.stop()
+            videoMultiMusicPreview.stopAll()
             videoPlayer.pause()
             destination = StudioRootDestination.HOME
         }
@@ -510,6 +555,8 @@ fun StudioRootCoordinator(
                             onOpenAudioTool = {},
                             onOpenVideoTool = { tool ->
                                 videoPlayer.pause()
+                                videoMultiMusicPreview.stopSoloPreview()
+                                videoMultiMusicPreview.pauseTimelineTracks()
                                 activeFeatureWorkspace = ActiveFeatureWorkspace.VideoTool(tool)
                                 destination = StudioRootDestination.FEATURE_WORKSPACE
                             },
@@ -541,10 +588,14 @@ fun StudioRootCoordinator(
                                 Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
                             },
                             onExportProject = {
+                                videoPlayer.pause()
+                                videoMultiMusicPreview.stopSoloPreview()
+                                videoMultiMusicPreview.pauseTimelineTracks()
                                 hubExportedFile = null
                                 showHubExportDialog = true
                             },
                             onBackToHome = {
+                                videoMultiMusicPreview.stopAll()
                                 videoPlayer.pause()
                                 destination = StudioRootDestination.HOME
                             }
@@ -722,7 +773,8 @@ fun StudioRootCoordinator(
                                     },
                                     onNavigateToExports = {
                                         destination = StudioRootDestination.EXPORTS
-                                    }
+                                    },
+                                    multiMusicPreview = videoMultiMusicPreview
                                 )
                             }
                         }
@@ -776,45 +828,81 @@ fun StudioRootCoordinator(
                         val outFile = if (isVideo) {
                             val vs = activeVideoSession ?: throw IllegalStateException("No active video project to export.")
                             val sourceUri = vs.sourceUri ?: throw IllegalStateException("Please select or create a video clip before exporting.")
-                            val req = FullRenderRequest(
-                                sourceUri = sourceUri,
-                                keepRangesMs = listOf(vs.trimStartMs to vs.trimEndMs),
-                                speed = vs.selectedSpeed,
-                                pitchCorrect = vs.pitchCorrect,
-                                reverseVideo = vs.reverseVideo,
-                                filter = vs.selectedFilter,
-                                vfx = vs.selectedVfx,
-                                aspectRatio = vs.aspectRatio,
-                                aspectFitMode = vs.aspectFitMode,
-                                resolutionPreset = vs.resolutionPreset,
-                                customWidth = vs.customWidth,
-                                customHeight = vs.customHeight,
-                                rotation = vs.rotation,
-                                flipHorizontal = vs.flipH,
-                                flipVertical = vs.flipV,
-                                compressorQuality = vs.compressorQuality,
-                                customBitrateBps = (vs.customBitrateMbps * 1_000_000f).toInt(),
-                                textOverlay = vs.textOverlay,
-                                textPosition = vs.textPosition,
-                                textAnimStyle = vs.textAnimStyle,
-                                blurConfig = vs.blurConfig,
-                                imageOverlay = vs.imageOverlay,
-                                subtitleCues = vs.subtitleCues,
-                                soundEffects = vs.soundEffects,
-                                narrations = vs.narrations,
-                                musicTracks = vs.musicTracks,
-                                smartDucking = vs.smartDucking,
-                                audioOption = vs.audioOption,
-                                replacedAudioUri = vs.replacedAudioUri,
-                                audioVolume = vs.audioVolume,
-                                noiseReductionEnabled = vs.noiseReduceEnabled,
-                                noiseReductionStrength = vs.noiseReduceStrength,
-                                outputFormat = vs.outputFormat,
-                                metadataTitle = vs.metadata.title,
-                                metadataArtist = vs.metadata.artist,
-                                metadataAlbum = vs.metadata.album
+                            val keepRanges = VideoCutMath.computeKeepRangesMs(
+                                trimStartMs = vs.trimStartMs,
+                                trimEndMs = vs.trimEndMs,
+                                cutSegments = vs.cutSegments
                             )
-                            videoRenderEngine.renderVideo(req, chosenName) { hubExportProgress = it }
+                            val canUseStreamCopy = vs.streamCopyTrim &&
+                                vs.selectedSpeed == 1.0f &&
+                                !vs.reverseVideo &&
+                                vs.selectedFilter == VideoFilter.NORMAL &&
+                                vs.selectedVfx == VideoVfx.NONE &&
+                                vs.aspectRatio == VideoAspectRatio.ORIGINAL &&
+                                vs.resolutionPreset == VideoResolutionPreset.ORIGINAL &&
+                                vs.rotation == VideoRotation.DEG_0 &&
+                                !vs.flipH &&
+                                !vs.flipV &&
+                                vs.textOverlay.isBlank() &&
+                                !vs.blurConfig.enabled &&
+                                vs.imageOverlay.uri == null &&
+                                vs.subtitleCues.isEmpty() &&
+                                vs.soundEffects.isEmpty() &&
+                                vs.narrations.isEmpty() &&
+                                vs.musicTracks.isEmpty() &&
+                                vs.audioOption == VideoAudioOption.ORIGINAL_AUDIO &&
+                                vs.audioVolume == 1.0f &&
+                                !vs.noiseReduceEnabled
+
+                            if (canUseStreamCopy) {
+                                videoToolkit.exportStreamCopyRanges(
+                                    sourceUri = sourceUri,
+                                    keepRangesMs = keepRanges,
+                                    outputFileName = chosenName,
+                                    formatOption = vs.outputFormat,
+                                    onProgress = { hubExportProgress = it }
+                                )
+                            } else {
+                                val req = FullRenderRequest(
+                                    sourceUri = sourceUri,
+                                    keepRangesMs = keepRanges,
+                                    speed = vs.selectedSpeed,
+                                    pitchCorrect = vs.pitchCorrect,
+                                    reverseVideo = vs.reverseVideo,
+                                    filter = vs.selectedFilter,
+                                    vfx = vs.selectedVfx,
+                                    aspectRatio = vs.aspectRatio,
+                                    aspectFitMode = vs.aspectFitMode,
+                                    resolutionPreset = vs.resolutionPreset,
+                                    customWidth = vs.customWidth,
+                                    customHeight = vs.customHeight,
+                                    rotation = vs.rotation,
+                                    flipHorizontal = vs.flipH,
+                                    flipVertical = vs.flipV,
+                                    compressorQuality = vs.compressorQuality,
+                                    customBitrateBps = (vs.customBitrateMbps * 1_000_000f).toInt(),
+                                    textOverlay = vs.textOverlay,
+                                    textPosition = vs.textPosition,
+                                    textAnimStyle = vs.textAnimStyle,
+                                    blurConfig = vs.blurConfig,
+                                    imageOverlay = vs.imageOverlay,
+                                    subtitleCues = vs.subtitleCues,
+                                    soundEffects = vs.soundEffects,
+                                    narrations = vs.narrations,
+                                    musicTracks = vs.musicTracks,
+                                    smartDucking = vs.smartDucking,
+                                    audioOption = vs.audioOption,
+                                    replacedAudioUri = vs.replacedAudioUri,
+                                    audioVolume = vs.audioVolume,
+                                    noiseReductionEnabled = vs.noiseReduceEnabled,
+                                    noiseReductionStrength = vs.noiseReduceStrength,
+                                    outputFormat = vs.outputFormat,
+                                    metadataTitle = vs.metadata.title,
+                                    metadataArtist = vs.metadata.artist,
+                                    metadataAlbum = vs.metadata.album
+                                )
+                                videoRenderEngine.renderVideo(req, chosenName) { hubExportProgress = it }
+                            }
                         } else {
                             val asess = activeAudioSession ?: throw IllegalStateException("No active audio project to export.")
                             if (asess.pcm.isEmpty()) throw IllegalStateException("Audio track is empty.")

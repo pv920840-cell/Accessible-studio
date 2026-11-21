@@ -35,6 +35,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -60,23 +62,30 @@ import com.example.data.MediaRepository
 import com.example.ui.components.AccessibleTimeReadout
 import com.example.ui.components.VideoAudioMusicPanel
 import com.example.ui.components.VideoConvertAndMetaPanel
+import com.example.ui.components.VideoMetadataBanner
 import com.example.ui.components.VideoOverlaysVfxPanel
+import com.example.ui.components.VideoTimelineScrubber
 import com.example.ui.components.VideoTimelineToolsPanel
 import com.example.ui.components.VideoTransformPanel
 import com.example.ui.screens.VideoStudioScreen
 import com.example.ui.theme.LocalHighContrast
 import com.example.video.FullRenderRequest
+import com.example.video.MultiMusicPreviewController
 import com.example.video.MusicLayerTrack
 import com.example.video.NarrationSegment
 import com.example.video.SnapshotGlimpseItem
 import com.example.video.SoundEffectOverlay
 import com.example.video.VideoAudioMixer
 import com.example.video.VideoAudioOption
+import com.example.video.VideoCutMath
+import com.example.video.VideoCutSegment
 import com.example.video.VideoPlayerManager
 import com.example.video.VideoRenderEngine
 import com.example.video.VideoToolkitProcessor
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -96,20 +105,38 @@ fun VideoFeatureWorkspaceScreen(
     onSaveAndReturn: (VideoProjectSessionState) -> Unit,
     onCancelBack: () -> Unit,
     onNavigateToExports: () -> Unit,
+    multiMusicPreview: MultiMusicPreviewController? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isHighContrast = LocalHighContrast.current
 
+    val ownsMusicPreview = multiMusicPreview == null
+    val activeMusicPreview = multiMusicPreview ?: remember(context) { MultiMusicPreviewController(context) }
+    val previewingMusicTrackId by activeMusicPreview.previewingTrackId.collectAsState()
+
+    DisposableEffect(activeMusicPreview, ownsMusicPreview) {
+        onDispose {
+            if (ownsMusicPreview) {
+                activeMusicPreview.stopAll()
+            } else {
+                activeMusicPreview.stopSoloPreview()
+                activeMusicPreview.pauseTimelineTracks()
+            }
+        }
+    }
+
     var draft by remember(session.projectId, tool) { mutableStateOf(session) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var taskProgress by remember { mutableFloatStateOf(0f) }
     var narrationStartMs by remember { mutableLongStateOf(0L) }
+    var baseSpeechBins by remember(draft.sourceUri) { mutableStateOf(BooleanArray(0)) }
 
     val isPlaying by videoPlayer.isPlaying.collectAsState()
     val currentPositionMs by videoPlayer.currentPositionMs.collectAsState()
     val durationMs by videoPlayer.durationMs.collectAsState()
+    val isPreparedDuration by videoPlayer.isPreparedDuration.collectAsState()
     val playerAspectRatio by videoPlayer.videoAspectRatio.collectAsState()
     val isRecordingNarration by recorder.isRecording.collectAsState()
     val recordingDurMs by recorder.recordedDurationMs.collectAsState()
@@ -117,7 +144,72 @@ fun VideoFeatureWorkspaceScreen(
 
     val timestamp = remember { SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) }
 
-    fun buildRenderRequest(keepRanges: List<Pair<Long, Long>> = listOf(draft.trimStartMs to draft.trimEndMs)): FullRenderRequest {
+    LaunchedEffect(draft.sourceUri) {
+        val uri = draft.sourceUri ?: return@LaunchedEffect
+        try {
+            val pcm = withContext(Dispatchers.IO) { audioMixer.decodeUriToPcm(uri) }
+            baseSpeechBins = MultiMusicPreviewController.computeSpeechActivityBins(pcm)
+        } catch (_: Throwable) {
+            baseSpeechBins = BooleanArray(0)
+        }
+    }
+
+    LaunchedEffect(
+        isPlaying,
+        currentPositionMs,
+        draft.musicTracks,
+        draft.smartDucking,
+        draft.narrations,
+        draft.audioOption,
+        baseSpeechBins
+    ) {
+        activeMusicPreview.syncTimelinePlayback(
+            isVideoPlaying = isPlaying,
+            videoPositionMs = currentPositionMs,
+            musicTracks = draft.musicTracks,
+            smartDucking = draft.smartDucking,
+            narrations = draft.narrations,
+            audioOption = draft.audioOption,
+            baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(baseSpeechBins, currentPositionMs)
+        )
+    }
+
+    LaunchedEffect(draft.musicTracks) {
+        activeMusicPreview.refreshTrackSettings(draft.musicTracks)
+    }
+
+    LaunchedEffect(draft.sourceUri) {
+        val uri = draft.sourceUri
+        if (uri != null && (draft.metadata.durationMs <= 0L || draft.metadata.width <= 0)) {
+            try {
+                val meta = toolkit.inspectDetailedMetadata(uri)
+                val resolvedDur = meta.durationMs.takeIf { it > 0L } ?: draft.durationMs
+                draft = draft.copy(
+                    metadata = meta,
+                    durationMs = resolvedDur,
+                    trimEndMs = if (draft.trimEndMs <= 0L || draft.trimEndMs > resolvedDur) resolvedDur else draft.trimEndMs
+                )
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
+    LaunchedEffect(isPreparedDuration, durationMs) {
+        if (isPreparedDuration && durationMs > 0L) {
+            val updatedEnd = if (draft.trimEndMs <= 0L || draft.trimEndMs > durationMs) durationMs else draft.trimEndMs
+            if (draft.durationMs != durationMs || draft.trimEndMs != updatedEnd) {
+                draft = draft.copy(durationMs = durationMs, trimEndMs = updatedEnd)
+            }
+        }
+    }
+
+    fun buildRenderRequest(
+        keepRanges: List<Pair<Long, Long>> = VideoCutMath.computeKeepRangesMs(
+            trimStartMs = draft.trimStartMs,
+            trimEndMs = draft.trimEndMs,
+            cutSegments = draft.cutSegments
+        )
+    ): FullRenderRequest {
         val uri = draft.sourceUri ?: throw IllegalStateException("Select or create a video clip first.")
         return FullRenderRequest(
             sourceUri = uri,
@@ -182,6 +274,8 @@ fun VideoFeatureWorkspaceScreen(
 
     BackHandler {
         videoPlayer.pause()
+        activeMusicPreview.stopSoloPreview()
+        activeMusicPreview.pauseTimelineTracks()
         onCancelBack()
     }
 
@@ -194,10 +288,14 @@ fun VideoFeatureWorkspaceScreen(
                 onUndo = {},
                 onBack = {
                     videoPlayer.pause()
+                    activeMusicPreview.stopSoloPreview()
+                    activeMusicPreview.pauseTimelineTracks()
                     onCancelBack()
                 },
                 onSave = {
                     videoPlayer.pause()
+                    activeMusicPreview.stopSoloPreview()
+                    activeMusicPreview.pauseTimelineTracks()
                     onSaveAndReturn(draft.copy(hasUnsavedChanges = true))
                 }
             )
@@ -213,7 +311,11 @@ fun VideoFeatureWorkspaceScreen(
         return
     }
 
-    val effectiveDuration = durationMs.takeIf { it > 0L } ?: draft.durationMs
+    val effectiveDuration = if (isPreparedDuration && durationMs > 0L) {
+        durationMs
+    } else {
+        draft.durationMs.takeIf { it > 0L } ?: durationMs
+    }
 
     Column(
         modifier = modifier
@@ -228,10 +330,14 @@ fun VideoFeatureWorkspaceScreen(
             onUndo = {},
             onBack = {
                 videoPlayer.pause()
+                activeMusicPreview.stopSoloPreview()
+                activeMusicPreview.pauseTimelineTracks()
                 onCancelBack()
             },
             onSave = {
                 videoPlayer.pause()
+                activeMusicPreview.stopSoloPreview()
+                activeMusicPreview.pauseTimelineTracks()
                 onSaveAndReturn(draft.copy(durationMs = effectiveDuration, hasUnsavedChanges = true))
             }
         )
@@ -309,6 +415,21 @@ fun VideoFeatureWorkspaceScreen(
                 }
             }
 
+            VideoMetadataBanner(
+                fileName = draft.title,
+                durationMs = effectiveDuration,
+                metadata = draft.metadata
+            )
+
+            VideoTimelineScrubber(
+                currentPositionMs = currentPositionMs,
+                durationMs = effectiveDuration,
+                trimStartMs = draft.trimStartMs,
+                trimEndMs = draft.trimEndMs,
+                cutSegments = draft.cutSegments,
+                onSeekTo = { videoPlayer.seekTo(it) }
+            )
+
             when (tool) {
                 VideoFeatureTool.TRIM_TIMELINE -> VideoTimelineToolsPanel(
                     currentPositionMs = currentPositionMs,
@@ -318,26 +439,35 @@ fun VideoFeatureWorkspaceScreen(
                     streamCopyTrim = draft.streamCopyTrim,
                     onUpdateTrimRange = { s, e -> draft = draft.copy(trimStartMs = s, trimEndMs = e, hasUnsavedChanges = true) },
                     onToggleStreamCopyTrim = { draft = draft.copy(streamCopyTrim = it, hasUnsavedChanges = true) },
-                    onExportTrimmed = {
-                        val uri = draft.sourceUri ?: return@VideoTimelineToolsPanel
-                        runAsyncTask("Trimming Video...") { prog ->
-                            if (draft.streamCopyTrim) {
-                                toolkit.exportStreamCopyRanges(uri, listOf(draft.trimStartMs to draft.trimEndMs), "Trim_$timestamp", draft.outputFormat, onProgress = prog)
-                            } else {
-                                renderEngine.renderVideo(buildRenderRequest(listOf(draft.trimStartMs to draft.trimEndMs)), "Trim_$timestamp", prog)
-                            }
-                        }
+                    onExportTrimmed = null,
+                    onCutMiddleSegment = null,
+                    videoFileName = draft.title,
+                    videoMetadata = draft.metadata,
+                    isPlaying = isPlaying,
+                    onPlayPause = { if (isPlaying) videoPlayer.pause() else videoPlayer.play() },
+                    onSeekTo = { videoPlayer.seekTo(it) },
+                    onReplayFromStart = {
+                        videoPlayer.seekTo(0L)
+                        videoPlayer.play(startMs = 0L, endLimitMs = null)
                     },
-                    onCutMiddleSegment = { cutS, cutE ->
-                        val uri = draft.sourceUri ?: return@VideoTimelineToolsPanel
-                        if (effectiveDuration <= 0L) return@VideoTimelineToolsPanel
-                        val safeS = cutS.coerceIn(0L, effectiveDuration)
-                        val safeE = cutE.coerceIn((safeS + 200L).coerceAtMost(effectiveDuration), effectiveDuration)
-                        val keep = listOf(0L to safeS, safeE to effectiveDuration).filter { it.second - it.first >= 200L }
-                        runAsyncTask("Removing Middle Segment & Joining...") { prog ->
-                            toolkit.exportStreamCopyRanges(uri, keep, "CutJoin_$timestamp", draft.outputFormat, onProgress = prog)
-                        }
+                    cutSegments = draft.cutSegments,
+                    onAddCutSegment = { s, e ->
+                        draft = draft.copy(
+                            cutSegments = draft.cutSegments + VideoCutSegment(startMs = s, endMs = e),
+                            hasUnsavedChanges = true
+                        )
                     },
+                    onRemoveCutSegment = { id ->
+                        draft = draft.copy(
+                            cutSegments = draft.cutSegments.filterNot { it.id == id },
+                            hasUnsavedChanges = true
+                        )
+                    },
+                    onClearCutSegments = {
+                        draft = draft.copy(cutSegments = emptyList(), hasUnsavedChanges = true)
+                    },
+                    showHeaderMetadataAndScrubber = false,
+                    showTrimmerExportButton = false,
                     mergeClipUris = draft.mergeClipUris,
                     onAddMergeClips = { uris -> draft = draft.copy(mergeClipUris = draft.mergeClipUris + uris, hasUnsavedChanges = true) },
                     onMoveMergeClip = { from, to ->
@@ -420,14 +550,47 @@ fun VideoFeatureWorkspaceScreen(
                     musicTracks = draft.musicTracks,
                     smartDucking = draft.smartDucking,
                     onAddMusicTrack = { uri ->
-                        draft = draft.copy(
-                            musicTracks = draft.musicTracks + MusicLayerTrack(title = "Music Track #${draft.musicTracks.size + 1}", uri = uri, startMs = 0L, volume = 0.55f),
-                            hasUnsavedChanges = true
-                        )
+                        val fallbackTitle = "Music Track #${draft.musicTracks.size + 1}"
+                        scope.launch {
+                            val (resolvedTitle, durMs) = withContext(Dispatchers.IO) {
+                                MultiMusicPreviewController.inspectMusicTrackInfo(context, uri, fallbackTitle)
+                            }
+                            draft = draft.copy(
+                                musicTracks = draft.musicTracks + MusicLayerTrack(
+                                    title = resolvedTitle,
+                                    uri = uri,
+                                    startMs = 0L,
+                                    volume = 0.55f,
+                                    loop = draft.defaultLoopMusicTracks,
+                                    durationMs = durMs
+                                ),
+                                hasUnsavedChanges = true
+                            )
+                        }
                     },
                     onUpdateMusicVolume = { id, vol -> draft = draft.copy(musicTracks = draft.musicTracks.map { if (it.id == id) it.copy(volume = vol) else it }, hasUnsavedChanges = true) },
                     onRemoveMusicTrack = { id -> draft = draft.copy(musicTracks = draft.musicTracks.filterNot { it.id == id }, hasUnsavedChanges = true) },
                     onToggleSmartDucking = { draft = draft.copy(smartDucking = it, hasUnsavedChanges = true) },
+                    onToggleMusicLoop = { id, loopOn ->
+                        draft = draft.copy(
+                            musicTracks = draft.musicTracks.map { if (it.id == id) it.copy(loop = loopOn) else it },
+                            hasUnsavedChanges = true
+                        )
+                    },
+                    defaultLoopNewTracks = draft.defaultLoopMusicTracks,
+                    onToggleDefaultLoopNewTracks = { loopOn ->
+                        draft = draft.copy(
+                            defaultLoopMusicTracks = loopOn,
+                            musicTracks = draft.musicTracks.map { it.copy(loop = loopOn) },
+                            hasUnsavedChanges = true
+                        )
+                    },
+                    previewingMusicTrackId = previewingMusicTrackId,
+                    onTogglePreviewMusicTrack = { track ->
+                        if (isPlaying) videoPlayer.pause()
+                        activeMusicPreview.toggleSoloPreview(track)
+                    },
+                    videoDurationMs = effectiveDuration,
                     soundEffects = draft.soundEffects,
                     onAddSoundEffect = { preset, uri, dur, freeze ->
                         draft = draft.copy(

@@ -89,6 +89,7 @@ import com.example.video.BlurRegionConfig
 import com.example.video.CompressorQuality
 import com.example.video.FullRenderRequest
 import com.example.video.ImageOverlayConfig
+import com.example.video.MultiMusicPreviewController
 import com.example.video.MusicLayerTrack
 import com.example.video.NarrationSegment
 import com.example.video.SnapshotGlimpseItem
@@ -99,6 +100,8 @@ import com.example.video.TextOverlayPosition
 import com.example.video.VideoAspectRatio
 import com.example.video.VideoAudioMixer
 import com.example.video.VideoAudioOption
+import com.example.video.VideoCutMath
+import com.example.video.VideoCutSegment
 import com.example.video.VideoEditSettings
 import com.example.video.VideoFilter
 import com.example.video.VideoFormatOption
@@ -111,7 +114,9 @@ import com.example.video.VideoRotation
 import com.example.video.VideoToolSection
 import com.example.video.VideoToolkitProcessor
 import com.example.video.VideoVfx
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -136,9 +141,12 @@ fun VideoStudioScreen(
     val audioMixer = remember { VideoAudioMixer(context) }
     val videoPlayer = remember { VideoPlayerManager(context) }
     val recorder = remember { AudioRecorderManager(context) }
+    val multiMusicPreview = remember { MultiMusicPreviewController(context) }
+    val previewingMusicTrackId by multiMusicPreview.previewingTrackId.collectAsState()
 
     DisposableEffect(Unit) {
         onDispose {
+            multiMusicPreview.stopAll()
             videoPlayer.release()
             if (recorder.isRecording.value) recorder.stopRecording()
         }
@@ -168,6 +176,7 @@ fun VideoStudioScreen(
     var trimStartMs by remember { mutableLongStateOf(0L) }
     var trimEndMs by remember { mutableLongStateOf(6000L) }
     var streamCopyTrim by remember { mutableStateOf(false) }
+    var cutSegments by remember { mutableStateOf<List<VideoCutSegment>>(emptyList()) }
     var mergeClipUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var slideshowImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var slideshowSecPerSlide by remember { mutableIntStateOf(3) }
@@ -178,6 +187,8 @@ fun VideoStudioScreen(
     var narrations by remember { mutableStateOf<List<NarrationSegment>>(emptyList()) }
     var musicTracks by remember { mutableStateOf<List<MusicLayerTrack>>(emptyList()) }
     var smartDucking by remember { mutableStateOf(true) }
+    var defaultLoopMusicTracks by remember { mutableStateOf(true) }
+    var baseSpeechBins by remember(currentVideoUri) { mutableStateOf(BooleanArray(0)) }
     var soundEffects by remember { mutableStateOf<List<SoundEffectOverlay>>(emptyList()) }
     var audioOption by remember { mutableStateOf(VideoAudioOption.ORIGINAL_AUDIO) }
     var replacedAudioUri by remember { mutableStateOf<Uri?>(null) }
@@ -230,10 +241,42 @@ fun VideoStudioScreen(
     LaunchedEffect(currentVideoUri) {
         currentVideoUri?.let { uri ->
             videoMeta = toolkit.inspectDetailedMetadata(uri)
+            try {
+                val pcm = withContext(Dispatchers.IO) { audioMixer.decodeUriToPcm(uri) }
+                baseSpeechBins = MultiMusicPreviewController.computeSpeechActivityBins(pcm)
+            } catch (_: Throwable) {
+                baseSpeechBins = BooleanArray(0)
+            }
         }
     }
 
-    fun buildRenderRequest(keepRanges: List<Pair<Long, Long>> = listOf(trimStartMs to trimEndMs)): FullRenderRequest {
+    LaunchedEffect(
+        isPlaying,
+        currentPositionMs,
+        musicTracks,
+        smartDucking,
+        narrations,
+        audioOption,
+        baseSpeechBins
+    ) {
+        multiMusicPreview.syncTimelinePlayback(
+            isVideoPlaying = isPlaying,
+            videoPositionMs = currentPositionMs,
+            musicTracks = musicTracks,
+            smartDucking = smartDucking,
+            narrations = narrations,
+            audioOption = audioOption,
+            baseAudioActiveAtPlayhead = MultiMusicPreviewController.isBinActive(baseSpeechBins, currentPositionMs)
+        )
+    }
+
+    LaunchedEffect(musicTracks) {
+        multiMusicPreview.refreshTrackSettings(musicTracks)
+    }
+
+    fun buildRenderRequest(
+        keepRanges: List<Pair<Long, Long>> = VideoCutMath.computeKeepRangesMs(trimStartMs, trimEndMs, cutSegments)
+    ): FullRenderRequest {
         val uri = currentVideoUri ?: throw IllegalStateException("Select or create a video clip first.")
         return FullRenderRequest(
             sourceUri = uri,
@@ -609,24 +652,31 @@ fun VideoStudioScreen(
                 onToggleStreamCopyTrim = { streamCopyTrim = it },
                 onExportTrimmed = {
                     val uri = currentVideoUri ?: return@VideoTimelineToolsPanel
+                    val keepRanges = VideoCutMath.computeKeepRangesMs(trimStartMs, trimEndMs, cutSegments)
                     runAsyncTask("Trimming Video...") { prog ->
                         if (streamCopyTrim) {
-                            toolkit.exportStreamCopyRanges(uri, listOf(trimStartMs to trimEndMs), "Trim_$timestamp", outputFormat, onProgress = prog)
+                            toolkit.exportStreamCopyRanges(uri, keepRanges, "Trim_$timestamp", outputFormat, onProgress = prog)
                         } else {
-                            renderEngine.renderVideo(buildRenderRequest(listOf(trimStartMs to trimEndMs)), "Trim_$timestamp", prog)
+                            renderEngine.renderVideo(buildRenderRequest(keepRanges), "Trim_$timestamp", prog)
                         }
                     }
                 },
-                onCutMiddleSegment = { cutS, cutE ->
-                    val uri = currentVideoUri ?: return@VideoTimelineToolsPanel
-                    if (durationMs <= 0L) return@VideoTimelineToolsPanel
-                    val safeS = cutS.coerceIn(0L, durationMs)
-                    val safeE = cutE.coerceIn((safeS + 200L).coerceAtMost(durationMs), durationMs)
-                    val keep = listOf(0L to safeS, safeE to durationMs).filter { it.second - it.first >= 200L }
-                    runAsyncTask("Removing Middle Segment & Joining...") { prog ->
-                        toolkit.exportStreamCopyRanges(uri, keep, "CutJoin_$timestamp", outputFormat, onProgress = prog)
-                    }
+                onCutMiddleSegment = null,
+                videoFileName = videoTitle,
+                videoMetadata = videoMeta,
+                isPlaying = isPlaying,
+                onPlayPause = { if (isPlaying) videoPlayer.pause() else videoPlayer.play() },
+                onSeekTo = { videoPlayer.seekTo(it) },
+                onReplayFromStart = {
+                    videoPlayer.seekTo(0L)
+                    videoPlayer.play(startMs = 0L, endLimitMs = null)
                 },
+                cutSegments = cutSegments,
+                onAddCutSegment = { s, e -> cutSegments = cutSegments + VideoCutSegment(startMs = s, endMs = e) },
+                onRemoveCutSegment = { id -> cutSegments = cutSegments.filterNot { it.id == id } },
+                onClearCutSegments = { cutSegments = emptyList() },
+                showHeaderMetadataAndScrubber = true,
+                showTrimmerExportButton = true,
                 mergeClipUris = mergeClipUris,
                 onAddMergeClips = { uris -> mergeClipUris = mergeClipUris + uris },
                 onMoveMergeClip = { from, to ->
@@ -701,11 +751,38 @@ fun VideoStudioScreen(
                 musicTracks = musicTracks,
                 smartDucking = smartDucking,
                 onAddMusicTrack = { uri ->
-                    musicTracks = musicTracks + MusicLayerTrack(title = "Music Track #${musicTracks.size + 1}", uri = uri, startMs = 0L, volume = 0.55f)
+                    val fallbackTitle = "Music Track #${musicTracks.size + 1}"
+                    scope.launch {
+                        val (resolvedTitle, durMs) = withContext(Dispatchers.IO) {
+                            MultiMusicPreviewController.inspectMusicTrackInfo(context, uri, fallbackTitle)
+                        }
+                        musicTracks = musicTracks + MusicLayerTrack(
+                            title = resolvedTitle,
+                            uri = uri,
+                            startMs = 0L,
+                            volume = 0.55f,
+                            loop = defaultLoopMusicTracks,
+                            durationMs = durMs
+                        )
+                    }
                 },
                 onUpdateMusicVolume = { id, vol -> musicTracks = musicTracks.map { if (it.id == id) it.copy(volume = vol) else it } },
                 onRemoveMusicTrack = { id -> musicTracks = musicTracks.filterNot { it.id == id } },
                 onToggleSmartDucking = { smartDucking = it },
+                onToggleMusicLoop = { id, loopOn ->
+                    musicTracks = musicTracks.map { if (it.id == id) it.copy(loop = loopOn) else it }
+                },
+                defaultLoopNewTracks = defaultLoopMusicTracks,
+                onToggleDefaultLoopNewTracks = { loopOn ->
+                    defaultLoopMusicTracks = loopOn
+                    musicTracks = musicTracks.map { it.copy(loop = loopOn) }
+                },
+                previewingMusicTrackId = previewingMusicTrackId,
+                onTogglePreviewMusicTrack = { track ->
+                    if (isPlaying) videoPlayer.pause()
+                    multiMusicPreview.toggleSoloPreview(track)
+                },
+                videoDurationMs = durationMs,
                 soundEffects = soundEffects,
                 onAddSoundEffect = { preset, uri, dur, freeze ->
                     soundEffects = soundEffects + SoundEffectOverlay(

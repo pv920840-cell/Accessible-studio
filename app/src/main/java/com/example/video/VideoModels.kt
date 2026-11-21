@@ -46,7 +46,8 @@ data class MusicLayerTrack(
     val uri: Uri,
     val startMs: Long = 0L,
     val volume: Float = 0.6f,
-    val loop: Boolean = true
+    val loop: Boolean = true,
+    val durationMs: Long = 0L
 )
 
 enum class TextAnimationStyle(val label: String) {
@@ -80,6 +81,14 @@ data class SnapshotGlimpseItem(
     val startMs: Long,
     val endMs: Long
 )
+
+data class VideoCutSegment(
+    val id: String = UUID.randomUUID().toString(),
+    val startMs: Long,
+    val endMs: Long
+) {
+    val durationMs: Long get() = (endMs - startMs).coerceAtLeast(0L)
+}
 
 enum class CompressorQuality(val label: String, val crfLabel: String, val bitrateBps: Int) {
     HIGH("High Quality", "CRF 18 • Sharp", 4_000_000),

@@ -248,11 +248,26 @@ class VideoAudioMixer(private val context: Context) {
             }
         }
 
-        // Mix Multi-Music with smooth envelope ducking
-        var duckEnv = 1.0f
+        // Smooth speech-activity hangover (~45ms) so ducking doesn't chatter between vocal cycles
+        val hangoverSamples = (sampleRate * 0.045).toInt()
+        var speechHoldCounter = 0
+        val smoothedSpeech = BooleanArray(targetSamples)
         for (i in 0 until targetSamples) {
-            val targetDuck = if (smartDuckingEnabled && speechActive[i]) 0.25f else 1.0f
-            val alpha = if (targetDuck < duckEnv) 0.008f else 0.001f
+            if (speechActive[i]) {
+                speechHoldCounter = hangoverSamples
+                smoothedSpeech[i] = true
+            } else if (speechHoldCounter > 0) {
+                speechHoldCounter--
+                smoothedSpeech[i] = true
+            }
+        }
+
+        // Mix Multi-Music with smooth envelope ducking and click-free Repeat/Loop across full video
+        var duckEnv = 1.0f
+        val fadeSamples = (sampleRate * 0.012).toInt().coerceAtLeast(1) // 12ms boundary taper
+        for (i in 0 until targetSamples) {
+            val targetDuck = if (smartDuckingEnabled && smoothedSpeech[i]) 0.25f else 1.0f
+            val alpha = if (targetDuck < duckEnv) 0.008f else 0.0005f
             duckEnv += (targetDuck - duckEnv) * alpha
 
             for ((track, mPcm) in musicPcms) {
@@ -262,7 +277,16 @@ class VideoAudioMixer(private val context: Context) {
                     val relIdx = i - trackStartIdx
                     val sampleIdx = if (track.loop) relIdx % mPcm.size else relIdx
                     if (sampleIdx < mPcm.size) {
-                        rawMix[i] += mPcm[sampleIdx] * track.volume * duckEnv
+                        val loopTaper = if (track.loop && mPcm.size > fadeSamples * 3 && relIdx >= mPcm.size) {
+                            when {
+                                sampleIdx < fadeSamples -> sampleIdx.toFloat() / fadeSamples
+                                sampleIdx >= mPcm.size - fadeSamples -> (mPcm.size - 1 - sampleIdx).toFloat() / fadeSamples
+                                else -> 1.0f
+                            }
+                        } else {
+                            1.0f
+                        }
+                        rawMix[i] += mPcm[sampleIdx] * track.volume * duckEnv * loopTaper
                     }
                 }
             }

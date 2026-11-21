@@ -18,6 +18,7 @@ import com.example.video.TextAnimationStyle
 import com.example.video.TextOverlayPosition
 import com.example.video.VideoAspectRatio
 import com.example.video.VideoAudioOption
+import com.example.video.VideoCutSegment
 import com.example.video.VideoFilter
 import com.example.video.VideoFormatOption
 import com.example.video.VideoMetadataDetails
@@ -153,6 +154,7 @@ data class VideoProjectSessionState(
     val trimStartMs: Long = 0L,
     val trimEndMs: Long = 6000L,
     val streamCopyTrim: Boolean = false,
+    val cutSegments: List<VideoCutSegment> = emptyList(),
     val mergeClipUris: List<Uri> = emptyList(),
     val slideshowImages: List<Uri> = emptyList(),
     val slideshowSecPerSlide: Int = 3,
@@ -161,6 +163,7 @@ data class VideoProjectSessionState(
     val narrations: List<NarrationSegment> = emptyList(),
     val musicTracks: List<MusicLayerTrack> = emptyList(),
     val smartDucking: Boolean = true,
+    val defaultLoopMusicTracks: Boolean = true,
     val soundEffects: List<SoundEffectOverlay> = emptyList(),
     val audioOption: VideoAudioOption = VideoAudioOption.ORIGINAL_AUDIO,
     val replacedAudioUri: Uri? = null,

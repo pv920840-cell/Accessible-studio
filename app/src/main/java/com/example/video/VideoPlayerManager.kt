@@ -30,6 +30,9 @@ class VideoPlayerManager(private val context: Context) {
     private val _durationMs = MutableStateFlow(8000L)
     val durationMs: StateFlow<Long> = _durationMs.asStateFlow()
 
+    private val _isPreparedDuration = MutableStateFlow(false)
+    val isPreparedDuration: StateFlow<Boolean> = _isPreparedDuration.asStateFlow()
+
     private val _videoAspectRatio = MutableStateFlow(1.0f)
     val videoAspectRatio: StateFlow<Float> = _videoAspectRatio.asStateFlow()
 
@@ -46,6 +49,7 @@ class VideoPlayerManager(private val context: Context) {
                 surfaceHolder?.let { setDisplay(it) }
                 setOnPreparedListener { mp ->
                     _durationMs.value = mp.duration.toLong().coerceAtLeast(1000L)
+                    _isPreparedDuration.value = true
                     val w = mp.videoWidth
                     val h = mp.videoHeight
                     if (w > 0 && h > 0) {
@@ -115,6 +119,7 @@ class VideoPlayerManager(private val context: Context) {
 
     fun stop() {
         _isPlaying.value = false
+        _isPreparedDuration.value = false
         pollJob?.cancel()
         pollJob = null
         try {

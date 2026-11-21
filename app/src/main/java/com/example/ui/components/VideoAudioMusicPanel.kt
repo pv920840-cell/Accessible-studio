@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -13,9 +14,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.CleaningServices
@@ -24,9 +27,13 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,17 +44,18 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -88,7 +96,13 @@ fun VideoAudioMusicPanel(
     noiseReduceStrength: Float,
     onToggleNoiseReduce: (Boolean) -> Unit,
     onChangeNoiseReduceStrength: (Float) -> Unit,
-    onExtractVideoToAudio: (format: String) -> Unit
+    onExtractVideoToAudio: (format: String) -> Unit,
+    onToggleMusicLoop: (String, Boolean) -> Unit = { _, _ -> },
+    defaultLoopNewTracks: Boolean = true,
+    onToggleDefaultLoopNewTracks: (Boolean) -> Unit = {},
+    previewingMusicTrackId: String? = null,
+    onTogglePreviewMusicTrack: (MusicLayerTrack) -> Unit = {},
+    videoDurationMs: Long = 0L
 ) {
     val context = LocalContext.current
     val isHighContrast = LocalHighContrast.current
@@ -176,10 +190,10 @@ fun VideoAudioMusicPanel(
             }
         }
 
-        // 2. Add Multi Music with Smart Ducking
+        // 2. Add Multi Music with Smart Ducking & Repeat Loop
         SectionToolCard(
             title = "Add Multi Music",
-            subtitle = "Layer multiple background music tracks with Smart Ducking",
+            subtitle = "Layer multiple background music tracks with Smart Ducking & Repeat Loop",
             isHighContrast = isHighContrast
         ) {
             OutlinedButton(
@@ -203,32 +217,151 @@ fun VideoAudioMusicPanel(
                 Switch(
                     checked = smartDucking,
                     onCheckedChange = onToggleSmartDucking,
-                    modifier = Modifier.testTag("switch_smart_ducking")
+                    modifier = Modifier.testTag("switch_smart_ducking").semantics {
+                        contentDescription = "Smart Ducking"
+                        stateDescription = if (smartDucking) "On" else "Off"
+                    }
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text("Repeat / Loop Music", fontWeight = FontWeight.Bold)
+                    }
+                    Text(
+                        "Continuously repeats shorter music so it plays across the full video length",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = defaultLoopNewTracks,
+                    onCheckedChange = onToggleDefaultLoopNewTracks,
+                    modifier = Modifier.testTag("switch_multi_music_repeat_all").semantics {
+                        contentDescription = "Repeat and loop music for full video"
+                        stateDescription = if (defaultLoopNewTracks) "On" else "Off"
+                    }
                 )
             }
 
             musicTracks.forEach { track ->
-                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(track.title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                        IconButton(onClick = { onRemoveMusicTrack(track.id) }, modifier = Modifier.size(48.dp)) {
-                            Icon(Icons.Default.Delete, contentDescription = "Remove ${track.title}")
-                        }
+                val isPreviewing = previewingMusicTrackId == track.id
+                val trackDurLabel = if (track.durationMs > 0L) {
+                    " • ${AccessibilityHelper.formatTimeVisual(track.durationMs)}"
+                } else {
+                    ""
+                }
+                val loopHint = if (track.loop) {
+                    if (videoDurationMs > 0L && track.durationMs > 0L && videoDurationMs > track.durationMs) {
+                        "Repeat Loop ON (repeats to fill ${AccessibilityHelper.formatTimeVisual(videoDurationMs)})"
+                    } else {
+                        "Repeat Loop ON"
                     }
-                    AccessibleEffectSlider(
-                        title = "Track Volume",
-                        value = track.volume,
-                        onValueChange = { onUpdateMusicVolume(track.id, it) },
-                        valueRange = 0f..1.5f,
-                        step = 0.05f,
-                        displayValue = "${(track.volume * 100).toInt()}%",
-                        spokenDescription = "${track.title} volume ${(track.volume * 100).toInt()} percent",
-                        testTag = "slider_music_${track.id}"
-                    )
+                } else {
+                    "Play Once (no repeat)"
+                }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("card_music_track_${track.id}"),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surface
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${track.title}$trackDurLabel",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = loopHint,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (track.loop) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { onRemoveMusicTrack(track.id) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("btn_remove_music_${track.id}")
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Remove ${track.title}")
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { onTogglePreviewMusicTrack(track) },
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("btn_preview_music_${track.id}")
+                                    .semantics {
+                                        contentDescription = if (isPreviewing) "Stop preview of ${track.title}" else "Play preview of ${track.title}"
+                                    }
+                            ) {
+                                Icon(
+                                    imageVector = if (isPreviewing) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(if (isPreviewing) "Stop Preview" else "Play Music", fontWeight = FontWeight.Bold)
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("Repeat Loop", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                Switch(
+                                    checked = track.loop,
+                                    onCheckedChange = { onToggleMusicLoop(track.id, it) },
+                                    modifier = Modifier
+                                        .testTag("switch_music_loop_${track.id}")
+                                        .semantics {
+                                            contentDescription = "Repeat loop for ${track.title}"
+                                            stateDescription = if (track.loop) "On" else "Off"
+                                        }
+                                )
+                            }
+                        }
+
+                        AccessibleEffectSlider(
+                            title = "Track Volume",
+                            value = track.volume,
+                            onValueChange = { onUpdateMusicVolume(track.id, it) },
+                            valueRange = 0f..1.5f,
+                            step = 0.05f,
+                            displayValue = "${(track.volume * 100).toInt()}%",
+                            spokenDescription = "${track.title} volume ${(track.volume * 100).toInt()} percent",
+                            testTag = "slider_music_${track.id}"
+                        )
+                    }
                 }
             }
         }

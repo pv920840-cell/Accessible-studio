@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.accessiblestudio.qmztxp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 17
-    versionName = "1.2.4"
+    versionCode = 18
+    versionName = "1.2.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -141,4 +141,32 @@ dependencies {
   debugImplementation(libs.androidx.compose.ui.tooling)
   // "ksp"(libs.androidx.room.compiler)
   // "ksp"(libs.moshi.kotlin.codegen)
+}
+
+abstract class SyncVersionedApkTask : DefaultTask() {
+  @get:InputFile
+  abstract val sourceApk: RegularFileProperty
+
+  @get:OutputFile
+  abstract val destApk: RegularFileProperty
+
+  @TaskAction
+  fun syncApk() {
+    val src = sourceApk.get().asFile
+    val dst = destApk.get().asFile
+    if (src.exists()) {
+      dst.parentFile?.mkdirs()
+      src.copyTo(dst, overwrite = true)
+    }
+  }
+}
+
+val versionedApkFileName = "AccessibleStudio_V${android.defaultConfig.versionName}.apk"
+val syncVersionedDebugApk = tasks.register<SyncVersionedApkTask>("syncVersionedDebugApk") {
+  sourceApk.set(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+  destApk.set(rootProject.layout.projectDirectory.file(versionedApkFileName))
+}
+
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+  finalizedBy(syncVersionedDebugApk)
 }

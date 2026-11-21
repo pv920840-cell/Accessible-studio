@@ -179,6 +179,17 @@ object AudioEffectPresetsCatalog {
                     }
                 ),
                 AudioEffectPresetItem(
+                    id = "nr_studio_fan_motor_ultra",
+                    name = "Studio Ultra Clean: Fan, Motor & All Noise",
+                    targetCategory = "Studio Clean / Fan & Motor Removal",
+                    intensityTier = "Aggressive",
+                    parameterSummary = "2048 STFT • Motor Comb Hunter • Studio Clarity",
+                    accessibilityDescription = "Studio Ultra Clean Fan and Motor Remover. Completely removes ceiling fans, table fans, motors, air conditioning rumble, hum, and hiss offline with broadcast studio voice clarity.",
+                    applyTransform = { pcm, _, _, _ ->
+                        VocalIsolationProcessor.isolateSpokenAudio(pcm, VocalIsolationPreset.STUDIO_DEEP_CLEAN)
+                    }
+                ),
+                AudioEffectPresetItem(
                     id = "vocal_iso_strong",
                     name = "Isolate Speech: Strong Filtering",
                     targetCategory = "Spoken Audio / Heavy Ambient Rescue",

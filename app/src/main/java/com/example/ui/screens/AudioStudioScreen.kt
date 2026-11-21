@@ -315,6 +315,8 @@ fun AudioStudioScreen(
     var reverbMix by remember { mutableFloatStateOf(0.35f) }
     var noiseReductionEnabled by remember { mutableStateOf(false) }
     var noiseReductionIntensity by remember { mutableFloatStateOf(0.60f) }
+    var capturedNoisePrintPcm by remember(activeProjectIndex) { mutableStateOf<ShortArray?>(null) }
+    var noisePrintStatus by remember(activeProjectIndex) { mutableStateOf<String?>(null) }
     var noiseGateEnabled by remember { mutableStateOf(false) }
     var noiseGateThreshold by remember { mutableFloatStateOf(0.08f) }
     var bassBoost by remember { mutableFloatStateOf(0.0f) }
@@ -630,12 +632,28 @@ fun AudioStudioScreen(
         }
         if (isApplyingProFx) return
         val snapshotSettings = currentSettings()
+        val print = capturedNoisePrintPcm
         isApplyingProFx = true
         scope.launch {
             try {
                 playerManager.stop()
                 val processed = withContext(Dispatchers.Default) {
-                    audioProcessor.processPcm(orig, snapshotSettings, workingSampleRate)
+                    val nrDone = if (snapshotSettings.noiseReductionEnabled && print != null) {
+                        audioProcessor.applyNoiseReduction(
+                            orig,
+                            snapshotSettings.noiseReductionIntensity,
+                            workingSampleRate,
+                            1,
+                            print
+                        )
+                    } else {
+                        orig
+                    }
+                    audioProcessor.processPcm(
+                        nrDone,
+                        if (print != null) snapshotSettings.copy(noiseReductionEnabled = false) else snapshotSettings,
+                        workingSampleRate
+                    )
                 }
                 if (processed.isNotEmpty()) {
                     playerManager.loadPcmData(processed, workingSampleRate)
@@ -2382,19 +2400,46 @@ fun AudioStudioScreen(
                 }
             },
             onApplyVocalIsolation = { preset, subStr, humStr, clarityStr ->
-                applyTransform("Isolated spoken audio (${preset.displayName})") { pcm ->
+                val print = capturedNoisePrintPcm
+                applyTransform("Cleaned audio (${preset.displayName})") { pcm ->
+                    val isPresetDefault = kotlin.math.abs(subStr - preset.subtractionStrength) < 0.02f
                     VocalIsolationProcessor.isolateSpokenAudio(
                         samples = pcm,
                         subtractionStrength = subStr,
                         humRemovalStrength = humStr,
                         vocalClarityBoost = clarityStr,
-                        spectralFloorOverride = if (kotlin.math.abs(subStr - preset.subtractionStrength) < 0.02f) preset.spectralFloor else null,
-                        vocalBandEmphasisOverride = if (kotlin.math.abs(subStr - preset.subtractionStrength) < 0.02f) preset.vocalBandEmphasis else null,
-                        pauseGateFloorOverride = if (kotlin.math.abs(subStr - preset.subtractionStrength) < 0.02f) preset.pauseGateFloor else null,
-                        highPassHz = if (kotlin.math.abs(subStr - preset.subtractionStrength) < 0.02f) preset.highPassHz else null,
-                        sampleRate = workingSampleRate
+                        spectralFloorOverride = if (isPresetDefault) preset.spectralFloor else null,
+                        vocalBandEmphasisOverride = if (isPresetDefault) preset.vocalBandEmphasis else null,
+                        pauseGateFloorOverride = if (isPresetDefault) preset.pauseGateFloor else null,
+                        highPassHz = if (isPresetDefault) preset.highPassHz else null,
+                        sampleRate = workingSampleRate,
+                        fanMotorRemovalStrength = if (isPresetDefault) preset.fanMotorRemovalStrength else null,
+                        studioMaxClean = preset.studioMaxClean,
+                        customNoisePrintPcm = print
                     )
                 }
+            },
+            noisePrintStatus = noisePrintStatus,
+            onCaptureNoisePrint = {
+                val pcm = rawOriginalPcm
+                if (pcm != null && pcm.isNotEmpty() && trimEndMs - trimStartMs >= 120L) {
+                    val snippet = StudioAudioProcessor.cropToSelection(pcm, trimStartMs, trimEndMs, workingSampleRate)
+                    if (snippet.size >= 512) {
+                        capturedNoisePrintPcm = snippet
+                        val sec = (trimEndMs - trimStartMs) / 1000f
+                        val msg = "Noise Print locked (${"%.1f".format(sec)}s)"
+                        noisePrintStatus = msg
+                        AccessibilityHelper.announceForAccessibility(context, msg)
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(context, "Select a 0.2s–4s fan or noise-only gap between Start & End markers first.", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onClearNoisePrint = {
+                capturedNoisePrintPcm = null
+                noisePrintStatus = null
+                AccessibilityHelper.announceForAccessibility(context, "Custom noise print cleared")
             },
             onDismiss = { showEffectsRackDialog = false }
         )
@@ -2480,8 +2525,9 @@ fun AudioStudioScreen(
                                 }
                             },
                             onApplyNoiseReduction = {
-                                applyTransform("Applied Noise Reduction") { pcm ->
-                                    audioProcessor.applyNoiseReduction(pcm, noiseReductionIntensity, workingSampleRate)
+                                val print = capturedNoisePrintPcm
+                                applyTransform("Applied Studio Noise Reduction") { pcm ->
+                                    audioProcessor.applyNoiseReduction(pcm, noiseReductionIntensity, workingSampleRate, 1, print)
                                 }
                             },
                             onApplyEqualizer = {

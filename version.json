@@ -1,9 +1,9 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 17,
-  "versionName": "1.2.4",
-  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.4.apk",
+  "versionCode": 18,
+  "versionName": "1.2.5",
+  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.5.apk",
   "pageUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/",
-  "apkSizeBytes": 20049485,
-  "releaseNotes": "Fix TalkBack swiping lag during audio/video playback (throttled playhead ticks, isolated recomposition, suppressed accessibility node churn while playing) and added customizable Rewind & Fast-Forward scrub speed controls (1.5x, 2.0x, 3.5x, 5.0x, 8.0x) in Audio Editing."
+  "apkSizeBytes": 20115021,
+  "releaseNotes": "100% Offline Studio Ultra Clean (Fan, Motor & Background Noise Remover) with 2048-pt 4x-OLA STFT, 4th-order Butterworth sub-sonic cut, Adaptive Fan & Motor Harmonic Comb Hunter (40 Hz–4,500 Hz), Two-Step Decision-Directed Wiener filtering, deep pause floor silence, and Learn Noise Print (from Selection) across Audio & Video Noise Reducers."
 }

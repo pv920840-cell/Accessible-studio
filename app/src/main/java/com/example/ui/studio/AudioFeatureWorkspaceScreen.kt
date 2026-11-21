@@ -827,6 +827,8 @@ fun AudioFeatureWorkspaceScreen(
                     var noiseStrength by remember { mutableFloatStateOf(editSettings.noiseReductionIntensity) }
                     var echoMix by remember { mutableFloatStateOf(editSettings.echoMix) }
                     var reverbMix by remember { mutableFloatStateOf(editSettings.reverbMix) }
+                    var capturedNoisePrintPcm by remember(session.projectId, tool) { mutableStateOf<ShortArray?>(null) }
+                    var noisePrintSummary by remember(session.projectId, tool) { mutableStateOf<String?>(null) }
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -838,6 +840,25 @@ fun AudioFeatureWorkspaceScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                Button(
+                                    onClick = {
+                                        val print = capturedNoisePrintPcm
+                                        pushUndoAndApply("Applied Studio Ultra Clean (Fan & Motor Removed)") { pcm ->
+                                            VocalIsolationProcessor.isolateSpokenAudio(
+                                                samples = pcm,
+                                                preset = VocalIsolationPreset.STUDIO_DEEP_CLEAN,
+                                                sampleRate = sampleRate,
+                                                customNoisePrintPcm = print
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                        .testTag("btn_fx_studio_deep_clean")
+                                        .semantics {
+                                            contentDescription = "Studio Clean Fan and Motor Remover. Offline removes ceiling fan, motor whine, room noise, and hum with studio voice clarity."
+                                        }
+                                ) { Text("Studio Clean (Fan/Motor)", fontWeight = FontWeight.Black) }
                                 Button(
                                     onClick = { pushUndoAndApply("Applied Auto Gain leveling") { StudioAudioProcessor.applyAutoGain(it) } },
                                     modifier = Modifier
@@ -865,7 +886,7 @@ fun AudioFeatureWorkspaceScreen(
                                 ) { Text("Gain +3 dB", fontWeight = FontWeight.Bold) }
                             }
 
-                            var selectedIsolationPreset by remember { mutableStateOf(VocalIsolationPreset.MEDIUM) }
+                            var selectedIsolationPreset by remember { mutableStateOf(VocalIsolationPreset.STUDIO_DEEP_CLEAN) }
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -873,7 +894,7 @@ fun AudioFeatureWorkspaceScreen(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
                             ) {
                                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("Noise Reduction & Isolate Spoken Audio", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Black)
+                                    Text("Studio Noise Reduction & Fan/Motor Removal", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Black)
                                     AccessibleEffectSlider(
                                         title = "Noise Reduction Strength",
                                         value = noiseStrength,
@@ -886,7 +907,7 @@ fun AudioFeatureWorkspaceScreen(
                                     )
                                     HorizontalDivider()
                                     Text(
-                                        text = "Adaptive Spectral Subtraction (Removes hum & ambient noise)",
+                                        text = "Adaptive Fan, Motor & Hum Remover (100% Offline)",
                                         style = MaterialTheme.typography.labelMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary
@@ -903,13 +924,15 @@ fun AudioFeatureWorkspaceScreen(
                                         listOf(
                                             VocalIsolationPreset.LIGHT to "btn_isolate_light",
                                             VocalIsolationPreset.MEDIUM to "btn_isolate_medium",
-                                            VocalIsolationPreset.STRONG to "btn_isolate_strong"
+                                            VocalIsolationPreset.STRONG to "btn_isolate_strong",
+                                            VocalIsolationPreset.STUDIO_DEEP_CLEAN to "btn_isolate_studio_ultra"
                                         ).forEach { (preset, tag) ->
                                             FilterChip(
                                                 selected = selectedIsolationPreset == preset,
                                                 onClick = { selectedIsolationPreset = preset },
                                                 label = { Text(preset.displayName, fontWeight = FontWeight.Bold) },
                                                 modifier = Modifier
+                                                    .heightIn(min = 48.dp)
                                                     .testTag(tag)
                                                     .semantics {
                                                         contentDescription = "${preset.displayName}. ${preset.shortDescription}"
@@ -917,11 +940,72 @@ fun AudioFeatureWorkspaceScreen(
                                             )
                                         }
                                     }
+
+                                    // Optional Noise Print sampling from Start/End trim selection
+                                    FlowRow(
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                val s = trimStartMs
+                                                val e = trimEndMs
+                                                if (e - s < 120L) {
+                                                    Toast.makeText(context, "Mark a 0.2s–4s fan or noise-only gap using Trim Start/End first.", Toast.LENGTH_SHORT).show()
+                                                } else {
+                                                    val snippet = StudioAudioProcessor.cropToSelection(workingPcm, s, e, sampleRate)
+                                                    if (snippet.size >= 512) {
+                                                        capturedNoisePrintPcm = snippet
+                                                        val sec = (e - s) / 1000f
+                                                        val msg = "Noise Print locked (${"%.1f".format(sec)}s) — ready to clean entire track"
+                                                        noisePrintSummary = msg
+                                                        AccessibilityHelper.announceForAccessibility(context, msg)
+                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .heightIn(min = 48.dp)
+                                                .testTag("btn_capture_noise_print")
+                                                .semantics {
+                                                    contentDescription = "Learn Noise Print from selected trim region to target exact fan or motor noise."
+                                                }
+                                        ) {
+                                            Icon(Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Learn Noise Print (Selection)", fontWeight = FontWeight.Bold)
+                                        }
+                                        if (capturedNoisePrintPcm != null) {
+                                            OutlinedButton(
+                                                onClick = {
+                                                    capturedNoisePrintPcm = null
+                                                    noisePrintSummary = null
+                                                    AccessibilityHelper.announceForAccessibility(context, "Custom noise print cleared")
+                                                },
+                                                modifier = Modifier
+                                                    .heightIn(min = 48.dp)
+                                                    .testTag("btn_clear_noise_print")
+                                            ) {
+                                                Text("Clear Print", fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                    noisePrintSummary?.let { summary ->
+                                        Text(
+                                            text = summary,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.testTag("txt_noise_print_status")
+                                        )
+                                    }
+
                                     Button(
                                         onClick = {
                                             val chosen = selectedIsolationPreset
-                                            pushUndoAndApply("Isolated spoken audio (${chosen.displayName})") { pcm ->
-                                                VocalIsolationProcessor.isolateSpokenAudio(pcm, chosen, sampleRate)
+                                            val print = capturedNoisePrintPcm
+                                            pushUndoAndApply("Cleaned audio (${chosen.displayName})") { pcm ->
+                                                VocalIsolationProcessor.isolateSpokenAudio(pcm, chosen, sampleRate, print)
                                             }
                                         },
                                         modifier = Modifier
@@ -929,12 +1013,12 @@ fun AudioFeatureWorkspaceScreen(
                                             .height(48.dp)
                                             .testTag("btn_apply_isolate_speech")
                                             .semantics {
-                                                contentDescription = "Isolate Spoken Audio using ${selectedIsolationPreset.displayName} adaptive spectral subtraction."
+                                                contentDescription = "Clean Audio and Isolate Speech using ${selectedIsolationPreset.displayName}."
                                             }
                                     ) {
                                         Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
                                         Spacer(Modifier.width(8.dp))
-                                        Text("Isolate Speech (${selectedIsolationPreset.displayName})", fontWeight = FontWeight.Black)
+                                        Text("Clean & Isolate (${selectedIsolationPreset.displayName})", fontWeight = FontWeight.Black)
                                     }
                                 }
                             }
@@ -980,8 +1064,14 @@ fun AudioFeatureWorkspaceScreen(
                                         reverbMix = reverbMix
                                     )
                                     editSettings = newSettings
+                                    val print = capturedNoisePrintPcm
                                     pushUndoAndApply("Applied Studio Effects Chain") { pcm ->
-                                        audioProcessor.processPcm(pcm, newSettings, sampleRate)
+                                        val nrDone = if (newSettings.noiseReductionEnabled) {
+                                            audioProcessor.applyNoiseReduction(pcm, newSettings.noiseReductionIntensity, sampleRate, 1, print)
+                                        } else {
+                                            pcm
+                                        }
+                                        audioProcessor.processPcm(nrDone, newSettings.copy(noiseReductionEnabled = false), sampleRate)
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_workspace_apply_fx")

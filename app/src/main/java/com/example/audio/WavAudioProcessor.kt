@@ -1221,10 +1221,10 @@ class WavAudioProcessor(private val context: Context? = null) {
     }
 
     /**
-     * Studio-Clean Spectral Noise Reduction:
-     * Removes hiss, fan, air conditioning, room tone, and 50/60 Hz hum using
-     * Decision-Directed Wiener STFT filtering while preserving natural voice presence,
-     * high-frequency sibilance/air, and zero robotic or metallic artifacts.
+     * Studio-Clean Spectral + Harmonic Noise Reduction:
+     * Removes stationary ceiling/table fans, motors, air conditioning, hiss, room tone,
+     * and 50/60 Hz harmonic hum using Two-Step Decision-Directed Wiener STFT filtering while
+     * preserving natural voice presence, high-frequency sibilance/air, and zero robotic artifacts.
      */
     fun applyNoiseReduction(input: ShortArray, intensity: Float): ShortArray =
         applyNoiseReduction(input, intensity, this.sampleRate, 1)
@@ -1233,20 +1233,33 @@ class WavAudioProcessor(private val context: Context? = null) {
         input: ShortArray,
         intensity: Float,
         sampleRate: Int = this.sampleRate,
-        channels: Int = 1
+        channels: Int = 1,
+        customNoisePrintPcm: ShortArray? = null
     ): ShortArray {
         if (input.isEmpty() || intensity < 0.02f) return input
         val strength = intensity.coerceIn(0.05f, 1.0f)
+        val isStudioMax = strength >= 0.94f
 
         val config = StudioNoiseReductionConfig(
             strength = strength,
-            humRemovalStrength = (0.35f + strength * 0.45f).coerceIn(0f, 0.85f),
-            spectralFloorOverride = (0.30f - strength * 0.24f).coerceIn(0.06f, 0.32f),
-            pauseAttenuationFloor = (0.86f - strength * 0.48f).coerceIn(0.38f, 0.90f),
-            lowCutHz = 38f + strength * 24f,
-            lowCutAttenuation = 0.18f + strength * 0.25f,
+            humRemovalStrength = (0.48f + strength * 0.52f).coerceIn(0f, 1.0f),
+            fanMotorRemovalStrength = (0.42f + strength * 0.58f).coerceIn(0f, 1.0f),
+            spectralFloorOverride = when {
+                isStudioMax -> 0.007f
+                strength <= 0.40f -> (0.26f - strength * 0.30f).coerceIn(0.12f, 0.26f)
+                else -> (0.13f - (strength - 0.40f) * 0.23f).coerceIn(0.010f, 0.13f)
+            },
+            pauseAttenuationFloor = when {
+                isStudioMax -> 0.004f
+                strength <= 0.40f -> (0.72f - strength * 0.72f).coerceIn(0.38f, 0.72f)
+                else -> (0.36f - (strength - 0.40f) * 0.66f).coerceIn(0.010f, 0.36f)
+            },
+            lowCutHz = if (isStudioMax) 88f else (44f + strength * 36f),
+            lowCutAttenuation = 0.28f + strength * 0.52f,
             preserveHighFrequencies = true,
-            vocalClarityBoost = 0f
+            vocalClarityBoost = if (isStudioMax) 0.55f else 0f,
+            studioMaxClean = isStudioMax,
+            customNoisePrintPcm = customNoisePrintPcm
         )
 
         return StudioNoiseReducer.reduceNoise(
@@ -1256,6 +1269,23 @@ class WavAudioProcessor(private val context: Context? = null) {
             config = config
         )
     }
+
+    /**
+     * One-tap Offline Studio Deep Clean: aggressively strips ceiling/table fans, motors, pumps,
+     * AC rumble, 50/60Hz electrical hum, and broadband hiss to studio silence while polishing voice clarity.
+     */
+    fun studioDeepClean(
+        input: ShortArray,
+        sampleRate: Int = this.sampleRate,
+        channels: Int = 1,
+        customNoisePrintPcm: ShortArray? = null
+    ): ShortArray = applyNoiseReduction(
+        input = input,
+        intensity = 1.0f,
+        sampleRate = sampleRate,
+        channels = channels,
+        customNoisePrintPcm = customNoisePrintPcm
+    )
 
     /**
      * Bass and Treble Booster

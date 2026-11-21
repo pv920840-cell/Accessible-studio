@@ -309,9 +309,9 @@ object EffectPanelPresetsCatalog {
     val noiseReductionDefault = PanelPresetOption("default_reset", "Default / Reset", "Suppression 60%", 0.60f)
     val noiseReductionPresets = listOf(
         PanelPresetOption("light_hiss", "Light Hiss Removal", "Gentle 35% suppression", 0.35f),
-        PanelPresetOption("studio_clean", "Studio Clean", "Balanced 55% room cleanup", 0.55f),
-        PanelPresetOption("podcast_fan", "Podcast Fan Cleaner", "Strong 75% background clean", 0.75f),
-        PanelPresetOption("aggressive_clean", "Aggressive Field Clean", "Maximum 95% suppression", 0.95f)
+        PanelPresetOption("studio_clean", "Studio Clean", "Balanced 60% fan & room cleanup", 0.60f),
+        PanelPresetOption("podcast_fan", "Podcast Fan & Motor Cleaner", "Strong 80% fan/motor clean", 0.80f),
+        PanelPresetOption("studio_ultra_fan_motor", "Studio Ultra Clean (Fan & Motor)", "100% Max offline fan, motor & all noise", 1.00f)
     )
 
     val noiseGateDefault = PanelPresetOption("default_reset", "Default / Reset", "Threshold 8%", 0.08f)

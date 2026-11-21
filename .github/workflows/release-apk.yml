@@ -49,28 +49,30 @@ jobs:
 
       - name: Prepare release assets & version.json
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk AccessibleStudio_V1.2.apk
-          cp app/build/outputs/apk/debug/app-debug.apk AccessibleStudio.apk
           python3 -c '
-          import glob, json, os, re
+          import glob, json, os, re, shutil
           bc = glob.glob("app/build/generated/source/buildConfig/**/BuildConfig.java", recursive=True)[0]
           text = open(bc).read()
           vcode = int(re.search(r"VERSION_CODE\s*=\s*(\d+)", text).group(1))
           vname = re.search(r"VERSION_NAME\s*=\s*\"([^\"]+)\"", text).group(1)
+          apk_name = f"AccessibleStudio_V{vname}.apk"
+          shutil.copy2("app/build/outputs/apk/debug/app-debug.apk", apk_name)
           repo = os.environ["GITHUB_REPOSITORY"]
           tag = os.environ.get("GITHUB_REF_NAME", f"v{vname}")
           payload = {
               "appName": "Accessible Studio",
               "versionCode": vcode,
               "versionName": vname,
-              "apkUrl": f"https://github.com/{repo}/releases/download/{tag}/AccessibleStudio_V1.2.apk",
+              "apkUrl": f"https://github.com/{repo}/releases/download/{tag}/{apk_name}",
               "pageUrl": f"https://github.com/{repo}/releases/latest",
-              "apkSizeBytes": os.path.getsize("AccessibleStudio_V1.2.apk"),
+              "apkSizeBytes": os.path.getsize(apk_name),
               "releaseNotes": f"Accessible Studio {vname} release."
           }
           with open("version.json", "w") as f:
               json.dump(payload, f, indent=2)
               f.write("\n")
+          with open(os.environ["GITHUB_ENV"], "a") as env_f:
+              env_f.write(f"VERSIONED_APK_NAME={apk_name}\n")
           '
 
       - name: Publish GitHub Release
@@ -80,6 +82,5 @@ jobs:
           name: Accessible Studio ${{ github.ref_name }}
           generate_release_notes: true
           files: |
-            AccessibleStudio_V1.2.apk
-            AccessibleStudio.apk
+            ${{ env.VERSIONED_APK_NAME }}
             version.json

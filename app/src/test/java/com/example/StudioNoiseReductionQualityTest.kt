@@ -270,4 +270,86 @@ class StudioNoiseReductionQualityTest {
             assertTrue("Preset ${preset.id} must preserve speech signal", rmsRange(out, sr + 4000, sr * 2 - 4000) > 1500.0)
         }
     }
+
+    @Test
+    fun studioUltraClean_eliminatesCeilingFanBroadbandAndMotorHarmonicWhineWithPauseHeavySpeech() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val wavProcessor = WavAudioProcessor(context)
+        val mixer = VideoAudioMixer(context)
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        // Pause-heavy recording: 3s quiet/noisy gaps + only 1s active speech (4s total)
+        // Tests P88 quantile fix + 4th-order HPF + Adaptive Fan/Motor Harmonic Hunter (95/190/285 Hz + 840/1680 Hz motor whine + broadband fan)
+        val total = 4 * sr
+        val rng = Random(2026)
+
+        val fanMotorClip = ShortArray(total) { i ->
+            val t = i.toDouble() / sr
+            val fanRumbleAndBlades = 2400.0 * sin(2.0 * PI * 52.0 * t) +
+                2100.0 * sin(2.0 * PI * 95.0 * t) +
+                1400.0 * sin(2.0 * PI * 190.0 * t) +
+                800.0 * sin(2.0 * PI * 285.0 * t)
+            val motorWhine = 1350.0 * sin(2.0 * PI * 840.0 * t) +
+                750.0 * sin(2.0 * PI * 1680.0 * t)
+            val airflowHiss = (rng.nextDouble() * 2.0 - 1.0) * 2100.0
+            val voice = if (i in (2 * sr) until (3 * sr)) {
+                9200.0 * sin(2.0 * PI * 260.0 * t) +
+                    5200.0 * sin(2.0 * PI * 1250.0 * t) +
+                    2400.0 * sin(2.0 * PI * 4800.0 * t)
+            } else {
+                0.0
+            }
+            (voice + fanRumbleAndBlades + motorWhine + airflowHiss).toInt().coerceIn(-32767, 32767).toShort()
+        }
+
+        val inFanPauseRms = rmsRange(fanMotorClip, sr / 4, (3 * sr) / 2)
+        val inMotorTone840 = toneMagnitudeAtFreq(fanMotorClip, sr / 4, (3 * sr) / 2, 840.0, sr)
+        val inVoice1250 = toneMagnitudeAtFreq(fanMotorClip, 2 * sr + sr / 5, 3 * sr - sr / 5, 1250.0, sr)
+
+        // 1. Auto Studio Ultra Clean (no manual noise print)
+        val ultraCleaned = VocalIsolationProcessor.isolateSpokenAudio(
+            samples = fanMotorClip,
+            preset = VocalIsolationPreset.STUDIO_DEEP_CLEAN,
+            sampleRate = sr
+        )
+        assertEquals(fanMotorClip.size, ultraCleaned.size)
+
+        val outFanPauseRms = rmsRange(ultraCleaned, sr / 4, (3 * sr) / 2)
+        val outMotorTone840 = toneMagnitudeAtFreq(ultraCleaned, sr / 4, (3 * sr) / 2, 840.0, sr)
+        val outVoice1250 = toneMagnitudeAtFreq(ultraCleaned, 2 * sr + sr / 5, 3 * sr - sr / 5, 1250.0, sr)
+
+        assertTrue(
+            "Studio Ultra Clean must crush fan & motor pause RMS by >94% (in=$inFanPauseRms out=$outFanPauseRms)",
+            outFanPauseRms < inFanPauseRms * 0.06
+        )
+        assertTrue(
+            "Adaptive harmonic hunter must wipe out 840 Hz motor whine (in=$inMotorTone840 out=$outMotorTone840)",
+            outMotorTone840 < inMotorTone840 * 0.05
+        )
+        assertTrue(
+            "Voice clarity at 1250 Hz must stay strong (in=$inVoice1250 out=$outVoice1250)",
+            outVoice1250 > inVoice1250 * 0.75
+        )
+
+        // 2. Custom Noise Print sampled from first 0.8s of fan/motor noise
+        val noisePrint = StudioAudioProcessor.cropToSelection(fanMotorClip, 100L, 900L, sr)
+        val printCleaned = wavProcessor.studioDeepClean(
+            input = fanMotorClip,
+            sampleRate = sr,
+            channels = 1,
+            customNoisePrintPcm = noisePrint
+        )
+        val printPauseRms = rmsRange(printCleaned, sr + sr / 4, (7 * sr) / 4)
+        assertTrue(
+            "Custom Noise Print deep clean must silence fan/motor gaps (in=$inFanPauseRms out=$printPauseRms)",
+            printPauseRms < inFanPauseRms * 0.05
+        )
+
+        // 3. VideoAudioMixer Max strength
+        val videoMaxClean = mixer.reduceVideoNoise(fanMotorClip, strength = 1.0f, sampleRate = sr)
+        val videoPauseRms = rmsRange(videoMaxClean, sr / 4, (3 * sr) / 2)
+        assertTrue(
+            "Video Max Fan/Motor reducer must clean >92% of fan/motor noise ($videoPauseRms vs $inFanPauseRms)",
+            videoPauseRms < inFanPauseRms * 0.08
+        )
+    }
 }

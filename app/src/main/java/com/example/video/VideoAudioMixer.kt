@@ -79,15 +79,18 @@ class VideoAudioMixer(private val context: Context) {
     ): ShortArray {
         if (pcm.isEmpty() || strength < 0.05f) return pcm
         val s = strength.coerceIn(0.15f, 1.0f)
+        val studioMax = s >= 0.88f
         val config = com.example.audio.StudioNoiseReductionConfig(
             strength = s,
-            humRemovalStrength = (0.45f + s * 0.42f).coerceIn(0f, 0.90f),
-            spectralFloorOverride = (0.26f - s * 0.21f).coerceIn(0.03f, 0.28f),
-            pauseAttenuationFloor = (0.76f - s * 0.44f).coerceIn(0.26f, 0.80f),
-            lowCutHz = 55f + s * 22f,
-            lowCutAttenuation = 0.28f + s * 0.28f,
+            humRemovalStrength = (0.55f + s * 0.45f).coerceIn(0f, 1.0f),
+            fanMotorRemovalStrength = (0.55f + s * 0.45f).coerceIn(0f, 1.0f),
+            spectralFloorOverride = if (studioMax) 0.008f else (0.16f - s * 0.145f).coerceIn(0.012f, 0.22f),
+            pauseAttenuationFloor = if (studioMax) 0.005f else (0.42f - s * 0.40f).coerceIn(0.012f, 0.45f),
+            lowCutHz = 62f + s * 28f,
+            lowCutAttenuation = 0.45f + s * 0.42f,
             preserveHighFrequencies = true,
-            vocalClarityBoost = 0.12f * s
+            vocalClarityBoost = if (studioMax) 0.45f else 0.18f * s,
+            studioMaxClean = studioMax
         )
         val cleaned = com.example.audio.StudioNoiseReducer.reduceNoise(
             samples = pcm,

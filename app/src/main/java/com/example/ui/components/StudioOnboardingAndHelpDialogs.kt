@@ -146,7 +146,10 @@ object StudioUserGuideContent {
             "• Consolidated User Guide and What's New cleanly into a single location inside Settings -> About Accessible Studio.\n\n" +
             "12. Vocal Extractor & Karaoke Maker:\n" +
             "• Added offline Vocal Extractor (Vocals Only / Acapella) and Karaoke Maker (Instrumental with bass preservation) in Project Hub and Tools -> Vocal Extractor & Karaoke Maker.\n" +
-            "• Supports Stereo Mid/Side + STFT phase separation on stereo songs, Mono spectral harmonic separation, Gentle/Balanced/Deep presets, stem preview, multi-tab splitting, and direct stem export."
+            "• Supports Stereo Mid/Side + STFT phase separation on stereo songs, Mono spectral harmonic separation, Gentle/Balanced/Deep presets, stem preview, multi-tab splitting, and direct stem export.\n\n" +
+            "13. Version 1.2.5 — Offline Studio Ultra Clean (Fan, Motor & Background Noise Remover):\n" +
+            "• Upgraded the 100% offline noise reduction engine to 2048-pt 4x Overlap-Add STFT, 4th-order Butterworth sub-sonic rumble cut, Two-Step Decision-Directed Wiener filtering, and Adaptive Fan & Motor Harmonic Hunter (40 Hz–4,500 Hz).\n" +
+            "• Added one-tap 'Studio Ultra (Fan & Motor)' preset and 'Learn Noise Print (Selection)' in Effects & Cleaning, Full DAW Noise Reduction, and Video Noise Reducer to eliminate ceiling fans, motors, AC, hum & hiss completely while preserving broadcast vocal clarity."
 
     const val WHATS_NEW_HINDI =
         "1. लंबे ऑडियो (6+ मिनट) ड्यूरेशन और प्लेबैक बग फ़िक्स:\n" +
@@ -177,7 +180,10 @@ object StudioUserGuideContent {
             "• अब User Guide और What's New दोनों बटन एक ही जगह — Settings -> About Accessible Studio के अंदर उपलब्ध हैं।\n\n" +
             "12. Vocal Extractor और Karaoke Maker फ़ीचर:\n" +
             "• अब Project Hub और Tools -> Vocal Extractor & Karaoke Maker से किसी भी गाने से केवल सिंगिंग वोकल्स (Vocals Only) अलग कर सकते हैं या लीड आवाज़ हटाकर Karaoke (Instrumental) बना सकते हैं।\n" +
-            "• स्टीरियो गानों के लिए Stereo Mid/Side + STFT इंजन (बेस सुरक्षित रखते हुए), Gentle/Balanced/Deep प्रीसेट्स, स्टेम प्रिव्यू और अलग-अलग फ़ाइल सेव करने की सुविधा जोड़ी गई है।"
+            "• स्टीरियो गानों के लिए Stereo Mid/Side + STFT इंजन (बेस सुरक्षित रखते हुए), Gentle/Balanced/Deep प्रीसेट्स, स्टेम प्रिव्यू और अलग-अलग फ़ाइल सेव करने की सुविधा जोड़ी गई है।\n\n" +
+            "13. Version 1.2.5 — 100% ऑफ़लाइन Studio Ultra Clean (पंखा, मोटर और सारा शोर हटाएं):\n" +
+            "• नए 2048-pt 4x-Overlap STFT, 4th-order सब-सोनिक रम्बल कट और Adaptive Fan & Motor Harmonic Hunter (40 Hz–4,500 Hz) इंजन से सीलिंग/टेबल फैन, मोटर की भनभनाहट, AC और बैकग्राउंड शोर पूरी तरह साफ़ होता है।\n" +
+            "• Effects & Cleaning, Full DAW Noise Reduction और Video Noise Reducer में 'Studio Ultra (Fan & Motor)' व चुने हुए हिस्से से 'Learn Noise Print' फ़ीचर जोड़ा गया है ताकि आवाज़ बिल्कुल स्टूडियो क्वालिटी की मिले।"
 }
 
 @Composable

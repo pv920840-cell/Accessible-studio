@@ -116,6 +116,9 @@ fun StudioEffectsRackDialog(
         humRemovalStrength: Float,
         vocalClarityBoost: Float
     ) -> Unit = { _, _, _, _ -> },
+    noisePrintStatus: String? = null,
+    onCaptureNoisePrint: (() -> Unit)? = null,
+    onClearNoisePrint: (() -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     val isHighContrast = LocalHighContrast.current
@@ -392,7 +395,12 @@ fun StudioEffectsRackDialog(
                                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
-                                                listOf("Low" to 0.35f, "Medium" to 0.55f, "High" to 0.75f).forEach { (label, valFloat) ->
+                                                listOf(
+                                                    "Low" to 0.35f,
+                                                    "Medium" to 0.60f,
+                                                    "High" to 0.80f,
+                                                    "Max Fan/Motor" to 1.00f
+                                                ).forEach { (label, valFloat) ->
                                                     FilterChip(
                                                         selected = kotlin.math.abs(noiseReductionIntensity - valFloat) < 0.08f,
                                                         onClick = { onNoiseReductionIntensityChange(valFloat) },
@@ -433,7 +441,7 @@ fun StudioEffectsRackDialog(
                                             color = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
                                         )
                                         Text(
-                                            text = "Removes ambient room noise & 50/60 Hz hum while keeping vocal clarity pristine.",
+                                            text = "Removes ceiling/table fans, motors, AC, ambient noise & hum offline with broadcast clarity.",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -445,7 +453,8 @@ fun StudioEffectsRackDialog(
                                             listOf(
                                                 VocalIsolationPreset.LIGHT to "btn_isolation_preset_light",
                                                 VocalIsolationPreset.MEDIUM to "btn_isolation_preset_medium",
-                                                VocalIsolationPreset.STRONG to "btn_isolation_preset_strong"
+                                                VocalIsolationPreset.STRONG to "btn_isolation_preset_strong",
+                                                VocalIsolationPreset.STUDIO_DEEP_CLEAN to "btn_isolation_preset_studio_ultra"
                                             ).forEach { (preset, tag) ->
                                                 FilterChip(
                                                     selected = selectedIsolationPreset == preset,
@@ -462,6 +471,39 @@ fun StudioEffectsRackDialog(
                                                         .semantics {
                                                             contentDescription = "${preset.displayName}. ${preset.shortDescription}"
                                                         }
+                                                )
+                                            }
+                                        }
+                                        if (onCaptureNoisePrint != null) {
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                OutlinedButton(
+                                                    onClick = onCaptureNoisePrint,
+                                                    modifier = Modifier
+                                                        .heightIn(min = 48.dp)
+                                                        .testTag("btn_rack_capture_noise_print")
+                                                ) {
+                                                    Text("Learn Noise Print (Selection)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                }
+                                                if (noisePrintStatus != null && onClearNoisePrint != null) {
+                                                    OutlinedButton(
+                                                        onClick = onClearNoisePrint,
+                                                        modifier = Modifier
+                                                            .heightIn(min = 48.dp)
+                                                            .testTag("btn_rack_clear_noise_print")
+                                                    ) {
+                                                        Text("Clear Print", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                    }
+                                                }
+                                            }
+                                            if (noisePrintStatus != null) {
+                                                Text(
+                                                    text = noisePrintStatus,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Bold
                                                 )
                                             }
                                         }

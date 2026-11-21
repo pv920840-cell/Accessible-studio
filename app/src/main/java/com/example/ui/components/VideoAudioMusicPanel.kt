@@ -59,6 +59,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.accessibility.AccessibilityHelper
 import com.example.ui.theme.LocalHighContrast
@@ -496,13 +497,30 @@ fun VideoAudioMusicPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Video Noise Reducer", fontWeight = FontWeight.Bold)
-                    Text("Removes background hiss, wind, and 50/60Hz electrical hum", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Studio Video Noise Reducer (Fan & Motor)", fontWeight = FontWeight.Bold)
+                    Text("100% offline removes ceiling/table fan, motor whine, wind & 50/60Hz hum", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(checked = noiseReduceEnabled, onCheckedChange = onToggleNoiseReduce, modifier = Modifier.testTag("switch_video_noise_reducer"))
             }
 
             if (noiseReduceEnabled) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        Triple("Light (45%)", 0.45f, "chip_video_nr_light"),
+                        Triple("Studio Clean (75%)", 0.75f, "chip_video_nr_studio"),
+                        Triple("Max Fan & Motor (100%)", 1.00f, "chip_video_nr_max")
+                    ).forEach { (label, valF, tag) ->
+                        FilterChip(
+                            selected = kotlin.math.abs(noiseReduceStrength - valF) < 0.08f,
+                            onClick = { onChangeNoiseReduceStrength(valF) },
+                            label = { Text(label, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                            modifier = Modifier.heightIn(min = 48.dp).testTag(tag)
+                        )
+                    }
+                }
                 AccessibleEffectSlider(
                     title = "Noise Reduction Strength",
                     value = noiseReduceStrength,

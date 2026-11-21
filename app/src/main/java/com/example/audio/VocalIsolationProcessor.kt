@@ -18,7 +18,9 @@ enum class VocalIsolationPreset(
     val spectralFloor: Float,
     val vocalBandEmphasis: Float,
     val pauseGateFloor: Float,
-    val highPassHz: Float
+    val highPassHz: Float,
+    val fanMotorRemovalStrength: Float = 0.72f,
+    val studioMaxClean: Boolean = false
 ) {
     LIGHT(
         displayName = "Light Filtering",
@@ -27,42 +29,62 @@ enum class VocalIsolationPreset(
         humRemovalStrength = 0.65f,
         vocalClarityBoost = 0.30f,
         spectralAlpha = 1.15f,
-        spectralFloor = 0.22f,
+        spectralFloor = 0.16f,
         vocalBandEmphasis = 0.18f,
-        pauseGateFloor = 0.32f,
-        highPassHz = 70f
+        pauseGateFloor = 0.28f,
+        highPassHz = 65f,
+        fanMotorRemovalStrength = 0.55f,
+        studioMaxClean = false
     ),
     MEDIUM(
         displayName = "Medium Filtering",
-        shortDescription = "Balanced ambient noise & 50/60Hz hum subtraction with crisp, pristine vocal clarity.",
-        subtractionStrength = 0.70f,
+        shortDescription = "Balanced ambient noise, fan & 50/60Hz hum subtraction with crisp, pristine vocal clarity.",
+        subtractionStrength = 0.72f,
         humRemovalStrength = 0.88f,
-        vocalClarityBoost = 0.55f,
+        vocalClarityBoost = 0.52f,
         spectralAlpha = 1.75f,
-        spectralFloor = 0.08f,
+        spectralFloor = 0.045f,
         vocalBandEmphasis = 0.48f,
-        pauseGateFloor = 0.10f,
-        highPassHz = 82f
+        pauseGateFloor = 0.08f,
+        highPassHz = 78f,
+        fanMotorRemovalStrength = 0.80f,
+        studioMaxClean = false
     ),
     STRONG(
         displayName = "Strong Filtering",
-        shortDescription = "Maximum speech isolation: removes heavy ambient noise, wind & hum while keeping speech crisp.",
-        subtractionStrength = 0.95f,
+        shortDescription = "Heavy speech isolation: removes strong ambient noise, wind, AC & hum while keeping speech crisp.",
+        subtractionStrength = 0.94f,
         humRemovalStrength = 0.98f,
-        vocalClarityBoost = 0.78f,
+        vocalClarityBoost = 0.72f,
         spectralAlpha = 2.45f,
-        spectralFloor = 0.025f,
+        spectralFloor = 0.015f,
         vocalBandEmphasis = 0.78f,
-        pauseGateFloor = 0.015f,
-        highPassHz = 95f
+        pauseGateFloor = 0.012f,
+        highPassHz = 90f,
+        fanMotorRemovalStrength = 0.92f,
+        studioMaxClean = false
+    ),
+    STUDIO_DEEP_CLEAN(
+        displayName = "Studio Ultra (Fan & Motor)",
+        shortDescription = "Maximum 100% offline Studio Cleaner: eliminates ceiling/table fans, motor whine, pump rumble, hiss & room noise with broadcast vocal clarity.",
+        subtractionStrength = 1.00f,
+        humRemovalStrength = 1.00f,
+        vocalClarityBoost = 0.68f,
+        spectralAlpha = 2.85f,
+        spectralFloor = 0.007f,
+        vocalBandEmphasis = 0.85f,
+        pauseGateFloor = 0.004f,
+        highPassHz = 92f,
+        fanMotorRemovalStrength = 1.00f,
+        studioMaxClean = true
     )
 }
 
 /**
  * Pure-Kotlin On-Device Adaptive Spectral Subtraction & Spoken Audio Isolation Engine.
- * Uses a 1024-point Hann-windowed STFT with 50% overlap-add, adaptive minimum-statistics
- * spectral noise floor tracking, 50/60Hz harmonic hum suppression, voice-activity detection,
- * musical-noise smoothing, and presence-preserving clarity polish.
+ * Powered by [StudioNoiseReducer] (2048-pt 4x-OLA STFT, Butterworth rumble cut,
+ * adaptive fan/motor harmonic comb detection, optional Noise Print profiling,
+ * Two-Step Decision-Directed Wiener filtering, and broadcast vocal polish).
  */
 object VocalIsolationProcessor {
 
@@ -90,7 +112,8 @@ object VocalIsolationProcessor {
     fun isolateSpokenAudio(
         samples: ShortArray,
         preset: VocalIsolationPreset = VocalIsolationPreset.MEDIUM,
-        sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE
+        sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE,
+        customNoisePrintPcm: ShortArray? = null
     ): ShortArray {
         return isolateSpokenAudio(
             samples = samples,
@@ -101,7 +124,11 @@ object VocalIsolationProcessor {
             vocalBandEmphasisOverride = preset.vocalBandEmphasis,
             pauseGateFloorOverride = preset.pauseGateFloor,
             highPassHz = preset.highPassHz,
-            sampleRate = sampleRate
+            sampleRate = sampleRate,
+            channels = 1,
+            fanMotorRemovalStrength = preset.fanMotorRemovalStrength,
+            studioMaxClean = preset.studioMaxClean,
+            customNoisePrintPcm = customNoisePrintPcm
         )
     }
 
@@ -162,7 +189,10 @@ object VocalIsolationProcessor {
         pauseGateFloorOverride: Float? = null,
         highPassHz: Float? = null,
         sampleRate: Int = StudioAudioProcessor.SAMPLE_RATE,
-        channels: Int = 1
+        channels: Int = 1,
+        fanMotorRemovalStrength: Float? = null,
+        studioMaxClean: Boolean = false,
+        customNoisePrintPcm: ShortArray? = null
     ): ShortArray {
         val minRequired = if (channels == 2) 256 else 128
         if (samples.size < minRequired) return samples
@@ -171,20 +201,24 @@ object VocalIsolationProcessor {
         val humStr = humRemovalStrength.coerceIn(0f, 1.0f)
         val clarityStr = vocalClarityBoost.coerceIn(0f, 1.0f)
 
-        val spectralFloor = spectralFloorOverride ?: (0.28f - subStr * 0.255f).coerceIn(0.018f, 0.35f)
-        val vocalEmphasis = vocalBandEmphasisOverride ?: (subStr * 0.72f).coerceIn(0.1f, 0.80f)
-        val pauseFloor = pauseGateFloorOverride ?: (0.42f - subStr * 0.405f).coerceIn(0.01f, 0.5f)
-        val hpCutoff = highPassHz ?: (65f + subStr * 30f)
+        val spectralFloor = spectralFloorOverride ?: (0.20f - subStr * 0.19f).coerceIn(0.007f, 0.35f)
+        val vocalEmphasis = vocalBandEmphasisOverride ?: (subStr * 0.72f).coerceIn(0.1f, 0.85f)
+        val pauseFloor = pauseGateFloorOverride ?: (0.34f - subStr * 0.335f).coerceIn(0.004f, 0.5f)
+        val hpCutoff = highPassHz ?: (62f + subStr * 30f)
+        val fanStr = (fanMotorRemovalStrength ?: max(humStr, subStr * 0.92f)).coerceIn(0f, 1f)
 
         val config = StudioNoiseReductionConfig(
             strength = subStr,
             humRemovalStrength = humStr,
+            fanMotorRemovalStrength = fanStr,
             spectralFloorOverride = spectralFloor,
             pauseAttenuationFloor = pauseFloor,
             lowCutHz = hpCutoff,
-            lowCutAttenuation = (0.35f + vocalEmphasis * 0.50f).coerceIn(0.25f, 0.85f),
+            lowCutAttenuation = (0.38f + vocalEmphasis * 0.55f).coerceIn(0.25f, 0.95f),
             preserveHighFrequencies = true,
-            vocalClarityBoost = clarityStr
+            vocalClarityBoost = clarityStr,
+            studioMaxClean = studioMaxClean || subStr >= 0.98f,
+            customNoisePrintPcm = customNoisePrintPcm
         )
 
         return StudioNoiseReducer.reduceNoise(

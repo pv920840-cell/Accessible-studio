@@ -294,4 +294,70 @@ class VocalIsolationTest {
         assertTrue(saved?.hasUnsavedChanges == true)
         playerManager.release()
     }
+
+    @Test
+    fun workspaceEffects_studioUltraFanMotorAndNoisePrintControlsWork() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val sr = StudioAudioProcessor.SAMPLE_RATE
+        val samplePcm = ShortArray(sr * 2) { i ->
+            val t = i.toDouble() / sr
+            val fan = 1800.0 * sin(2.0 * PI * 95.0 * t) + 1200.0 * sin(2.0 * PI * 850.0 * t)
+            val speech = if (i > sr) 8000.0 * sin(2.0 * PI * 320.0 * t) else 0.0
+            (speech + fan).toInt().coerceIn(-32767, 32767).toShort()
+        }
+        val session = AudioProjectSessionState(
+            projectId = "studio_ultra_ws",
+            title = "Fan Test Clip",
+            pcm = samplePcm,
+            sampleRate = sr,
+            trimStartMs = 0L,
+            trimEndMs = 600L
+        )
+        val audioProcessor = WavAudioProcessor(context)
+        val playerManager = AudioPlayerManager(context)
+        val recorderManager = AudioRecorderManager(context)
+        val repo = MediaRepository(context)
+        var saved: AudioProjectSessionState? = null
+
+        composeRule.setContent {
+            AccessibleStudioTheme(isHighContrast = false) {
+                AudioFeatureWorkspaceScreen(
+                    tool = AudioFeatureTool.EFFECTS_CLEANING,
+                    session = session,
+                    audioProcessor = audioProcessor,
+                    playerManager = playerManager,
+                    recorderManager = recorderManager,
+                    mediaRepository = repo,
+                    hapticsEnabled = false,
+                    isHighContrast = false,
+                    defaultExportFormat = "WAV",
+                    followCursor = true,
+                    onToggleHighContrast = {},
+                    onOpenAbout = {},
+                    onOpenSettings = {},
+                    onOpenHelp = {},
+                    onOpenWhatsNew = {},
+                    onOpenBatchProcessing = {},
+                    onSaveAndReturn = { saved = it },
+                    onCancelBack = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("btn_isolate_studio_ultra").performScrollTo().assertExists().performClick()
+        composeRule.onNodeWithTag("btn_capture_noise_print").performScrollTo().assertExists().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("txt_noise_print_status").performScrollTo().assertExists()
+
+        composeRule.onNodeWithTag("btn_fx_studio_deep_clean").performScrollTo().assertExists().performClick()
+        composeRule.waitUntil(timeoutMillis = 6_000L) {
+            composeRule.onAllNodes(hasTestTag("btn_workspace_undo")).fetchSemanticsNodes().isNotEmpty()
+        }
+        composeRule.onNodeWithTag("btn_workspace_save").performClick()
+        composeRule.waitForIdle()
+
+        assertTrue(saved?.hasUnsavedChanges == true)
+        playerManager.release()
+    }
 }

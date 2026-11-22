@@ -1,10 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 20,
-  "versionName": "1.2.7",
-  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.2.7/AccessibleStudio_V1.2.7.apk",
+  "versionCode": 21,
+  "versionName": "1.2.8",
+  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.2.8/AccessibleStudio_V1.2.8.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 20180931,
-  "changelog": "Added automatic GitHub main-branch (version.json) update checking on app launch using PackageInfoCompat, an accessible Update Available dialog showing version and changelog with Update Now & Later actions, direct in-app APK download with live progress, FileProvider package installer integration, and Android 8+ Install Unknown Apps permission guidance.",
-  "releaseNotes": "Added automatic GitHub main-branch (version.json) update checking on app launch using PackageInfoCompat, an accessible Update Available dialog showing version and changelog with Update Now & Later actions, direct in-app APK download with live progress, FileProvider package installer integration, and Android 8+ Install Unknown Apps permission guidance."
+  "apkSizeBytes": 20229817,
+  "changelog": "Separated all Video Studio features into individual 48dp+ direct buttons in Project Hub and Video Studio (keeping Save, Preview & Export intact), separated Audio Effects and Video Color Filters / VFX into distinct clickable buttons and panels, and added slow Rewind & Fast-Forward scrubbing speeds (0.25x, 0.5x, 0.75x, 1.0x) alongside fast speeds.",
+  "releaseNotes": "Separated all Video Studio features into individual 48dp+ direct buttons in Project Hub and Video Studio (keeping Save, Preview & Export intact), separated Audio Effects and Video Color Filters / VFX into distinct clickable buttons and panels, and added slow Rewind & Fast-Forward scrubbing speeds (0.25x, 0.5x, 0.75x, 1.0x) alongside fast speeds."
 }

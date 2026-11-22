@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.accessibility.AccessibilityHelper
 import com.example.ui.theme.LocalHighContrast
+import com.example.video.VideoStudioFeatureButton
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
@@ -83,7 +84,8 @@ fun ProjectHubScreen(
     onBackToHome: () -> Unit,
     onSaveProject: () -> Unit = {},
     modifier: Modifier = Modifier,
-    positionFlow: StateFlow<Long>? = null
+    positionFlow: StateFlow<Long>? = null,
+    onOpenVideoFeature: (VideoStudioFeatureButton) -> Unit = {}
 ) {
     val isHighContrast = LocalHighContrast.current
     val isVideo = project.mediaType == ProjectMediaType.VIDEO
@@ -289,6 +291,41 @@ fun ProjectHubScreen(
                             accentPrimary = false,
                             onClick = { onOpenVideoTool(tool) }
                         )
+                    }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Text(
+                            text = "Video Studio Feature Buttons",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier
+                                .padding(top = 6.dp, bottom = 2.dp)
+                                .testTag("heading_hub_video_features")
+                                .semantics { heading() }
+                        )
+                    }
+                    items(VideoStudioFeatureButton.entries, key = { "vid_feat_${it.name}" }) { feat ->
+                        OutlinedButton(
+                            onClick = { onOpenVideoFeature(feat) },
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(
+                                if (isHighContrast) 2.dp else 1.dp,
+                                if (isHighContrast) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 52.dp)
+                                .testTag("hub_video_feature_${feat.tag}")
+                                .semantics {
+                                    contentDescription = "Open ${feat.title} video feature"
+                                }
+                        ) {
+                            Text(
+                                text = feat.title,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 } else {
                     items(AudioFeatureTool.values().toList(), key = { it.name }) { tool ->

@@ -11,6 +11,48 @@ enum class VideoToolSection(val title: String, val spokenSummary: String) {
     TOOLS("Convert & Meta", "Compressor, format converter, video to GIF, frame extractor, silence remover, and metadata editor")
 }
 
+enum class VideoStudioFeatureButton(
+    val section: VideoToolSection,
+    val title: String,
+    val tag: String
+) {
+    TRIMMER(VideoToolSection.TIMELINE, "Video Trimmer", "trimmer"),
+    CUTTER(VideoToolSection.TIMELINE, "Non-Destructive Cutter", "cutter"),
+    SNAPSHOT_GLIMPSE(VideoToolSection.TIMELINE, "Snapshot & Glimpse", "snapshot_glimpse"),
+    MERGER(VideoToolSection.TIMELINE, "Video Merger", "merger"),
+    SLIDESHOW_BLANK(VideoToolSection.TIMELINE, "Slideshow & Blank Clip", "slideshow_blank"),
+
+    NARRATION(VideoToolSection.AUDIO_MUSIC, "Narration Recorder", "narration"),
+    MULTI_MUSIC(VideoToolSection.AUDIO_MUSIC, "Multi Music & Ducking", "multi_music"),
+    SOUND_EFFECTS(VideoToolSection.AUDIO_MUSIC, "Sound Effects & Freeze", "sound_effects"),
+    AUDIO_MANAGER(VideoToolSection.AUDIO_MUSIC, "Mute / Replace Audio", "audio_manager"),
+    NOISE_REDUCER(VideoToolSection.AUDIO_MUSIC, "Adaptive Noise Reducer", "noise_reducer"),
+    VIDEO_TO_AUDIO(VideoToolSection.AUDIO_MUSIC, "Video to Audio", "video_to_audio"),
+
+    TEXT_OVERLAY(VideoToolSection.OVERLAYS, "Text Overlay Studio", "text_overlay"),
+    BLUR_MOSAIC(VideoToolSection.OVERLAYS, "Blur & Mosaic", "blur_mosaic"),
+    IMAGE_OVERLAY(VideoToolSection.OVERLAYS, "Image Overlay", "image_overlay"),
+    SUBTITLES(VideoToolSection.OVERLAYS, "Burn Subtitles", "subtitles"),
+    COLOR_FILTERS(VideoToolSection.OVERLAYS, "Color Filters", "color_filters"),
+    VFX_EFFECTS(VideoToolSection.OVERLAYS, "VFX Effects", "vfx_effects"),
+
+    SPEED_CHANGER(VideoToolSection.TRANSFORM, "Speed Changer", "speed_changer"),
+    RESIZE_RESOLUTION(VideoToolSection.TRANSFORM, "Resize & Resolution", "resize_resolution"),
+    ASPECT_RATIO(VideoToolSection.TRANSFORM, "Aspect Ratio", "aspect_ratio"),
+    ROTATE_FLIP_REVERSE(VideoToolSection.TRANSFORM, "Rotate, Flip & Reverse", "rotate_flip_reverse"),
+
+    SILENCE_REMOVER(VideoToolSection.TOOLS, "Silence Remover", "silence_remover"),
+    VIDEO_COMPRESSOR(VideoToolSection.TOOLS, "Video Compressor", "video_compressor"),
+    FORMAT_CONVERTER(VideoToolSection.TOOLS, "Format Converter", "format_converter"),
+    GIF_FRAME_EXTRACTOR(VideoToolSection.TOOLS, "GIF & Frame Extractor", "gif_frame_extractor"),
+    METADATA_TAGS(VideoToolSection.TOOLS, "Metadata & Tags", "metadata_tags");
+
+    companion object {
+        fun forSection(section: VideoToolSection): List<VideoStudioFeatureButton> =
+            entries.filter { it.section == section }
+    }
+}
+
 enum class SoundEffectPreset(val displayName: String, val freqHz: Float) {
     CHIME("Crystal Chime", 880f),
     POP("Bubble Pop", 520f),

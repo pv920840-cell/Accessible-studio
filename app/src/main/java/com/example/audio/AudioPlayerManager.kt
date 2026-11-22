@@ -213,7 +213,7 @@ class AudioPlayerManager(private val context: Context) {
     }
 
     fun setScrubSpeed(speed: Float) {
-        scrubSpeedMultiplier = speed.coerceIn(1.5f, 8.0f)
+        scrubSpeedMultiplier = speed.coerceIn(0.25f, 8.0f)
     }
 
     /**
@@ -442,6 +442,7 @@ class AudioPlayerManager(private val context: Context) {
             val scrubChunkSize = 1024 // ~23ms low-latency grain for instant scrub response
             val scrubBuf = ShortArray(scrubChunkSize)
             var currentIdx = startSample
+            var scrubSamplePos = startSample.toDouble()
             var scrubActivated = false
             var lastEmittedPosMs = ((startSample.toDouble() / sr) * 1000.0).toLong()
             val minEmitDeltaMs = 120L
@@ -456,6 +457,7 @@ class AudioPlayerManager(private val context: Context) {
                     if (pending != null) {
                         seekRequestSample = null
                         currentIdx = pending.coerceIn(0, samples.size)
+                        scrubSamplePos = currentIdx.toDouble()
                         synchronized(realtimeProcessorLock) {
                             realtimeDenoiseProcessor?.reset()
                         }
@@ -505,6 +507,7 @@ class AudioPlayerManager(private val context: Context) {
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
                                 currentIdx += written
+                                scrubSamplePos = currentIdx.toDouble()
                                 val posMs = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
                                 if (kotlin.math.abs(posMs - lastEmittedPosMs) >= minEmitDeltaMs || currentIdx >= activeLimit) {
                                     lastEmittedPosMs = posMs
@@ -520,17 +523,22 @@ class AudioPlayerManager(private val context: Context) {
                                 _scrubDirection.value = ScrubDirection.NONE
                                 break
                             }
-                            val speed = scrubSpeedMultiplier.coerceIn(1.5f, 8.0f)
-                            val pitchStep = 1.45f // Authentic cue-shuttle timbre
+                            val speed = scrubSpeedMultiplier.coerceIn(0.25f, 8.0f)
+                            val pitchStep = if (speed < 1.0f) speed else 1.45f
                             val fadeLen = 32
+                            val maxSampleIdx = (samples.size - 1).toDouble()
                             for (k in 0 until scrubChunkSize) {
-                                val pos = (currentIdx + (k * pitchStep).toInt()).coerceIn(0, samples.size - 1)
+                                val exactPos = (scrubSamplePos + k * pitchStep).coerceIn(0.0, maxSampleIdx)
+                                val idx0 = exactPos.toInt().coerceIn(0, samples.size - 1)
+                                val idx1 = (idx0 + 1).coerceAtMost(samples.size - 1)
+                                val frac = (exactPos - idx0).toFloat()
+                                val interp = samples[idx0] * (1f - frac) + samples[idx1] * frac
                                 val edge = when {
                                     k < fadeLen -> k.toFloat() / fadeLen
                                     scrubChunkSize - k < fadeLen -> (scrubChunkSize - k).toFloat() / fadeLen
                                     else -> 1f
                                 }
-                                scrubBuf[k] = (samples[pos] * edge).toInt().toShort()
+                                scrubBuf[k] = (interp * edge).toInt().coerceIn(-32767, 32767).toShort()
                             }
                             val written = synchronized(trackLock) {
                                 if (customAudioTrack === track && playbackGeneration.get() == myGen) {
@@ -544,8 +552,9 @@ class AudioPlayerManager(private val context: Context) {
                                 }
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
-                                currentIdx = (currentIdx + (scrubChunkSize * speed).toInt()).coerceAtMost(samples.size)
-                                val posMs = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                                scrubSamplePos = (scrubSamplePos + scrubChunkSize * speed.toDouble()).coerceAtMost(samples.size.toDouble())
+                                currentIdx = scrubSamplePos.toInt().coerceIn(0, samples.size)
+                                val posMs = ((scrubSamplePos / sr) * 1000.0).toLong()
                                 if (kotlin.math.abs(posMs - lastEmittedPosMs) >= minEmitDeltaMs || currentIdx >= samples.size) {
                                     lastEmittedPosMs = posMs
                                     _currentPositionMs.value = posMs
@@ -555,8 +564,10 @@ class AudioPlayerManager(private val context: Context) {
                             }
                         }
                         ScrubDirection.REWIND -> {
-                            val speed = scrubSpeedMultiplier.coerceIn(1.5f, 8.0f)
-                            if (currentIdx <= 0) {
+                            val speed = scrubSpeedMultiplier.coerceIn(0.25f, 8.0f)
+                            if (currentIdx <= 0 && scrubSamplePos <= 0.5) {
+                                scrubSamplePos = 0.0
+                                currentIdx = 0
                                 if (lastEmittedPosMs != 0L) {
                                     lastEmittedPosMs = 0L
                                     _currentPositionMs.value = 0L
@@ -576,16 +587,21 @@ class AudioPlayerManager(private val context: Context) {
                                 if (written <= 0) break
                                 continue
                             }
-                            val pitchStep = 1.45f // Audible backwards tape rewind
+                            val pitchStep = if (speed < 1.0f) speed else 1.45f
                             val fadeLen = 32
+                            val maxSampleIdx = (samples.size - 1).toDouble()
                             for (k in 0 until scrubChunkSize) {
-                                val pos = (currentIdx - (k * pitchStep).toInt()).coerceIn(0, samples.size - 1)
+                                val exactPos = (scrubSamplePos - k * pitchStep).coerceIn(0.0, maxSampleIdx)
+                                val idx0 = exactPos.toInt().coerceIn(0, samples.size - 1)
+                                val idx1 = (idx0 + 1).coerceAtMost(samples.size - 1)
+                                val frac = (exactPos - idx0).toFloat()
+                                val interp = samples[idx0] * (1f - frac) + samples[idx1] * frac
                                 val edge = when {
                                     k < fadeLen -> k.toFloat() / fadeLen
                                     scrubChunkSize - k < fadeLen -> (scrubChunkSize - k).toFloat() / fadeLen
                                     else -> 1f
                                 }
-                                scrubBuf[k] = (samples[pos] * edge).toInt().toShort()
+                                scrubBuf[k] = (interp * edge).toInt().coerceIn(-32767, 32767).toShort()
                             }
                             val written = synchronized(trackLock) {
                                 if (customAudioTrack === track && playbackGeneration.get() == myGen) {
@@ -599,8 +615,9 @@ class AudioPlayerManager(private val context: Context) {
                                 }
                             }
                             if (written > 0 && playbackGeneration.get() == myGen) {
-                                currentIdx = (currentIdx - (scrubChunkSize * speed).toInt()).coerceAtLeast(0)
-                                val posMs = ((currentIdx.toDouble() / sr) * 1000.0).toLong()
+                                scrubSamplePos = (scrubSamplePos - scrubChunkSize * speed.toDouble()).coerceAtLeast(0.0)
+                                currentIdx = scrubSamplePos.toInt().coerceIn(0, samples.size)
+                                val posMs = ((scrubSamplePos / sr) * 1000.0).toLong()
                                 if (kotlin.math.abs(posMs - lastEmittedPosMs) >= minEmitDeltaMs || currentIdx <= 0) {
                                     lastEmittedPosMs = posMs
                                     _currentPositionMs.value = posMs
@@ -614,6 +631,7 @@ class AudioPlayerManager(private val context: Context) {
 
                 if (loopSegment && isActive && _isPlaying.value && _scrubDirection.value == ScrubDirection.NONE && playbackGeneration.get() == myGen) {
                     currentIdx = startSample
+                    scrubSamplePos = startSample.toDouble()
                     lastEmittedPosMs = startMs
                     _currentPositionMs.value = startMs
                 } else {
@@ -669,7 +687,7 @@ class AudioPlayerManager(private val context: Context) {
             var lastEmittedPosMs = safeStart
             while (isActive && playbackGeneration.get() == myGen && (mp.isPlaying || _scrubDirection.value != ScrubDirection.NONE)) {
                 val activeScrub = _scrubDirection.value
-                val targetForwardSpeed = scrubSpeedMultiplier.coerceIn(1.5f, 4.0f)
+                val targetForwardSpeed = scrubSpeedMultiplier.coerceIn(0.25f, 4.0f)
                 if (activeScrub != lastAppliedScrub || (activeScrub == ScrubDirection.FORWARD && lastAppliedForwardSpeed != targetForwardSpeed)) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                         try {
@@ -684,11 +702,12 @@ class AudioPlayerManager(private val context: Context) {
                     lastAppliedScrub = activeScrub
                     lastAppliedForwardSpeed = targetForwardSpeed
                 }
+                val stepMs = (180f * scrubSpeedMultiplier.coerceIn(0.25f, 8.0f)).toInt().coerceAtLeast(35)
                 if (activeScrub == ScrubDirection.FORWARD && Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-                    val next = (mp.currentPosition + (180 * scrubSpeedMultiplier).toInt()).coerceAtMost(mp.duration)
+                    val next = (mp.currentPosition + stepMs).coerceAtMost(mp.duration)
                     mp.seekTo(next)
                 } else if (activeScrub == ScrubDirection.REWIND) {
-                    val prev = (mp.currentPosition - (180 * scrubSpeedMultiplier).toInt()).coerceAtLeast(0)
+                    val prev = (mp.currentPosition - stepMs).coerceAtLeast(0)
                     mp.seekTo(prev)
                 }
                 val current = mp.currentPosition.toLong()

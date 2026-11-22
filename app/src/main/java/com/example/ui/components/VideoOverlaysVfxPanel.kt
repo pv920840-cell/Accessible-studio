@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,6 +53,8 @@ import com.example.video.SubtitleCue
 import com.example.video.TextAnimationStyle
 import com.example.video.TextOverlayPosition
 import com.example.video.VideoFilter
+import com.example.video.VideoStudioFeatureButton
+import com.example.video.VideoToolSection
 import com.example.video.VideoVfx
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -76,9 +79,11 @@ fun VideoOverlaysVfxPanel(
     selectedFilter: VideoFilter,
     selectedVfx: VideoVfx,
     onSelectFilter: (VideoFilter) -> Unit,
-    onSelectVfx: (VideoVfx) -> Unit
+    onSelectVfx: (VideoVfx) -> Unit,
+    initialFocusedFeature: VideoStudioFeatureButton? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
     var showInlineSrtBox by remember { mutableStateOf(false) }
     var inlineSrtDraft by remember {
         mutableStateOf(
@@ -100,7 +105,15 @@ fun VideoOverlaysVfxPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
+        VideoFeatureButtonStrip(
+            features = VideoStudioFeatureButton.forSection(VideoToolSection.OVERLAYS),
+            selectedFeature = focusedFeature,
+            onSelectFeature = { focusedFeature = it },
+            isHighContrast = isHighContrast
+        )
+
         // 1. Text Overlay Studio (Static, Scrolling News Ticker, Typing Animation)
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.TEXT_OVERLAY) {
         SectionToolCard(
             title = "Text Overlay Studio",
             subtitle = "Burn custom text, scrolling news tickers, or typing animations onto video",
@@ -137,8 +150,10 @@ fun VideoOverlaysVfxPanel(
                 }
             }
         }
+        }
 
         // 2. Video Blur Editor
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.BLUR_MOSAIC) {
         SectionToolCard(
             title = "Video Blur & Mosaic Editor",
             subtitle = "Apply customizable blur or pixel mosaic over a selected timeline duration",
@@ -213,8 +228,10 @@ fun VideoOverlaysVfxPanel(
                 )
             }
         }
+        }
 
         // 3. Image Overlay Adder with Aspect Ratio Mismatch Alert
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.IMAGE_OVERLAY) {
         SectionToolCard(
             title = "Image Overlay Adder",
             subtitle = "Superimpose an image over video for custom duration with aspect mismatch checks",
@@ -276,8 +293,10 @@ fun VideoOverlaysVfxPanel(
                 )
             }
         }
+        }
 
         // 4. Burn Subtitles (.srt / .vtt)
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.SUBTITLES) {
         SectionToolCard(
             title = "Burn Subtitles (.SRT / .VTT)",
             subtitle = "Permanently burn timed caption cues onto the exported video track",
@@ -330,31 +349,80 @@ fun VideoOverlaysVfxPanel(
                 }
             }
         }
+        }
 
-        // 5. Color Grading Filters & VFX Overlays
+        // 5. Color Grading Filters (Separate Effect Buttons)
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.COLOR_FILTERS) {
         SectionToolCard(
-            title = "Color Filters & VFX",
-            subtitle = "Apply cinema color grading and letterbox / scanline / watermark VFX",
-            isHighContrast = isHighContrast
+            title = "Color Filters",
+            subtitle = "Choose an individual color grading filter button",
+            isHighContrast = isHighContrast,
+            modifier = Modifier.testTag("section_video_color_filters")
         ) {
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 VideoFilter.values().forEach { filter ->
-                    FilterChip(
-                        selected = selectedFilter == filter,
-                        onClick = { onSelectFilter(filter) },
-                        label = { Text(filter.displayName) }
-                    )
+                    val isSelected = selectedFilter == filter
+                    if (isSelected) {
+                        Button(
+                            onClick = { onSelectFilter(filter) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_video_filter_${filter.name.lowercase()}")
+                                .semantics { contentDescription = "${filter.displayName} filter button, selected" }
+                        ) {
+                            Text(filter.displayName, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { onSelectFilter(filter) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_video_filter_${filter.name.lowercase()}")
+                                .semantics { contentDescription = "Apply ${filter.displayName} color filter" }
+                        ) {
+                            Text(filter.displayName, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        }
+        }
+
+        // 6. VFX Effects Overlays (Separate Effect Buttons)
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.VFX_EFFECTS) {
+        SectionToolCard(
+            title = "VFX Effects",
+            subtitle = "Choose an individual VFX visual effect button",
+            isHighContrast = isHighContrast,
+            modifier = Modifier.testTag("section_video_vfx_effects")
+        ) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 VideoVfx.values().forEach { vfx ->
-                    FilterChip(
-                        selected = selectedVfx == vfx,
-                        onClick = { onSelectVfx(vfx) },
-                        label = { Text(vfx.displayName) }
-                    )
+                    val isSelected = selectedVfx == vfx
+                    if (isSelected) {
+                        Button(
+                            onClick = { onSelectVfx(vfx) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_video_vfx_${vfx.name.lowercase()}")
+                                .semantics { contentDescription = "${vfx.displayName} VFX button, selected" }
+                        ) {
+                            Text(vfx.displayName, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { onSelectVfx(vfx) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_video_vfx_${vfx.name.lowercase()}")
+                                .semantics { contentDescription = "Apply ${vfx.displayName} VFX effect" }
+                        ) {
+                            Text(vfx.displayName, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
+        }
         }
     }
 }

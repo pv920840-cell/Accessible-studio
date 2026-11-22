@@ -69,6 +69,8 @@ import com.example.video.NarrationSegment
 import com.example.video.SoundEffectOverlay
 import com.example.video.SoundEffectPreset
 import com.example.video.VideoAudioOption
+import com.example.video.VideoStudioFeatureButton
+import com.example.video.VideoToolSection
 import kotlinx.coroutines.flow.StateFlow
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -112,10 +114,12 @@ fun VideoAudioMusicPanel(
     onTogglePreviewMusicTrack: (MusicLayerTrack) -> Unit = {},
     videoDurationMs: Long = 0L,
     isPlaying: Boolean = false,
-    positionFlow: StateFlow<Long>? = null
+    positionFlow: StateFlow<Long>? = null,
+    initialFocusedFeature: VideoStudioFeatureButton? = null
 ) {
     val context = LocalContext.current
     val isHighContrast = LocalHighContrast.current
+    var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
 
     var selectedPreset by remember { mutableStateOf(SoundEffectPreset.CHIME) }
     var sfxDurationMs by remember { mutableLongStateOf(1500L) }
@@ -150,7 +154,15 @@ fun VideoAudioMusicPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
+        VideoFeatureButtonStrip(
+            features = VideoStudioFeatureButton.forSection(VideoToolSection.AUDIO_MUSIC),
+            selectedFeature = focusedFeature,
+            onSelectFeature = { focusedFeature = it },
+            isHighContrast = isHighContrast
+        )
+
         // 1. Narration Recorder
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.NARRATION) {
         SectionToolCard(
             title = "Narration Recorder",
             subtitle = "Record voiceover segments directly over your video timeline",
@@ -208,8 +220,10 @@ fun VideoAudioMusicPanel(
                 }
             }
         }
+        }
 
         // 2. Add Multi Music with Smart Ducking & Repeat Loop
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.MULTI_MUSIC) {
         SectionToolCard(
             title = "Add Multi Music",
             subtitle = "Layer multiple background music tracks with Smart Ducking & Repeat Loop",
@@ -384,8 +398,10 @@ fun VideoAudioMusicPanel(
                 }
             }
         }
+        }
 
         // 3. Sound Effects & Freeze Frame
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.SOUND_EFFECTS) {
         SectionToolCard(
             title = "Sound Effects & Freeze Frame",
             subtitle = "Insert sound effects at timestamps with custom durations & optional freeze frame",
@@ -457,12 +473,15 @@ fun VideoAudioMusicPanel(
                 }
             }
         }
+        }
 
-        // 4. Audio Track Manager & Video Noise Reducer
+        // 4. Audio Track Manager
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.AUDIO_MANAGER) {
         SectionToolCard(
-            title = "Audio Track Manager & Noise Reducer",
-            subtitle = "Mute, replace video audio track, and remove background hiss or hum",
-            isHighContrast = isHighContrast
+            title = "Audio Track Manager",
+            subtitle = "Keep, mute, or replace video audio track and set master volume",
+            isHighContrast = isHighContrast,
+            modifier = Modifier.testTag("section_video_audio_manager")
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 VideoAudioOption.values().forEach { opt ->
@@ -495,7 +514,17 @@ fun VideoAudioMusicPanel(
                 spokenDescription = "${(audioVolume * 100).toInt()} percent volume",
                 testTag = "slider_video_audio_volume"
             )
+        }
+        }
 
+        // 5. Adaptive Noise Reducer
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.NOISE_REDUCER) {
+        SectionToolCard(
+            title = "Adaptive Noise Reducer",
+            subtitle = "Remove background hiss, hum, or fan noise cleanly with studio de-noise",
+            isHighContrast = isHighContrast,
+            modifier = Modifier.testTag("section_video_noise_reducer")
+        ) {
             VideoAdaptiveNoiseReductionSection(
                 enabled = noiseReduceEnabled,
                 onToggleEnabled = onToggleNoiseReduce,
@@ -503,8 +532,10 @@ fun VideoAudioMusicPanel(
                 onParamsChange = onChangeNoiseDenoiseParams
             )
         }
+        }
 
-        // 5. Video to Audio Extractor
+        // 6. Video to Audio Extractor
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.VIDEO_TO_AUDIO) {
         SectionToolCard(
             title = "Video to Audio",
             subtitle = "Extract the audio track directly into Music/Audio Studio",
@@ -528,6 +559,7 @@ fun VideoAudioMusicPanel(
                 Spacer(Modifier.width(8.dp))
                 Text("Extract Audio as $extractAudioFormat", fontWeight = FontWeight.Bold)
             }
+        }
         }
     }
 }

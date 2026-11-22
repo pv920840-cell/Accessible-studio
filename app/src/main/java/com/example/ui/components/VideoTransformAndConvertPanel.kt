@@ -48,6 +48,8 @@ import com.example.video.VideoFormatOption
 import com.example.video.VideoMetadataDetails
 import com.example.video.VideoResolutionPreset
 import com.example.video.VideoRotation
+import com.example.video.VideoStudioFeatureButton
+import com.example.video.VideoToolSection
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -74,15 +76,25 @@ fun VideoTransformPanel(
     onToggleFlipH: (Boolean) -> Unit,
     onToggleFlipV: (Boolean) -> Unit,
     reverseVideo: Boolean,
-    onToggleReverseVideo: (Boolean) -> Unit
+    onToggleReverseVideo: (Boolean) -> Unit,
+    initialFocusedFeature: VideoStudioFeatureButton? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
     var widthStr by remember(customWidth) { mutableStateOf(customWidth.toString()) }
     var heightStr by remember(customHeight) { mutableStateOf(customHeight.toString()) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
+        VideoFeatureButtonStrip(
+            features = VideoStudioFeatureButton.forSection(VideoToolSection.TRANSFORM),
+            selectedFeature = focusedFeature,
+            onSelectFeature = { focusedFeature = it },
+            isHighContrast = isHighContrast
+        )
+
         // 1. Speed Changer (0.25x - 4.0x + Pitch Correction)
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.SPEED_CHANGER) {
         SectionToolCard(
             title = "Speed Changer",
             subtitle = "Adjust playback speed (0.25x–4.0x) with optional pitch correction",
@@ -119,8 +131,10 @@ fun VideoTransformPanel(
                 Switch(checked = pitchCorrect, onCheckedChange = onTogglePitchCorrect, modifier = Modifier.testTag("switch_speed_pitch_correct"))
             }
         }
+        }
 
         // 2. Resize & Resolution
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.RESIZE_RESOLUTION) {
         SectionToolCard(
             title = "Resize & Resolution",
             subtitle = "Downscale to 1080p, 720p, 480p, 360p or Custom with aspect ratio lock",
@@ -176,8 +190,10 @@ fun VideoTransformPanel(
                 }
             }
         }
+        }
 
         // 3. Aspect Ratio Changer (Letterbox vs Crop)
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.ASPECT_RATIO) {
         SectionToolCard(
             title = "Aspect Ratio Changer",
             subtitle = "Letterbox or Center-Crop videos to fit 16:9, 1:1, or 9:16",
@@ -202,8 +218,10 @@ fun VideoTransformPanel(
                 }
             }
         }
+        }
 
         // 4. Rotate & Flip + Reverse Video
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.ROTATE_FLIP_REVERSE) {
         SectionToolCard(
             title = "Rotate, Flip & Reverse Video",
             subtitle = "Fix orientation (90°/180°/270°), mirror horizontally/vertically, or play backwards",
@@ -234,6 +252,7 @@ fun VideoTransformPanel(
                 Switch(checked = reverseVideo, onCheckedChange = onToggleReverseVideo, modifier = Modifier.testTag("switch_reverse_video"))
             }
         }
+        }
     }
 }
 
@@ -253,9 +272,11 @@ fun VideoConvertAndMetaPanel(
     onExportGifNow: (fps: Int) -> Unit,
     onExtractFrameAtPlayhead: () -> Unit,
     onBatchExtractFrames: (intervalSec: Int) -> Unit,
-    onSaveMetadataTags: (title: String, artist: String, album: String, genre: String) -> Unit
+    onSaveMetadataTags: (title: String, artist: String, album: String, genre: String) -> Unit,
+    initialFocusedFeature: VideoStudioFeatureButton? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
     var silenceThresholdDb by remember { mutableFloatStateOf(-35f) }
     var gifFps by remember { mutableIntStateOf(8) }
     var frameIntervalSec by remember { mutableIntStateOf(2) }
@@ -267,7 +288,15 @@ fun VideoConvertAndMetaPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
+        VideoFeatureButtonStrip(
+            features = VideoStudioFeatureButton.forSection(VideoToolSection.TOOLS),
+            selectedFeature = focusedFeature,
+            onSelectFeature = { focusedFeature = it },
+            isHighContrast = isHighContrast
+        )
+
         // 1. Silence Remover
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.SILENCE_REMOVER) {
         SectionToolCard(
             title = "Silence Remover",
             subtitle = "Auto-detect silent pauses and jump-cut both video and audio",
@@ -292,8 +321,10 @@ fun VideoConvertAndMetaPanel(
                 Text("Auto-Cut Silent Pauses & Export", fontWeight = FontWeight.Bold)
             }
         }
+        }
 
         // 2. Video Compressor
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.VIDEO_COMPRESSOR) {
         SectionToolCard(
             title = "Video Compressor (H.264 CRF)",
             subtitle = "Reduce file size with High / Medium / Low / Custom bitrate presets",
@@ -329,8 +360,10 @@ fun VideoConvertAndMetaPanel(
                 Text("Compress & Export (${compressorQuality.label})", fontWeight = FontWeight.Bold)
             }
         }
+        }
 
         // 3. Format Converter
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.FORMAT_CONVERTER) {
         SectionToolCard(
             title = "Format Converter",
             subtitle = "Convert videos across MP4, MKV, MOV, AVI, and WEBM",
@@ -354,8 +387,10 @@ fun VideoConvertAndMetaPanel(
                 Text("Convert & Save as .${outputFormat.extension.uppercase()}", fontWeight = FontWeight.Bold)
             }
         }
+        }
 
         // 4. Video to GIF & Frame Extractor
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.GIF_FRAME_EXTRACTOR) {
         SectionToolCard(
             title = "Video to GIF & Frame Extractor",
             subtitle = "Convert short clips to animated GIF or extract JPEG frames to Pictures/Accessible Studio",
@@ -408,8 +443,10 @@ fun VideoConvertAndMetaPanel(
                 }
             }
         }
+        }
 
         // 5. Video Metadata Viewer & Tag Editor
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.METADATA_TAGS) {
         SectionToolCard(
             title = "Video Metadata & Tags",
             subtitle = "Inspect technical specifications and edit Title, Artist, Album & Genre tags",
@@ -435,6 +472,7 @@ fun VideoConvertAndMetaPanel(
             ) {
                 Text("Save Video Metadata Tags", fontWeight = FontWeight.Bold)
             }
+        }
         }
     }
 }

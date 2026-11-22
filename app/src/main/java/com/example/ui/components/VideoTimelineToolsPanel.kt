@@ -7,10 +7,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,6 +58,8 @@ import com.example.ui.theme.LocalHighContrast
 import com.example.video.SnapshotGlimpseItem
 import com.example.video.VideoCutSegment
 import com.example.video.VideoMetadataDetails
+import com.example.video.VideoStudioFeatureButton
+import com.example.video.VideoToolSection
 import kotlinx.coroutines.flow.StateFlow
 
 @Composable
@@ -98,9 +103,11 @@ fun VideoTimelineToolsPanel(
     showHeaderMetadataAndScrubber: Boolean = true,
     showTrimmerExportButton: Boolean = true,
     positionFlow: StateFlow<Long>? = null,
-    currentPositionMsProvider: (() -> Long)? = null
+    currentPositionMsProvider: (() -> Long)? = null,
+    initialFocusedFeature: VideoStudioFeatureButton? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
 
     var trimStartSecText by remember(trimStartMs) { mutableStateOf((trimStartMs / 1000).toString()) }
     var trimEndSecText by remember(trimEndMs) { mutableStateOf((trimEndMs / 1000).toString()) }
@@ -143,7 +150,15 @@ fun VideoTimelineToolsPanel(
             )
         }
 
+        VideoFeatureButtonStrip(
+            features = VideoStudioFeatureButton.forSection(VideoToolSection.TIMELINE),
+            selectedFeature = focusedFeature,
+            onSelectFeature = { focusedFeature = it },
+            isHighContrast = isHighContrast
+        )
+
         // 1. Video Trimmer (Direct Time Entry & Stream Copy vs Re-encode)
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.TRIMMER) {
         SectionToolCard(
             title = "Video Trimmer",
             subtitle = "Direct time entry or markers • Re-encode or Fast Stream Copy",
@@ -214,25 +229,29 @@ fun VideoTimelineToolsPanel(
                 }
             }
         }
+        }
 
         // 2. Non-Destructive Video Cutter (Playback, Step, Markers, Readouts & Cut List — no export button here)
-        VideoCutterSection(
-            currentPositionMs = currentPositionMs,
-            durationMs = durationMs,
-            trimStartMs = trimStartMs,
-            trimEndMs = trimEndMs,
-            isPlaying = isPlaying,
-            cutSegments = cutSegments,
-            onPlayPause = onPlayPause,
-            onSeekTo = onSeekTo,
-            onReplayFromStart = onReplayFromStart,
-            onAddCutSegment = onAddCutSegment,
-            onRemoveCutSegment = onRemoveCutSegment,
-            onClearCutSegments = onClearCutSegments,
-            currentPositionMsProvider = currentPositionMsProvider
-        )
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.CUTTER) {
+            VideoCutterSection(
+                currentPositionMs = currentPositionMs,
+                durationMs = durationMs,
+                trimStartMs = trimStartMs,
+                trimEndMs = trimEndMs,
+                isPlaying = isPlaying,
+                cutSegments = cutSegments,
+                onPlayPause = onPlayPause,
+                onSeekTo = onSeekTo,
+                onReplayFromStart = onReplayFromStart,
+                onAddCutSegment = onAddCutSegment,
+                onRemoveCutSegment = onRemoveCutSegment,
+                onClearCutSegments = onClearCutSegments,
+                currentPositionMsProvider = currentPositionMsProvider
+            )
+        }
 
         // 3. Snapshot & Glimpse Creator
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.SNAPSHOT_GLIMPSE) {
         SectionToolCard(title = "Snapshot & Glimpse Creator", subtitle = "Capture clip highlights at playhead, extract separately or prepend", isHighContrast = isHighContrast) {
             Button(
                 onClick = onCaptureSnapshot,
@@ -279,8 +298,10 @@ fun VideoTimelineToolsPanel(
                 }
             }
         }
+        }
 
         // 4. Video Merger
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.MERGER) {
         SectionToolCard(title = "Video Merger", subtitle = "Pick multiple videos, reorder sequence, then merge into one clip", isHighContrast = isHighContrast) {
             OutlinedButton(
                 onClick = { multiVideoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
@@ -323,8 +344,10 @@ fun VideoTimelineToolsPanel(
                 }
             }
         }
+        }
 
         // 5. Slideshow Creator & Blank Clip Generator
+        if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.SLIDESHOW_BLANK) {
         SectionToolCard(title = "Slideshow & Blank Clip Creator", subtitle = "Assemble multiple images with custom duration and background music", isHighContrast = isHighContrast) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
@@ -369,6 +392,90 @@ fun VideoTimelineToolsPanel(
                     modifier = Modifier.weight(1f).height(48.dp).testTag("btn_generate_blank_clip")
                 ) {
                     Text("Blank Clip (5s)", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun VideoFeatureButtonStrip(
+    features: List<VideoStudioFeatureButton>,
+    selectedFeature: VideoStudioFeatureButton?,
+    onSelectFeature: (VideoStudioFeatureButton?) -> Unit,
+    isHighContrast: Boolean
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("card_video_feature_buttons"),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isHighContrast) Color(0xFF0A0A0A) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f)
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = "Feature Buttons",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold
+            )
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (selectedFeature == null) {
+                    Button(
+                        onClick = { onSelectFeature(null) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("btn_video_feature_all")
+                            .semantics { contentDescription = "Show all video features in this section" }
+                    ) {
+                        Text("All Features", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { onSelectFeature(null) },
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("btn_video_feature_all")
+                            .semantics { contentDescription = "Show all video features in this section" }
+                    ) {
+                        Text("All Features", fontWeight = FontWeight.Bold)
+                    }
+                }
+                features.forEach { feat ->
+                    val isSelected = selectedFeature == feat
+                    if (isSelected) {
+                        Button(
+                            onClick = { onSelectFeature(null) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_video_feature_${feat.tag}")
+                                .semantics { contentDescription = "${feat.title} button, selected" }
+                        ) {
+                            Text(feat.title, fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { onSelectFeature(feat) },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_video_feature_${feat.tag}")
+                                .semantics { contentDescription = "Open ${feat.title} feature" }
+                        ) {
+                            Text(feat.title, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
                 }
             }
         }

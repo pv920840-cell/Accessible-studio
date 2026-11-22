@@ -13,12 +13,15 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -112,6 +115,7 @@ import com.example.video.VideoProcessor
 import com.example.video.VideoRenderEngine
 import com.example.video.VideoResolutionPreset
 import com.example.video.VideoRotation
+import com.example.video.VideoStudioFeatureButton
 import com.example.video.VideoToolSection
 import com.example.video.VideoToolkitProcessor
 import com.example.video.VideoVfx
@@ -126,6 +130,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun VideoStudioScreen(
     mediaRepository: MediaRepository,
@@ -133,7 +138,8 @@ fun VideoStudioScreen(
     onNavigateToExports: () -> Unit,
     initialVideoUri: Uri? = null,
     initialVideoTitle: String? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialFeature: VideoStudioFeatureButton? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -172,8 +178,14 @@ fun VideoStudioScreen(
     val recordingAmp by recorder.amplitude.collectAsState()
     var narrationStartMs by remember { mutableLongStateOf(0L) }
 
-    // Section Selection
-    var activeSection by remember { mutableStateOf(VideoToolSection.TIMELINE) }
+    // Section Selection & Direct Feature Button Selection
+    var activeSection by remember(initialFeature) {
+        mutableStateOf(initialFeature?.section ?: VideoToolSection.TIMELINE)
+    }
+    var focusedFeature by remember(initialFeature) {
+        mutableStateOf(initialFeature)
+    }
+    var scrubSpeed by remember { mutableFloatStateOf(StudioPreferences.loadSettings(context).audioScrubSpeed) }
 
     // Timeline & Trimming
     var trimStartMs by remember { mutableLongStateOf(0L) }
@@ -597,6 +609,16 @@ fun VideoStudioScreen(
             onNudge = { d -> videoPlayer.seekTo((videoPlayer.currentPositionMs.value + d).coerceIn(0L, durationMs)) },
             onJumpStart = { videoPlayer.seekTo(0L) },
             onJumpEnd = { videoPlayer.seekTo(durationMs) },
+            scrubSpeed = scrubSpeed,
+            onChangeScrubSpeed = { spd ->
+                val normalized = StudioPreferences.normalizeScrubSpeed(spd)
+                scrubSpeed = normalized
+                StudioPreferences.saveAudioScrubSpeed(context, normalized)
+                AccessibilityHelper.announceForAccessibility(
+                    context,
+                    "Rewind and fast forward speed ${StudioPreferences.formatScrubSpeedLabel(normalized)}"
+                )
+            },
             onPlaySelection = {
                 if (durationMs > 0L) {
                     val start = trimStartMs.coerceIn(0L, durationMs)
@@ -655,11 +677,93 @@ fun VideoStudioScreen(
                     selected = activeSection == sec,
                     onClick = {
                         activeSection = sec
+                        focusedFeature = null
                         if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
                         AccessibilityHelper.announceForAccessibility(context, sec.spokenSummary)
                     },
                     text = { Text(sec.title, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                 )
+            }
+        }
+
+        // Individual Video Studio Feature Buttons
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("card_studio_all_video_feature_buttons"),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isHighContrast) Color(0xFF0A0A0A) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+            ),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Video Studio Feature Buttons",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Black
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (focusedFeature == null) {
+                        Button(
+                            onClick = { focusedFeature = null },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_studio_video_feat_all")
+                                .semantics { contentDescription = "Show all features in current tab" }
+                        ) {
+                            Text("All in Tab", fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { focusedFeature = null },
+                            modifier = Modifier
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_studio_video_feat_all")
+                                .semantics { contentDescription = "Show all features in current tab" }
+                        ) {
+                            Text("All in Tab", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    VideoStudioFeatureButton.entries.forEach { feat ->
+                        val isSelected = focusedFeature == feat
+                        val openFeature: () -> Unit = {
+                            activeSection = feat.section
+                            focusedFeature = if (isSelected) null else feat
+                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
+                            AccessibilityHelper.announceForAccessibility(context, "Opened ${feat.title}")
+                        }
+                        if (isSelected) {
+                            Button(
+                                onClick = openFeature,
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("btn_studio_video_feat_${feat.tag}")
+                                    .semantics { contentDescription = "${feat.title} selected" }
+                            ) {
+                                Text(feat.title, fontWeight = FontWeight.Bold)
+                            }
+                        } else {
+                            OutlinedButton(
+                                onClick = openFeature,
+                                modifier = Modifier
+                                    .heightIn(min = 48.dp)
+                                    .testTag("btn_studio_video_feat_${feat.tag}")
+                                    .semantics { contentDescription = "Open ${feat.title} video feature" }
+                            ) {
+                                Text(feat.title, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -746,7 +850,8 @@ fun VideoStudioScreen(
                     runAsyncTask(if (prepend) "Prepending Highlights..." else "Extracting Glimpses...") { prog ->
                         toolkit.exportStreamCopyRanges(uri, ranges, "Highlights_$timestamp", outputFormat, onProgress = prog)
                     }
-                }
+                },
+                initialFocusedFeature = focusedFeature
             )
 
             VideoToolSection.AUDIO_MUSIC -> VideoAudioMusicPanel(
@@ -853,7 +958,8 @@ fun VideoStudioScreen(
                         Toast.makeText(context, "Saved audio: Music/Audio Studio/${f.name}", Toast.LENGTH_LONG).show()
                         null
                     }
-                }
+                },
+                initialFocusedFeature = focusedFeature
             )
 
             VideoToolSection.OVERLAYS -> VideoOverlaysVfxPanel(
@@ -895,7 +1001,8 @@ fun VideoStudioScreen(
                 selectedFilter = selectedFilter,
                 selectedVfx = selectedVfx,
                 onSelectFilter = { selectedFilter = it },
-                onSelectVfx = { selectedVfx = it }
+                onSelectVfx = { selectedVfx = it },
+                initialFocusedFeature = focusedFeature
             )
 
             VideoToolSection.TRANSFORM -> VideoTransformPanel(
@@ -921,7 +1028,8 @@ fun VideoStudioScreen(
                 onToggleFlipH = { flipH = it },
                 onToggleFlipV = { flipV = it },
                 reverseVideo = reverseVideo,
-                onToggleReverseVideo = { reverseVideo = it }
+                onToggleReverseVideo = { reverseVideo = it },
+                initialFocusedFeature = focusedFeature
             )
 
             VideoToolSection.TOOLS -> VideoConvertAndMetaPanel(
@@ -982,7 +1090,8 @@ fun VideoStudioScreen(
                     runAsyncTask("Saving Video Metadata Tags...") { prog ->
                         toolkit.exportStreamCopyRanges(uri, listOf(0L to durationMs), title.ifBlank { "Tagged_$timestamp" }, outputFormat, onProgress = prog)
                     }
-                }
+                },
+                initialFocusedFeature = focusedFeature
             )
         }
 

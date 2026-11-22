@@ -24,6 +24,8 @@ import com.example.video.VideoFormatOption
 import com.example.video.VideoMetadataDetails
 import com.example.video.VideoResolutionPreset
 import com.example.video.VideoRotation
+import com.example.video.VideoStudioFeatureButton
+import com.example.video.VideoToolSection
 import com.example.video.VideoVfx
 
 enum class ProjectMediaType(val label: String) {
@@ -115,7 +117,18 @@ enum class VideoFeatureTool(
 
 sealed class ActiveFeatureWorkspace {
     data class AudioTool(val tool: AudioFeatureTool) : ActiveFeatureWorkspace()
-    data class VideoTool(val tool: VideoFeatureTool) : ActiveFeatureWorkspace()
+    data class VideoTool(
+        val tool: VideoFeatureTool,
+        val initialFeature: VideoStudioFeatureButton? = null
+    ) : ActiveFeatureWorkspace()
+}
+
+fun VideoStudioFeatureButton.toParentTool(): VideoFeatureTool = when (section) {
+    VideoToolSection.TIMELINE -> VideoFeatureTool.TRIM_TIMELINE
+    VideoToolSection.AUDIO_MUSIC -> VideoFeatureTool.AUDIO_MUSIC
+    VideoToolSection.OVERLAYS -> VideoFeatureTool.OVERLAYS_VFX
+    VideoToolSection.TRANSFORM -> VideoFeatureTool.TRANSFORM_SPEED
+    VideoToolSection.TOOLS -> VideoFeatureTool.CONVERT_TOOLS
 }
 
 data class StudioProjectSummary(

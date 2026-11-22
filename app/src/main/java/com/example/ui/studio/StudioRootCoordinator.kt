@@ -568,6 +568,13 @@ fun StudioRootCoordinator(
                                 activeFeatureWorkspace = ActiveFeatureWorkspace.VideoTool(tool)
                                 destination = StudioRootDestination.FEATURE_WORKSPACE
                             },
+                            onOpenVideoFeature = { feat ->
+                                videoPlayer.pause()
+                                videoMultiMusicPreview.stopSoloPreview()
+                                videoMultiMusicPreview.pauseTimelineTracks()
+                                activeFeatureWorkspace = ActiveFeatureWorkspace.VideoTool(feat.toParentTool(), feat)
+                                destination = StudioRootDestination.FEATURE_WORKSPACE
+                            },
                             onSaveProject = {
                                 val stampNow = System.currentTimeMillis()
                                 if (vSession != null) {
@@ -783,7 +790,8 @@ fun StudioRootCoordinator(
                                     onNavigateToExports = {
                                         destination = StudioRootDestination.EXPORTS
                                     },
-                                    multiMusicPreview = videoMultiMusicPreview
+                                    multiMusicPreview = videoMultiMusicPreview,
+                                    initialFeature = ws.initialFeature
                                 )
                             }
                         }

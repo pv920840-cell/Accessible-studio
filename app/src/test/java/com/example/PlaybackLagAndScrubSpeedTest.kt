@@ -56,7 +56,13 @@ class PlaybackLagAndScrubSpeedTest {
             assertEquals(5.0f, player.scrubSpeedMultiplier, 0.01f)
 
             player.setScrubSpeed(0.5f)
-            assertEquals(1.5f, player.scrubSpeedMultiplier, 0.01f)
+            assertEquals(0.5f, player.scrubSpeedMultiplier, 0.01f)
+
+            player.setScrubSpeed(0.25f)
+            assertEquals(0.25f, player.scrubSpeedMultiplier, 0.01f)
+
+            player.setScrubSpeed(0.1f)
+            assertEquals(0.25f, player.scrubSpeedMultiplier, 0.01f)
 
             player.setScrubSpeed(25.0f)
             assertEquals(8.0f, player.scrubSpeedMultiplier, 0.01f)
@@ -70,6 +76,12 @@ class PlaybackLagAndScrubSpeedTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         StudioPreferences.saveSettings(context, StudioSettingsState(audioScrubSpeed = 3.5f))
         assertEquals(3.5f, StudioPreferences.loadSettings(context).audioScrubSpeed, 0.01f)
+
+        StudioPreferences.saveAudioScrubSpeed(context, 0.25f)
+        assertEquals(0.25f, StudioPreferences.loadSettings(context).audioScrubSpeed, 0.01f)
+
+        StudioPreferences.saveAudioScrubSpeed(context, 0.75f)
+        assertEquals(0.75f, StudioPreferences.loadSettings(context).audioScrubSpeed, 0.01f)
 
         StudioPreferences.saveAudioScrubSpeed(context, 8.0f)
         assertEquals(8.0f, StudioPreferences.loadSettings(context).audioScrubSpeed, 0.01f)
@@ -100,9 +112,24 @@ class PlaybackLagAndScrubSpeedTest {
         }
 
         composeRule.onNodeWithTag("row_scrub_speed_selector").assertIsDisplayed()
+        composeRule.onNodeWithTag("chip_scrub_speed_0.25x").assertIsDisplayed()
+        composeRule.onNodeWithTag("chip_scrub_speed_0.5x").assertIsDisplayed()
+        composeRule.onNodeWithTag("chip_scrub_speed_0.75x").assertIsDisplayed()
+        composeRule.onNodeWithTag("chip_scrub_speed_1.0x").assertIsDisplayed()
         composeRule.onNodeWithTag("chip_scrub_speed_1.5x").assertIsDisplayed()
         composeRule.onNodeWithTag("chip_scrub_speed_3.5x").assertIsDisplayed()
         composeRule.onNodeWithTag("chip_scrub_speed_8.0x").assertIsDisplayed()
+
+        composeRule.onNodeWithTag("chip_scrub_speed_0.25x").performClick()
+        assertEquals(0.25f, callbackSpeed, 0.01f)
+
+        composeRule.onNodeWithTag("btn_rewind_5s").assert(
+            SemanticsMatcher("mentions 0.25x") { node ->
+                val desc = node.config.getOrElse(SemanticsProperties.ContentDescription) { emptyList() }
+                    .joinToString(" ")
+                desc.contains("0.25x")
+            }
+        )
 
         composeRule.onNodeWithTag("chip_scrub_speed_8.0x").performClick()
         assertEquals(8.0f, callbackSpeed, 0.01f)
@@ -171,6 +198,12 @@ class PlaybackLagAndScrubSpeedTest {
 
             composeRule.onNodeWithTag("btn_workspace_rewind_scrub").performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithTag("btn_workspace_forward_scrub").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithTag("chip_workspace_scrub_speed_0.5x").performScrollTo().performClick()
+            composeRule.waitForIdle()
+
+            assertEquals(0.5f, player.scrubSpeedMultiplier, 0.01f)
+            assertEquals(0.5f, StudioPreferences.loadSettings(context).audioScrubSpeed, 0.01f)
+
             composeRule.onNodeWithTag("chip_workspace_scrub_speed_5.0x").performScrollTo().performClick()
             composeRule.waitForIdle()
 

@@ -81,6 +81,7 @@ import com.example.video.VideoCutMath
 import com.example.video.VideoCutSegment
 import com.example.video.VideoPlayerManager
 import com.example.video.VideoRenderEngine
+import com.example.video.VideoStudioFeatureButton
 import com.example.video.VideoToolkitProcessor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -108,7 +109,8 @@ fun VideoFeatureWorkspaceScreen(
     onCancelBack: () -> Unit,
     onNavigateToExports: () -> Unit,
     multiMusicPreview: MultiMusicPreviewController? = null,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialFeature: VideoStudioFeatureButton? = null
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -290,7 +292,7 @@ fun VideoFeatureWorkspaceScreen(
     if (tool == VideoFeatureTool.FULL_VIDEO_STUDIO) {
         Column(modifier = modifier.fillMaxSize()) {
             WorkspaceHeaderBar(
-                title = tool.title,
+                title = initialFeature?.title ?: tool.title,
                 subtitle = draft.title,
                 canUndo = false,
                 onUndo = {},
@@ -313,7 +315,8 @@ fun VideoFeatureWorkspaceScreen(
                 onNavigateToExports = onNavigateToExports,
                 initialVideoUri = draft.sourceUri,
                 initialVideoTitle = draft.title,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                initialFeature = initialFeature
             )
         }
         return
@@ -332,7 +335,7 @@ fun VideoFeatureWorkspaceScreen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         WorkspaceHeaderBar(
-            title = tool.title,
+            title = initialFeature?.title ?: tool.title,
             subtitle = draft.title,
             canUndo = false,
             onUndo = {},
@@ -532,7 +535,8 @@ fun VideoFeatureWorkspaceScreen(
                         runAsyncTask(if (prepend) "Prepending Highlights..." else "Extracting Glimpses...") { prog ->
                             toolkit.exportStreamCopyRanges(uri, ranges, "Highlights_$timestamp", draft.outputFormat, onProgress = prog)
                         }
-                    }
+                    },
+                    initialFocusedFeature = initialFeature
                 )
 
                 VideoFeatureTool.AUDIO_MUSIC -> VideoAudioMusicPanel(
@@ -642,7 +646,8 @@ fun VideoFeatureWorkspaceScreen(
                             Toast.makeText(context, "Saved audio: Music/Audio Studio/${f.name}", Toast.LENGTH_LONG).show()
                             null
                         }
-                    }
+                    },
+                    initialFocusedFeature = initialFeature
                 )
 
                 VideoFeatureTool.OVERLAYS_VFX -> VideoOverlaysVfxPanel(
@@ -687,7 +692,8 @@ fun VideoFeatureWorkspaceScreen(
                     selectedFilter = draft.selectedFilter,
                     selectedVfx = draft.selectedVfx,
                     onSelectFilter = { draft = draft.copy(selectedFilter = it, hasUnsavedChanges = true) },
-                    onSelectVfx = { draft = draft.copy(selectedVfx = it, hasUnsavedChanges = true) }
+                    onSelectVfx = { draft = draft.copy(selectedVfx = it, hasUnsavedChanges = true) },
+                    initialFocusedFeature = initialFeature
                 )
 
                 VideoFeatureTool.TRANSFORM_SPEED -> VideoTransformPanel(
@@ -713,7 +719,8 @@ fun VideoFeatureWorkspaceScreen(
                     onToggleFlipH = { draft = draft.copy(flipH = it, hasUnsavedChanges = true) },
                     onToggleFlipV = { draft = draft.copy(flipV = it, hasUnsavedChanges = true) },
                     reverseVideo = draft.reverseVideo,
-                    onToggleReverseVideo = { draft = draft.copy(reverseVideo = it, hasUnsavedChanges = true) }
+                    onToggleReverseVideo = { draft = draft.copy(reverseVideo = it, hasUnsavedChanges = true) },
+                    initialFocusedFeature = initialFeature
                 )
 
                 VideoFeatureTool.CONVERT_TOOLS -> VideoConvertAndMetaPanel(
@@ -773,7 +780,8 @@ fun VideoFeatureWorkspaceScreen(
                             metadata = draft.metadata.copy(title = title, artist = artist, album = album, genre = genre),
                             hasUnsavedChanges = true
                         )
-                    }
+                    },
+                    initialFocusedFeature = initialFeature
                 )
 
                 VideoFeatureTool.FULL_VIDEO_STUDIO -> Unit

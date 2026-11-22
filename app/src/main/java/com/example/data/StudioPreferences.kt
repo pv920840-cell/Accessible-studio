@@ -136,8 +136,10 @@ object StudioPreferences {
     const val BITRATE_AUTO = 0
     val SUPPORTED_BITRATE_OPTIONS = listOf(0, 64, 128, 192, 256, 320)
 
+    const val MIN_SCRUB_SPEED = 0.25f
+    const val MAX_SCRUB_SPEED = 8.0f
     const val DEFAULT_SCRUB_SPEED = 3.5f
-    val SUPPORTED_SCRUB_SPEED_OPTIONS = listOf(1.5f, 2.0f, 3.5f, 5.0f, 8.0f)
+    val SUPPORTED_SCRUB_SPEED_OPTIONS = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.5f, 5.0f, 8.0f)
 
     const val MIN_INPUT_GAIN = 0.25f
     const val MAX_INPUT_GAIN = 2.0f
@@ -169,11 +171,16 @@ object StudioPreferences {
 
     fun normalizeScrubSpeed(speed: Float): Float {
         if (!speed.isFinite()) return DEFAULT_SCRUB_SPEED
-        return speed.coerceIn(1.5f, 8.0f)
+        return speed.coerceIn(MIN_SCRUB_SPEED, MAX_SCRUB_SPEED)
     }
 
     fun formatScrubSpeedLabel(speed: Float): String {
-        return "${"%.1f".format(java.util.Locale.US, normalizeScrubSpeed(speed))}x"
+        val normalized = normalizeScrubSpeed(speed)
+        return when {
+            kotlin.math.abs(normalized - 0.25f) < 0.02f -> "0.25x"
+            kotlin.math.abs(normalized - 0.75f) < 0.02f -> "0.75x"
+            else -> "${"%.1f".format(java.util.Locale.US, normalized)}x"
+        }
     }
 
     fun formatSampleRateLabel(sampleRateHz: Int): String {

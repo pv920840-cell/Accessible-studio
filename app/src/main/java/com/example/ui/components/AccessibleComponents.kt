@@ -621,11 +621,12 @@ fun AccessibleTransportControls(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val bannerSpeedLabel = StudioPreferences.formatScrubSpeedLabel(scrubSpeed)
                     Text(
                         text = if (activeScrubDirection == ScrubDirection.REWIND) {
-                            "<< REWINDING IN REVERSE (-${"%.1f".format(Locale.US, scrubSpeed)}x) • Playing Live"
+                            "<< REWINDING IN REVERSE (-$bannerSpeedLabel) • Playing Live"
                         } else {
-                            "FAST FORWARDING (+${"%.1f".format(Locale.US, scrubSpeed)}x) >> • Playing Live"
+                            "FAST FORWARDING (+$bannerSpeedLabel) >> • Playing Live"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Black,
@@ -892,7 +893,7 @@ fun AccessibleTransportControls(
                     modifier = Modifier.align(Alignment.CenterVertically).padding(end = 2.dp)
                 )
                 StudioPreferences.SUPPORTED_SCRUB_SPEED_OPTIONS.forEach { spd ->
-                    val selected = kotlin.math.abs(scrubSpeed - spd) < 0.1f
+                    val selected = kotlin.math.abs(scrubSpeed - spd) < 0.04f
                     val label = StudioPreferences.formatScrubSpeedLabel(spd)
                     FilterChip(
                         selected = selected,

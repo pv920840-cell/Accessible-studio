@@ -518,7 +518,7 @@ fun AudioFeatureWorkspaceScreen(
                             modifier = Modifier.align(Alignment.CenterVertically).padding(end = 4.dp)
                         )
                         StudioPreferences.SUPPORTED_SCRUB_SPEED_OPTIONS.forEach { spd ->
-                            val selected = kotlin.math.abs(scrubSpeed - spd) < 0.1f
+                            val selected = kotlin.math.abs(scrubSpeed - spd) < 0.04f
                             val label = StudioPreferences.formatScrubSpeedLabel(spd)
                             FilterChip(
                                 selected = selected,
@@ -848,12 +848,17 @@ fun AudioFeatureWorkspaceScreen(
                         }
                     }
 
+                    var focusedEffectPanel by remember(session.projectId, tool) {
+                        mutableStateOf<String?>(null)
+                    }
+
+                    // 1. Individual Quick Effects & Cleaning Buttons
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                     ) {
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Quick Cleaning & Dynamics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                            Text("Quick Effects & Cleaning Buttons", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -880,157 +885,319 @@ fun AudioFeatureWorkspaceScreen(
                                     modifier = Modifier.height(48.dp).testTag("btn_fx_compressor")
                                 ) { Text("Compressor", fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied True Peak Limiter (-1 dB)") { StudioAudioProcessor.applyTruePeakLimiter(it, -1.0f) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_limiter")
+                                ) { Text("Peak Limiter", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
                                     onClick = { pushUndoAndApply("Boosted Gain +3 dB") { StudioAudioProcessor.applyGainDb(it, 3f) } },
                                     modifier = Modifier.height(48.dp).testTag("btn_fx_gain_up")
                                 ) { Text("Gain +3 dB", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Lowered Gain -3 dB") { StudioAudioProcessor.applyGainDb(it, -3f) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_gain_down")
+                                ) { Text("Gain -3 dB", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied Flanger effect") { StudioAudioProcessor.applyFlanger(it) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_flanger")
+                                ) { Text("Flanger", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied Chorus effect") { StudioAudioProcessor.applyChorus(it) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_chorus")
+                                ) { Text("Chorus", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied De-Click / De-Crackle") { StudioAudioProcessor.deClickDeCrackle(it) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_declick")
+                                ) { Text("De-Click", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Removed DC Offset") { StudioAudioProcessor.removeDcOffset(it) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_dc_offset")
+                                ) { Text("DC Offset", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Reversed Audio") { StudioAudioProcessor.reverseAudio(it) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_reverse")
+                                ) { Text("Reverse", fontWeight = FontWeight.Bold) }
                             }
 
-                            AdaptiveNoiseReductionPanel(
-                                params = denoiseParams,
-                                onParamsChange = { next ->
-                                    denoiseParams = next
-                                    liveDenoiseArmed = true
-                                    playerManager.setRealtimeDenoiseParams(next)
-                                    playerManager.setRealtimeDenoiseEnabled(true)
-                                },
-                                learnedProfile = learnedNoiseProfile,
-                                isPlayingLivePreview = isPlaying && liveDenoiseArmed,
-                                onToggleLivePreview = {
-                                    if (isPlaying) {
-                                        playerManager.pause()
+                            HorizontalDivider()
+
+                            Text("Effects Panels", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                listOf(
+                                    null to "All Effects",
+                                    "denoise" to "Adaptive De-Noise",
+                                    "eq" to "EQ Presets",
+                                    "echo" to "Echo",
+                                    "reverb" to "Reverb"
+                                ).forEach { (key, title) ->
+                                    val selected = focusedEffectPanel == key
+                                    val tag = "btn_fx_tab_${key ?: "all"}"
+                                    if (selected) {
+                                        Button(
+                                            onClick = { focusedEffectPanel = null },
+                                            modifier = Modifier.height(48.dp).testTag(tag)
+                                        ) { Text(title, fontWeight = FontWeight.Bold) }
                                     } else {
+                                        OutlinedButton(
+                                            onClick = { focusedEffectPanel = key },
+                                            modifier = Modifier.height(48.dp).testTag(tag)
+                                        ) { Text(title, fontWeight = FontWeight.SemiBold) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Adaptive De-Noise Card
+                    if (focusedEffectPanel == null || focusedEffectPanel == "denoise") {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("card_fx_denoise"),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                AdaptiveNoiseReductionPanel(
+                                    params = denoiseParams,
+                                    onParamsChange = { next ->
+                                        denoiseParams = next
                                         liveDenoiseArmed = true
-                                        playerManager.setRealtimeDenoiseParams(denoiseParams)
-                                        playerManager.setRealtimeNoiseProfile(learnedNoiseProfile)
+                                        playerManager.setRealtimeDenoiseParams(next)
                                         playerManager.setRealtimeDenoiseEnabled(true)
-                                        playerManager.play(startFromMs = playerManager.currentPositionMs.value, endLimitMs = null)
-                                    }
-                                },
-                                onLearnNoiseProfile = {
-                                    val s = trimStartMs
-                                    val e = trimEndMs
-                                    if (e - s < 120L) {
-                                        Toast.makeText(context, "Mark a 0.2s–4s fan or noise-only gap using Trim Start/End first.", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        val snippet = StudioAudioProcessor.cropToSelection(workingPcm, s, e, sampleRate)
-                                        val profile = AdaptiveSpectralDenoiser.captureNoiseProfile(snippet, sampleRate, denoiseParams.fftSize)
-                                        if (profile != null) {
-                                            learnedNoiseProfile = profile
+                                    },
+                                    learnedProfile = learnedNoiseProfile,
+                                    isPlayingLivePreview = isPlaying && liveDenoiseArmed,
+                                    onToggleLivePreview = {
+                                        if (isPlaying) {
+                                            playerManager.pause()
+                                        } else {
                                             liveDenoiseArmed = true
-                                            playerManager.setRealtimeNoiseProfile(profile)
+                                            playerManager.setRealtimeDenoiseParams(denoiseParams)
+                                            playerManager.setRealtimeNoiseProfile(learnedNoiseProfile)
                                             playerManager.setRealtimeDenoiseEnabled(true)
-                                            val msg = "Learned noise profile (${"%.1f".format(profile.durationMs / 1000f)}s): ${profile.bandSummary}"
-                                            AccessibilityHelper.announceForAccessibility(context, msg)
-                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            playerManager.play(startFromMs = playerManager.currentPositionMs.value, endLimitMs = null)
                                         }
-                                    }
-                                },
-                                onClearNoiseProfile = {
-                                    learnedNoiseProfile = null
-                                    liveDenoiseArmed = true
-                                    playerManager.setRealtimeNoiseProfile(null)
-                                    playerManager.setRealtimeDenoiseEnabled(true)
-                                    AccessibilityHelper.announceForAccessibility(context, "Switched to Auto Adaptive live noise tracking")
-                                },
-                                onApplyOfflineClean = {
-                                    val applied = denoiseParams.copy(bypass = false).clamped()
-                                    val profile = learnedNoiseProfile
-                                    denoiseParams = applied
-                                    liveDenoiseArmed = false
-                                    playerManager.setRealtimeDenoiseEnabled(false)
-                                    editSettings = editSettings.copy(
-                                        noiseReductionEnabled = true,
-                                        noiseThresholdDb = applied.thresholdDb,
-                                        noiseReductionDb = applied.reductionDb,
-                                        noiseSmoothing = applied.smoothing,
-                                        noiseVoiceFocus = applied.voiceDialogueFocus,
-                                        noiseBypass = false,
-                                        noiseFftSize = applied.fftSize
-                                    )
-                                    pushUndoAndApply("Applied Studio Adaptive De-Noise") { pcm ->
-                                        AdaptiveSpectralDenoiser.processOffline(
-                                            samples = pcm,
-                                            sampleRate = sampleRate,
-                                            channels = 1,
-                                            params = applied,
-                                            noiseProfile = profile
+                                    },
+                                    onLearnNoiseProfile = {
+                                        val s = trimStartMs
+                                        val e = trimEndMs
+                                        if (e - s < 120L) {
+                                            Toast.makeText(context, "Mark a 0.2s–4s fan or noise-only gap using Trim Start/End first.", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            val snippet = StudioAudioProcessor.cropToSelection(workingPcm, s, e, sampleRate)
+                                            val profile = AdaptiveSpectralDenoiser.captureNoiseProfile(snippet, sampleRate, denoiseParams.fftSize)
+                                            if (profile != null) {
+                                                learnedNoiseProfile = profile
+                                                liveDenoiseArmed = true
+                                                playerManager.setRealtimeNoiseProfile(profile)
+                                                playerManager.setRealtimeDenoiseEnabled(true)
+                                                val msg = "Learned noise profile (${"%.1f".format(profile.durationMs / 1000f)}s): ${profile.bandSummary}"
+                                                AccessibilityHelper.announceForAccessibility(context, msg)
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    },
+                                    onClearNoiseProfile = {
+                                        learnedNoiseProfile = null
+                                        liveDenoiseArmed = true
+                                        playerManager.setRealtimeNoiseProfile(null)
+                                        playerManager.setRealtimeDenoiseEnabled(true)
+                                        AccessibilityHelper.announceForAccessibility(context, "Switched to Auto Adaptive live noise tracking")
+                                    },
+                                    onApplyOfflineClean = {
+                                        val applied = denoiseParams.copy(bypass = false).clamped()
+                                        val profile = learnedNoiseProfile
+                                        denoiseParams = applied
+                                        liveDenoiseArmed = false
+                                        playerManager.setRealtimeDenoiseEnabled(false)
+                                        editSettings = editSettings.copy(
+                                            noiseReductionEnabled = true,
+                                            noiseThresholdDb = applied.thresholdDb,
+                                            noiseReductionDb = applied.reductionDb,
+                                            noiseSmoothing = applied.smoothing,
+                                            noiseVoiceFocus = applied.voiceDialogueFocus,
+                                            noiseBypass = false,
+                                            noiseFftSize = applied.fftSize
                                         )
-                                    }
-                                }
-                            )
-
-                            Text("EQ Presets", fontWeight = FontWeight.Bold)
-                            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                EqPreset.values().forEach { preset ->
-                                    FilterChip(
-                                        selected = selectedEq == preset,
-                                        onClick = { selectedEq = preset; localModified = true },
-                                        label = { Text(preset.displayName) }
-                                    )
-                                }
-                            }
-                            AccessibleEffectSlider(
-                                title = "Echo Mix",
-                                value = echoMix,
-                                onValueChange = { echoMix = it },
-                                valueRange = 0f..0.9f,
-                                step = 0.05f,
-                                displayValue = "${(echoMix * 100).toInt()}%",
-                                spokenDescription = "Echo mix ${(echoMix * 100).toInt()} percent",
-                                testTag = "slider_fx_echo"
-                            )
-                            AccessibleEffectSlider(
-                                title = "Reverb Mix",
-                                value = reverbMix,
-                                onValueChange = { reverbMix = it },
-                                valueRange = 0f..0.9f,
-                                step = 0.05f,
-                                displayValue = "${(reverbMix * 100).toInt()}%",
-                                spokenDescription = "Reverb mix ${(reverbMix * 100).toInt()} percent",
-                                testTag = "slider_fx_reverb"
-                            )
-                            Button(
-                                onClick = {
-                                    val activeDenoise = denoiseParams.copy(bypass = false).clamped()
-                                    val profile = learnedNoiseProfile
-                                    liveDenoiseArmed = false
-                                    playerManager.setRealtimeDenoiseEnabled(false)
-                                    val newSettings = editSettings.copy(
-                                        eqPreset = selectedEq,
-                                        noiseReductionEnabled = activeDenoise.reductionDb >= 0.5f,
-                                        noiseThresholdDb = activeDenoise.thresholdDb,
-                                        noiseReductionDb = activeDenoise.reductionDb,
-                                        noiseSmoothing = activeDenoise.smoothing,
-                                        noiseVoiceFocus = activeDenoise.voiceDialogueFocus,
-                                        noiseBypass = false,
-                                        noiseFftSize = activeDenoise.fftSize,
-                                        echoEnabled = echoMix > 0.05f,
-                                        echoMix = echoMix,
-                                        reverbEnabled = reverbMix > 0.05f,
-                                        reverbMix = reverbMix
-                                    )
-                                    editSettings = newSettings
-                                    pushUndoAndApply("Applied Studio Effects Chain") { pcm ->
-                                        val nrDone = if (newSettings.noiseReductionEnabled) {
+                                        pushUndoAndApply("Applied Studio Adaptive De-Noise") { pcm ->
                                             AdaptiveSpectralDenoiser.processOffline(
                                                 samples = pcm,
                                                 sampleRate = sampleRate,
                                                 channels = 1,
-                                                params = activeDenoise,
+                                                params = applied,
                                                 noiseProfile = profile
                                             )
-                                        } else {
-                                            pcm
                                         }
-                                        audioProcessor.processPcm(nrDone, newSettings.copy(noiseReductionEnabled = false), sampleRate)
                                     }
-                                },
-                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_workspace_apply_fx")
-                            ) {
-                                Icon(Icons.Default.GraphicEq, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Apply Effects to Track", fontWeight = FontWeight.Bold)
+                                )
                             }
+                        }
+                    }
+
+                    // 3. EQ Presets Separate Card
+                    if (focusedEffectPanel == null || focusedEffectPanel == "eq") {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("card_fx_eq"),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("EQ Presets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    EqPreset.values().forEach { preset ->
+                                        val isEqSelected = selectedEq == preset
+                                        val tag = "btn_fx_eq_${preset.name.lowercase()}"
+                                        if (isEqSelected) {
+                                            Button(
+                                                onClick = { selectedEq = preset; localModified = true },
+                                                modifier = Modifier.height(48.dp).testTag(tag)
+                                            ) { Text(preset.displayName, fontWeight = FontWeight.Bold) }
+                                        } else {
+                                            OutlinedButton(
+                                                onClick = { selectedEq = preset; localModified = true },
+                                                modifier = Modifier.height(48.dp).testTag(tag)
+                                            ) { Text(preset.displayName, fontWeight = FontWeight.SemiBold) }
+                                        }
+                                    }
+                                }
+                                Button(
+                                    onClick = {
+                                        val eqOnlySettings = AudioEditSettings(eqPreset = selectedEq)
+                                        editSettings = editSettings.copy(eqPreset = selectedEq)
+                                        pushUndoAndApply("Applied EQ: ${selectedEq.displayName}") { pcm ->
+                                            audioProcessor.processPcm(pcm, eqOnlySettings, sampleRate)
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_apply_eq_only")
+                                ) {
+                                    Text("Apply Selected EQ (${selectedEq.displayName})", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // 4. Echo Separate Card
+                    if (focusedEffectPanel == null || focusedEffectPanel == "echo") {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("card_fx_echo"),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Echo Effect", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                AccessibleEffectSlider(
+                                    title = "Echo Mix",
+                                    value = echoMix,
+                                    onValueChange = { echoMix = it },
+                                    valueRange = 0f..0.9f,
+                                    step = 0.05f,
+                                    displayValue = "${(echoMix * 100).toInt()}%",
+                                    spokenDescription = "Echo mix ${(echoMix * 100).toInt()} percent",
+                                    testTag = "slider_fx_echo"
+                                )
+                                Button(
+                                    onClick = {
+                                        val echoAmt = echoMix.coerceAtLeast(0.15f)
+                                        echoMix = echoAmt
+                                        editSettings = editSettings.copy(echoEnabled = true, echoMix = echoAmt)
+                                        pushUndoAndApply("Applied Echo (${(echoAmt * 100).toInt()}%)") { pcm ->
+                                            audioProcessor.processPcm(
+                                                pcm,
+                                                AudioEditSettings(echoEnabled = true, echoMix = echoAmt),
+                                                sampleRate
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_apply_echo_only")
+                                ) {
+                                    Text("Apply Echo (${(echoMix * 100).toInt()}%)", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    // 5. Reverb Separate Card
+                    if (focusedEffectPanel == null || focusedEffectPanel == "reverb") {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().testTag("card_fx_reverb"),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("Reverb Effect", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                AccessibleEffectSlider(
+                                    title = "Reverb Mix",
+                                    value = reverbMix,
+                                    onValueChange = { reverbMix = it },
+                                    valueRange = 0f..0.9f,
+                                    step = 0.05f,
+                                    displayValue = "${(reverbMix * 100).toInt()}%",
+                                    spokenDescription = "Reverb mix ${(reverbMix * 100).toInt()} percent",
+                                    testTag = "slider_fx_reverb"
+                                )
+                                Button(
+                                    onClick = {
+                                        val revAmt = reverbMix.coerceAtLeast(0.15f)
+                                        reverbMix = revAmt
+                                        editSettings = editSettings.copy(reverbEnabled = true, reverbMix = revAmt)
+                                        pushUndoAndApply("Applied Reverb (${(revAmt * 100).toInt()}%)") { pcm ->
+                                            audioProcessor.processPcm(
+                                                pcm,
+                                                AudioEditSettings(reverbEnabled = true, reverbMix = revAmt),
+                                                sampleRate
+                                            )
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_apply_reverb_only")
+                                ) {
+                                    Text("Apply Reverb (${(reverbMix * 100).toInt()}%)", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+
+                    if (focusedEffectPanel == null) {
+                        Button(
+                            onClick = {
+                                val activeDenoise = denoiseParams.copy(bypass = false).clamped()
+                                val profile = learnedNoiseProfile
+                                liveDenoiseArmed = false
+                                playerManager.setRealtimeDenoiseEnabled(false)
+                                val newSettings = editSettings.copy(
+                                    eqPreset = selectedEq,
+                                    noiseReductionEnabled = activeDenoise.reductionDb >= 0.5f,
+                                    noiseThresholdDb = activeDenoise.thresholdDb,
+                                    noiseReductionDb = activeDenoise.reductionDb,
+                                    noiseSmoothing = activeDenoise.smoothing,
+                                    noiseVoiceFocus = activeDenoise.voiceDialogueFocus,
+                                    noiseBypass = false,
+                                    noiseFftSize = activeDenoise.fftSize,
+                                    echoEnabled = echoMix > 0.05f,
+                                    echoMix = echoMix,
+                                    reverbEnabled = reverbMix > 0.05f,
+                                    reverbMix = reverbMix
+                                )
+                                editSettings = newSettings
+                                pushUndoAndApply("Applied Studio Effects Chain") { pcm ->
+                                    val nrDone = if (newSettings.noiseReductionEnabled) {
+                                        AdaptiveSpectralDenoiser.processOffline(
+                                            samples = pcm,
+                                            sampleRate = sampleRate,
+                                            channels = 1,
+                                            params = activeDenoise,
+                                            noiseProfile = profile
+                                        )
+                                    } else {
+                                        pcm
+                                    }
+                                    audioProcessor.processPcm(nrDone, newSettings.copy(noiseReductionEnabled = false), sampleRate)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_workspace_apply_fx")
+                        ) {
+                            Icon(Icons.Default.GraphicEq, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Apply Effects to Track", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

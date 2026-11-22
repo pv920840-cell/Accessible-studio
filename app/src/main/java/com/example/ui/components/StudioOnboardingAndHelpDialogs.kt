@@ -118,26 +118,24 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.2.7 — Automatic GitHub Update Check & In-App APK Installer:\n\n" +
-            "1. Automatic GitHub Main-Branch Update Check on Launch:\n" +
-            "• Automatically checks raw.githubusercontent.com/<owner>/<repo>/main/version.json (with cache-busting) asynchronously on app launch without freezing the UI.\n" +
-            "• Compares remote versionCode via PackageInfoCompat and semantic versionName safely, handling offline or invalid JSON errors silently.\n\n" +
-            "2. Accessible In-App Update Dialog:\n" +
-            "• Displays the new version number and full changelog clearly with accessible \"Update Now\" and \"Later\" actions.\n\n" +
-            "3. Direct APK Download & Package Installer Integration:\n" +
-            "• Downloads the latest APK directly into app cache storage with live progress feedback.\n" +
-            "• Guides Android 8.0+ users cleanly to Allow \"Install unknown apps\" Settings when needed and launches the Android package installer via secure FileProvider."
+        "What's New in Version 1.2.8 — Separate Video Studio & Effects Buttons + Slow Rewind/Forward Speeds:\n\n" +
+            "1. Separate Video Studio Feature Buttons:\n" +
+            "• Every Video Studio tool (Trimmer, Cutter, Snapshot & Glimpse, Merger, Slideshow, Narration, Multi Music, Sound Effects, Audio Manager, Adaptive Noise Reducer, Video to Audio, Text Overlay, Blur & Mosaic, Image Overlay, Subtitles, Color Filters, VFX, Speed Changer, Resize, Aspect Ratio, Rotate/Flip/Reverse, Silence Remover, Compressor, Format Converter, GIF & Frame Extractor, and Metadata) now has its own dedicated tactile button inside Video Project Hub and Video Studio while preserving all Save, Preview, and Export flows.\n\n" +
+            "2. Separate Audio & Video Effects Buttons:\n" +
+            "• Audio Effects & Cleaning now offers individual one-tap buttons (Auto Gain, Normalize, De-Hum, Compressor, Peak Limiter, Gain +3/-3 dB, Flanger, Chorus, De-Click, DC Offset, Reverse) plus dedicated section buttons for Adaptive De-Noise, EQ Presets, Echo, and Reverb.\n" +
+            "• Video Overlays now separates Color Filters and VFX Effects into distinct button panels.\n\n" +
+            "3. Slower Rewind & Fast-Forward Speeds (0.25x – 8.0x):\n" +
+            "• Added ultra-slow 0.25x, 0.5x, 0.75x, and 1.0x Rewind and Fast-Forward scrub speeds alongside 1.5x–8.0x fast speeds with smooth interpolated reverse and slow forward playback."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.2.7 में नया क्या है — ऑटोमैटिक GitHub अपडेट चेक और इन-ऐप APK इंस्टॉलर:\n\n" +
-            "1. ऐप खुलते ही GitHub (main ब्रांच) से ऑटोमैटिक अपडेट चेक:\n" +
-            "• ऐप लॉन्च होते ही बैकग्राउंड में बिना UI को धीमा किए GitHub के main ब्रांच की version.json फ़ाइल से नया वर्ज़न चेक होता है।\n" +
-            "• ऑफ़लाइन रहने या नेटवर्क त्रुटि आने पर भी ऐप बिना किसी क्रैश के सामान्य रूप से चलता है।\n\n" +
-            "2. आसान और TalkBack-फ्रेंडली अपडेट डायलॉग:\n" +
-            "• नया वर्ज़न उपलब्ध होने पर स्क्रीन पर वर्ज़न नंबर और Changelog के साथ \"Update Now\" और \"Later\" बटन दिखते हैं।\n\n" +
-            "3. सीधा APK डाउनलोड और सुरक्षित इंस्टॉलेशन:\n" +
-            "• \"Update Now\" दबाने पर APK लाइव प्रोग्रेस के साथ ऐप के अंदर ही डाउनलोड होता है।\n" +
-            "• Android 8.0+ पर ज़रूरत पड़ने पर \"Install unknown apps\" सेटिंग का मार्गदर्शन मिलता है और FileProvider द्वारा सीधे Android पैकेज इंस्टॉलर खुलता है।"
+        "Version 1.2.8 में नया क्या है — अलग-अलग वीडियो स्टूडियो और इफ़ेक्ट्स बटन + धीमी Rewind/Forward स्पीड:\n\n" +
+            "1. Video Studio के हर फ़ीचर का अलग बटन:\n" +
+            "• Video Project Hub और Video Studio में अब हर फ़ीचर (Trimmer, Cutter, Merger, Slideshow, Narration, Multi Music, Sound Effects, Noise Reducer, Text Overlay, Blur, Image Overlay, Subtitles, Speed Changer, Compressor, Format Converter आदि) का अलग-अलग बड़ा बटन दिया गया है, जबकि Save, Preview और Export पहले की तरह ही काम करते हैं।\n\n" +
+            "2. Audio और Video Effects के अलग-अलग बटन:\n" +
+            "• Audio Effects में अब Auto Gain, Normalize, De-Hum, Compressor, Peak Limiter, Gain +3/-3 dB, Flanger, Chorus, De-Click, DC Offset और Reverse के अलग-अलग बटन तथा Adaptive De-Noise, EQ, Echo और Reverb के अलग पैनल बटन दिए गए हैं।\n" +
+            "• Video Studio में Color Filters और VFX Effects को अलग-अलग बटन कार्ड्स में बाँटा गया है।\n\n" +
+            "3. Rewind और Fast-Forward के लिए धीमी (Slow) स्पीड (0.25x – 8.0x):\n" +
+            "• बारीकी से ऑडियो सुनने के लिए अब तेज़ स्पीड (1.5x–8.0x) के साथ-साथ धीमी Rewind/Forward स्पीड (0.25x, 0.5x, 0.75x, 1.0x) भी जोड़ दी गई है।"
 }
 
 @Composable

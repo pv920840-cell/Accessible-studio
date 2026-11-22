@@ -179,6 +179,10 @@ abstract class SyncVersionedApkTask : DefaultTask() {
           .replace(Regex(""""versionName"\s*:\s*"[^"]*""""), """"versionName": "$vName"""")
           .replace(Regex(""""apkSizeBytes"\s*:\s*\d+"""), """"apkSizeBytes": $sizeBytes""")
           .replace(
+            Regex("""(/releases/download/)v[^/]+/"""),
+            "$1v$vName/"
+          )
+          .replace(
             Regex(""""apkUrl"\s*:\s*"([^"]*)/AccessibleStudio_V[^"]*\.apk""""),
             """"apkUrl": "$1/$apkName""""
           )

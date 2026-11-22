@@ -3,8 +3,8 @@
     "appId": "com.aistudio.accessiblestudio.qmztxp",
     "publish": {
       "provider": "github",
-      "owner": "your-github-username",
-      "repo": "your-repo-name",
+      "owner": "pv920840-cell",
+      "repo": "Accessible-studio",
       "fallbackMetadataUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/version.json"
     }
   }

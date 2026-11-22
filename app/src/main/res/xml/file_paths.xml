@@ -2,6 +2,8 @@
 <paths>
     <external-path name="external_storage" path="." />
     <external-files-path name="external_exports" path="." />
+    <external-cache-path name="external_cache" path="." />
     <files-path name="internal_exports" path="." />
     <cache-path name="cache_exports" path="." />
+    <cache-path name="apk_updates" path="updates/" />
 </paths>

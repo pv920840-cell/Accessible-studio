@@ -66,7 +66,8 @@ jobs:
           if os.path.exists("version.json"):
               try:
                   with open("version.json", "r") as vf:
-                      existing_notes = json.load(vf).get("releaseNotes", "").strip()
+                      vdata = json.load(vf)
+                      existing_notes = (vdata.get("changelog") or vdata.get("releaseNotes") or "").strip()
               except Exception:
                   existing_notes = ""
           notes = existing_notes or f"Accessible Studio v{vname} release."
@@ -77,6 +78,7 @@ jobs:
               "apkUrl": f"https://github.com/{repo}/releases/download/{tag}/{apk_name}",
               "pageUrl": f"https://github.com/{repo}/releases/latest",
               "apkSizeBytes": os.path.getsize(apk_name),
+              "changelog": notes,
               "releaseNotes": notes
           }
           with open("version.json", "w") as f:

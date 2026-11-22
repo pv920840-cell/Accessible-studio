@@ -1,5 +1,8 @@
 package com.example
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -16,12 +19,15 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.StudioPreferences
 import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibilitySettingsSheet
+import com.example.ui.components.AppUpdateAvailableDialog
+import com.example.ui.components.InAppUpdateFlowState
 import com.example.update.AppUpdateChecker
 import com.example.update.UpdateCheckState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import java.io.File
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -419,5 +425,182 @@ class AppUpdateCheckerTest {
         assertEquals(StudioPreferences.UPDATE_PROVIDER_GITHUB, loaded.updateProvider)
         assertEquals("accessible-dev", loaded.githubOwner)
         assertEquals("accessible-studio", loaded.githubRepo)
+    }
+
+    @Test
+    fun githubRawMainVersionUrl_andCacheBuster_andChangelogField_workCorrectly() {
+        val rawUrl = AppUpdateChecker.buildGitHubRawVersionUrl("accessible-dev", "accessible-studio")
+        assertEquals(
+            "https://raw.githubusercontent.com/accessible-dev/accessible-studio/main/version.json",
+            rawUrl
+        )
+        val cacheBusted = AppUpdateChecker.appendCacheBuster(rawUrl, 1763800000000L)
+        assertEquals(
+            "https://raw.githubusercontent.com/accessible-dev/accessible-studio/main/version.json?t=1763800000000",
+            cacheBusted
+        )
+
+        val changelogJson = """
+            {
+              "versionName": "1.2.8",
+              "versionCode": 21,
+              "apkUrl": "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.8/AccessibleStudio_V1.2.8.apk",
+              "changelog": "Bug fixes and faster export."
+            }
+        """.trimIndent()
+        val parsed = AppUpdateChecker.parseUpdateResponseJson(
+            jsonBody = changelogJson,
+            currentVersionName = "1.2.7",
+            currentVersionCode = 20L,
+            checkedAtMs = 1000L,
+            sourceLabel = "GitHub (main)"
+        )
+        assertTrue(parsed is UpdateCheckState.UpdateAvailable)
+        val update = parsed as UpdateCheckState.UpdateAvailable
+        assertEquals("1.2.8", update.latestVersion)
+        assertEquals(21, update.latestCode)
+        assertEquals("Bug fixes and faster export.", update.releaseNotes)
+        assertEquals(
+            "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.8/AccessibleStudio_V1.2.8.apk",
+            update.apkUrl
+        )
+    }
+
+    @Test
+    fun installedAppInfo_andLongVersionCodeComparison_workSafely() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val installed = AppUpdateChecker.getInstalledAppInfo(context)
+        assertTrue(installed.versionName.isNotBlank())
+        assertTrue(installed.versionCode > 0L)
+
+        // Higher remote versionCode always wins
+        assertTrue(
+            AppUpdateChecker.isRemoteVersionNewer(
+                currentVersionName = "1.2.7",
+                currentVersionCode = 20L,
+                remoteVersionName = "1.2.7",
+                remoteVersionCode = 21L
+            )
+        )
+        // Lower positive remote versionCode is never newer
+        assertFalse(
+            AppUpdateChecker.isRemoteVersionNewer(
+                currentVersionName = "1.2.7",
+                currentVersionCode = 20L,
+                remoteVersionName = "9.9.9",
+                remoteVersionCode = 19L
+            )
+        )
+        // Equal versionCode or <= 0 falls back cleanly to semantic versionName comparison
+        assertTrue(
+            AppUpdateChecker.isRemoteVersionNewer(
+                currentVersionName = "1.2.7",
+                currentVersionCode = 20L,
+                remoteVersionName = "1.2.8",
+                remoteVersionCode = 0L
+            )
+        )
+        assertFalse(
+            AppUpdateChecker.isRemoteVersionNewer(
+                currentVersionName = "1.2.7",
+                currentVersionCode = 20L,
+                remoteVersionName = "1.2.7",
+                remoteVersionCode = 20L
+            )
+        )
+    }
+
+    @Test
+    fun manifestPermissions_andFileProviderInstallIntent_areProperlyConfigured() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val pkgInfo = context.packageManager.getPackageInfo(
+            context.packageName,
+            PackageManager.GET_PERMISSIONS
+        )
+        val perms = pkgInfo.requestedPermissions?.toSet().orEmpty()
+        assertTrue(Manifest.permission.INTERNET in perms)
+        assertTrue(Manifest.permission.REQUEST_INSTALL_PACKAGES in perms)
+
+        val updatesDir = File(context.cacheDir, "updates").apply { mkdirs() }
+        val dummyApk = File(updatesDir, "AccessibleStudio_V1.2.8.apk").apply {
+            writeBytes(byteArrayOf(0x50, 0x4B, 0x03, 0x04))
+        }
+        try {
+            val installIntent = AppUpdateChecker.createInstallApkIntent(context, dummyApk)
+            assertEquals(Intent.ACTION_VIEW, installIntent.action)
+            assertEquals("application/vnd.android.package-archive", installIntent.type)
+            assertTrue((installIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0)
+            assertEquals("${context.packageName}.fileprovider", installIntent.data?.authority)
+        } finally {
+            dummyApk.delete()
+        }
+    }
+
+    @Test
+    fun appUpdateDialog_rendersChangelogProgressPermissionAndInstallStates() {
+        val sampleUpdate = UpdateCheckState.UpdateAvailable(
+            currentVersion = "1.2.7",
+            latestVersion = "1.2.8",
+            latestCode = 21,
+            downloadUrl = "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.8/AccessibleStudio_V1.2.8.apk",
+            releaseNotes = "Studio polish and bug fixes.",
+            checkedAtMs = 5000L,
+            sourceLabel = "GitHub (main)",
+            apkUrl = "https://github.com/accessible-dev/accessible-studio/releases/download/v1.2.8/AccessibleStudio_V1.2.8.apk"
+        )
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dummyApk = File(context.cacheDir, "AccessibleStudio_V1.2.8.apk")
+        var updateNowClicked = 0
+        var laterClicked = 0
+        var settingsClicked = 0
+        var installedApkFile: File? = null
+
+        var flowState by mutableStateOf<InAppUpdateFlowState>(InAppUpdateFlowState.Idle)
+
+        composeRule.setContent {
+            AppUpdateAvailableDialog(
+                update = sampleUpdate,
+                flowState = flowState,
+                onUpdateNow = { updateNowClicked++ },
+                onOpenInstallPermissionSettings = { settingsClicked++ },
+                onInstallDownloadedApk = { installedApkFile = it },
+                onLater = { laterClicked++ }
+            )
+        }
+        composeRule.waitForIdle()
+
+        // 1. Idle state displays versionName, changelog, Update Now & Later
+        composeRule.onNodeWithTag("dialog_update_title").assertTextContains("v1.2.8", substring = true)
+        composeRule.onNodeWithTag("txt_update_changelog").assertTextContains("Studio polish and bug fixes.")
+        composeRule.onNodeWithTag("btn_dialog_update_now").assertExists().performClick()
+        composeRule.onNodeWithTag("btn_dialog_update_later").assertExists().performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, updateNowClicked)
+        assertEquals(1, laterClicked)
+
+        // 2. Downloading progress state
+        flowState = InAppUpdateFlowState.Downloading(
+            downloadedBytes = 5L * 1024L * 1024L,
+            totalBytes = 10L * 1024L * 1024L
+        )
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("txt_update_download_progress").assertTextContains("50%", substring = true)
+        composeRule.onNodeWithTag("progress_update_download").assertExists()
+
+        // 3. Unknown Apps Permission guidance state
+        flowState = InAppUpdateFlowState.NeedsUnknownAppsPermission(dummyApk)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("card_unknown_apps_guidance").assertExists()
+        composeRule.onNodeWithTag("btn_dialog_open_install_settings").assertExists().performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, settingsClicked)
+
+        // 4. Ready To Install state
+        flowState = InAppUpdateFlowState.ReadyToInstall(dummyApk)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("txt_update_ready_install").assertExists()
+        composeRule.onNodeWithTag("btn_dialog_install_apk").assertExists().performClick()
+        composeRule.waitForIdle()
+        assertEquals(dummyApk, installedApkFile)
     }
 }

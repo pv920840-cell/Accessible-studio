@@ -92,7 +92,9 @@ import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
 import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibilitySettingsSheet
+import com.example.ui.components.AppUpdateAvailableDialog
 import com.example.ui.components.AudioStudioCommand
+import com.example.ui.components.InAppUpdateFlowState
 import com.example.ui.components.StudioDawTopBar
 import com.example.ui.components.StudioHelpUserGuideDialog
 import com.example.ui.components.StudioWelcomeDialog
@@ -100,6 +102,7 @@ import com.example.ui.components.StudioWhatsNewDialog
 import com.example.ui.screens.BatchProcessingDialog
 import com.example.ui.studio.StudioRootCoordinator
 import com.example.ui.theme.AccessibleStudioTheme
+import com.example.update.ApkDownloadResult
 import com.example.update.AppUpdateChecker
 import com.example.update.UpdateCheckState
 
@@ -121,6 +124,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val savedPrefs = remember { StudioPreferences.loadSettings(applicationContext) }
             val publishConfig = remember { AppUpdateChecker.loadPublishConfig(applicationContext) }
+            val installedAppInfo = remember { AppUpdateChecker.getInstalledAppInfo(applicationContext) }
             var studioSettings by remember { mutableStateOf(savedPrefs) }
             var isHighContrast by remember { mutableStateOf(savedPrefs.isHighContrast) }
             var isHapticsEnabled by remember { mutableStateOf(savedPrefs.isHapticsEnabled) }
@@ -133,6 +137,9 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(StudioPreferences.loadLastUpdateCheckMs(applicationContext))
             }
             var updateCheckState by remember { mutableStateOf<UpdateCheckState>(UpdateCheckState.Idle) }
+            var activeUpdateDialog by remember { mutableStateOf<UpdateCheckState.UpdateAvailable?>(null) }
+            var updateFlowState by remember { mutableStateOf<InAppUpdateFlowState>(InAppUpdateFlowState.Idle) }
+            var dismissedUpdateVersion by remember { mutableStateOf<String?>(null) }
             var hasAutoCheckedThisSession by remember { mutableStateOf(false) }
             var showSettingsSheet by remember { mutableStateOf(false) }
             var showHelpMenuDialog by remember { mutableStateOf(false) }
@@ -143,6 +150,80 @@ class MainActivity : ComponentActivity() {
 
             val activityContext = this@MainActivity
             val appCoroutineScope = rememberCoroutineScope()
+
+            fun launchApkInstallWithPermissionCheck(apkFile: java.io.File) {
+                if (AppUpdateChecker.canInstallUnknownApps(activityContext)) {
+                    updateFlowState = InAppUpdateFlowState.ReadyToInstall(apkFile)
+                    val launched = AppUpdateChecker.installDownloadedApk(activityContext, apkFile)
+                    if (!launched) {
+                        updateFlowState = InAppUpdateFlowState.Error(
+                            "Could not launch Android package installer for this APK."
+                        )
+                    }
+                } else {
+                    updateFlowState = InAppUpdateFlowState.NeedsUnknownAppsPermission(apkFile)
+                    AccessibilityHelper.announceForAccessibility(
+                        activityContext,
+                        "Permission required: allow installing unknown apps for Accessible Studio in Settings."
+                    )
+                }
+            }
+
+            val unknownAppsPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+                contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+            ) {
+                val flow = updateFlowState
+                if (flow is InAppUpdateFlowState.NeedsUnknownAppsPermission) {
+                    if (AppUpdateChecker.canInstallUnknownApps(activityContext)) {
+                        launchApkInstallWithPermissionCheck(flow.apkFile)
+                    } else {
+                        AccessibilityHelper.announceForAccessibility(
+                            activityContext,
+                            "Install unknown apps permission is still disabled. Tap Open Settings to enable it."
+                        )
+                    }
+                }
+            }
+
+            fun startApkDownloadAndInstall(update: UpdateCheckState.UpdateAvailable) {
+                if (updateFlowState is InAppUpdateFlowState.Downloading) return
+                activeUpdateDialog = update
+                updateFlowState = InAppUpdateFlowState.Downloading(0L, -1L)
+                var lastProgressPostMs = 0L
+                appCoroutineScope.launch {
+                    val downloadUrl = update.apkUrl.ifBlank { update.downloadUrl }
+                    when (val result = AppUpdateChecker.downloadApkToCache(
+                        context = applicationContext,
+                        apkUrl = downloadUrl,
+                        versionName = update.latestVersion,
+                        onProgress = { downloaded, total ->
+                            val nowMs = System.currentTimeMillis()
+                            if (nowMs - lastProgressPostMs >= 120L || (total > 0L && downloaded >= total)) {
+                                lastProgressPostMs = nowMs
+                                activityContext.runOnUiThread {
+                                    if (updateFlowState is InAppUpdateFlowState.Downloading) {
+                                        updateFlowState = InAppUpdateFlowState.Downloading(downloaded, total)
+                                    }
+                                }
+                            }
+                        }
+                    )) {
+                        is ApkDownloadResult.Success -> {
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.SUCCESS)
+                            launchApkInstallWithPermissionCheck(result.apkFile)
+                        }
+                        is ApkDownloadResult.OpenInBrowserFallback -> {
+                            updateFlowState = InAppUpdateFlowState.Idle
+                            activeUpdateDialog = null
+                            AppUpdateChecker.openUpdateDownload(activityContext, result.url)
+                        }
+                        is ApkDownloadResult.Error -> {
+                            updateFlowState = InAppUpdateFlowState.Error(result.message)
+                            AccessibilityHelper.announceForAccessibility(activityContext, result.message)
+                        }
+                    }
+                }
+            }
 
             fun persistAndApplySettings(updated: StudioSettingsState) {
                 val normalized = updated.copy(
@@ -173,6 +254,8 @@ class MainActivity : ComponentActivity() {
                 appCoroutineScope.launch {
                     val result = AppUpdateChecker.checkForUpdates(
                         metadataUrl = publishConfig.fallbackMetadataUrl,
+                        currentVersionName = installedAppInfo.versionName,
+                        currentVersionCode = installedAppInfo.versionCode,
                         provider = providerOverride,
                         githubOwner = ownerOverride,
                         githubRepo = repoOverride
@@ -193,10 +276,16 @@ class MainActivity : ComponentActivity() {
                         is UpdateCheckState.UpdateAvailable -> {
                             lastUpdateCheckMs = result.checkedAtMs
                             StudioPreferences.saveLastUpdateCheck(applicationContext, result.checkedAtMs, result.latestVersion)
+                            if (!isAutomatic || dismissedUpdateVersion != result.latestVersion) {
+                                if (updateFlowState !is InAppUpdateFlowState.Downloading) {
+                                    updateFlowState = InAppUpdateFlowState.Idle
+                                }
+                                activeUpdateDialog = result
+                            }
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.DOUBLE_CLICK)
                             AccessibilityHelper.announceForAccessibility(
                                 activityContext,
-                                "Update available: Accessible Studio version ${result.latestVersion}. Open Settings then About to download."
+                                "Update available: Accessible Studio version ${result.latestVersion}."
                             )
                         }
                         is UpdateCheckState.Error -> {
@@ -339,13 +428,19 @@ class MainActivity : ComponentActivity() {
                         },
                         onDownloadUpdate = { url ->
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
-                            val opened = AppUpdateChecker.openUpdateDownload(activityContext, url)
-                            if (!opened) {
-                                android.widget.Toast.makeText(
-                                    activityContext,
-                                    "Could not open download link in browser.",
-                                    android.widget.Toast.LENGTH_SHORT
-                                ).show()
+                            val currentUpdate = updateCheckState as? UpdateCheckState.UpdateAvailable
+                            val candidateApkUrl = currentUpdate?.apkUrl?.takeIf { it.isNotBlank() } ?: url
+                            if (currentUpdate != null && AppUpdateChecker.isDirectApkUrl(candidateApkUrl)) {
+                                startApkDownloadAndInstall(currentUpdate.copy(apkUrl = candidateApkUrl))
+                            } else {
+                                val opened = AppUpdateChecker.openUpdateDownload(activityContext, url)
+                                if (!opened) {
+                                    android.widget.Toast.makeText(
+                                        activityContext,
+                                        "Could not open download link in browser.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
                         },
                         onSaveSettings = { newHighContrast, newHaptics, newExportFormat ->
@@ -421,6 +516,36 @@ class MainActivity : ComponentActivity() {
                             StudioPreferences.setWelcomeHidden(applicationContext, true)
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.SUCCESS)
                             showWelcomeDialog = false
+                        }
+                    )
+                }
+
+                // IN-APP UPDATE AVAILABLE & APK INSTALL DIALOG
+                val dialogUpdate = activeUpdateDialog
+                if (!showWelcomeDialog && dialogUpdate != null) {
+                    AppUpdateAvailableDialog(
+                        update = dialogUpdate,
+                        flowState = updateFlowState,
+                        onUpdateNow = {
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            startApkDownloadAndInstall(dialogUpdate)
+                        },
+                        onOpenInstallPermissionSettings = {
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            runCatching {
+                                unknownAppsPermissionLauncher.launch(
+                                    AppUpdateChecker.createManageUnknownAppSourcesIntent(activityContext)
+                                )
+                            }
+                        },
+                        onInstallDownloadedApk = { apkFile ->
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            launchApkInstallWithPermissionCheck(apkFile)
+                        },
+                        onLater = {
+                            dismissedUpdateVersion = dialogUpdate.latestVersion
+                            activeUpdateDialog = null
+                            updateFlowState = InAppUpdateFlowState.Idle
                         }
                     )
                 }

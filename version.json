@@ -1,9 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 19,
-  "versionName": "1.2.6",
-  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.6.apk",
+  "versionCode": 20,
+  "versionName": "1.2.7",
+  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.7.apk",
   "pageUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/",
-  "apkSizeBytes": 20147789,
-  "releaseNotes": "Replaced legacy noise reduction with a studio-grade Offline Adaptive Spectral & Voice De-Noise engine (2048/4096-pt 75% Overlap STFT Wiener + Bark Smoothing), featuring Learn Noise Profile, Auto Adaptive live noise-floor tracking, Threshold (-60..0 dB), Reduction (0..30 dB), Smoothing (0..100%), Voice/Dialogue Focus, and clickless Real-Time Live Preview with instant A/B Bypass compare."
+  "apkSizeBytes": 20180665,
+  "changelog": "Added automatic GitHub main-branch (version.json) update checking on app launch using PackageInfoCompat, an accessible Update Available dialog showing version and changelog with Update Now & Later actions, direct in-app APK download with live progress, FileProvider package installer integration, and Android 8+ Install Unknown Apps permission guidance.",
+  "releaseNotes": "Added automatic GitHub main-branch (version.json) update checking on app launch using PackageInfoCompat, an accessible Update Available dialog showing version and changelog with Update Now & Later actions, direct in-app APK download with live progress, FileProvider package installer integration, and Android 8+ Install Unknown Apps permission guidance."
 }

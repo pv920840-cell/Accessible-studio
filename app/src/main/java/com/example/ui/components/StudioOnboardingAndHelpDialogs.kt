@@ -118,33 +118,26 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.2.6 — Offline Adaptive Spectral & Voice De-Noise:\n\n" +
-            "1. Replaced Legacy Noise Reduction with Studio Adaptive Spectral De-Noise:\n" +
-            "• Built a 100% offline 2048/4096-point 75% Overlap-Add STFT Wiener + Bark smoothing DSP engine inspired by studio mastering tools.\n" +
-            "• Cleanly eliminates fan noise, motor hum, AC buzz, and broadband room hiss without metallic 'musical noise' or clipping (-0.8 dBFS limiter).\n\n" +
-            "2. Real-Time Live Preview & Instant A/B Bypass Compare:\n" +
-            "• Hear slider and toggle changes live during audio playback with low latency without stopping or restarting playback.\n" +
-            "• Tap the clickless, time-aligned A/B Bypass Compare toggle to instantly switch between Original and De-Noised audio.\n\n" +
-            "3. Learn Mode (Noise Profile) & Auto Adaptive Floor Tracking:\n" +
-            "• Capture a multi-band FFT frequency noise profile directly from any selected noise-only audio segment.\n" +
-            "• Or use Auto Adaptive mode to continuously track and clean changing background noise automatically.\n\n" +
-            "4. Full Studio Controls & Presets (Audio & Video Studio):\n" +
-            "• Fine-tune Threshold (-60 to 0 dB), Reduction (0 to 30 dB), Smoothing / Musical Noise Suppression (0–100%), Voice / Dialogue Focus toggle, and STFT 2048/4096 resolution.\n" +
-            "• Includes one-tap presets (Voice Clean, Fan & Motor, Studio Ultra, Gentle De-Hiss, Music De-Noise) across Effects Rack, Cleaning Workspace, and Video Studio."
+        "What's New in Version 1.2.7 — Automatic GitHub Update Check & In-App APK Installer:\n\n" +
+            "1. Automatic GitHub Main-Branch Update Check on Launch:\n" +
+            "• Automatically checks raw.githubusercontent.com/<owner>/<repo>/main/version.json (with cache-busting) asynchronously on app launch without freezing the UI.\n" +
+            "• Compares remote versionCode via PackageInfoCompat and semantic versionName safely, handling offline or invalid JSON errors silently.\n\n" +
+            "2. Accessible In-App Update Dialog:\n" +
+            "• Displays the new version number and full changelog clearly with accessible \"Update Now\" and \"Later\" actions.\n\n" +
+            "3. Direct APK Download & Package Installer Integration:\n" +
+            "• Downloads the latest APK directly into app cache storage with live progress feedback.\n" +
+            "• Guides Android 8.0+ users cleanly to Allow \"Install unknown apps\" Settings when needed and launches the Android package installer via secure FileProvider."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.2.6 में नया क्या है — नया ऑफ़लाइन Adaptive Noise Reduction व Live Preview:\n\n" +
-            "1. पुराने Noise Reduction की जगह नया Studio Adaptive Spectral De-Noise इंजन:\n" +
-            "• 100% ऑफ़लाइन 2048/4096-point 75% Overlap-Add STFT Wiener + Bark Smoothing DSP इंजन जोड़ा गया है।\n" +
-            "• पंखे की आवाज़, मोटर की भनभनाहट, AC हम और बैकग्राउंड हिस को बिना किसी रोबोटिक आवाज़ ('musical noise') या क्लिपिंग (-0.8 dBFS limiter) के पूरी तरह साफ़ करता है।\n\n" +
-            "2. Real-Time Live Preview और तुरंत A/B Bypass Compare:\n" +
-            "• ऑडियो चलते समय ही बिना प्लेबैक रोके स्लाइडर्स बदलकर तुरंत लाइव बदलाव सुनें।\n" +
-            "• क्लिक-फ्री A/B Bypass Compare बटन से एक टैप में Original और De-Noised आवाज़ की तुरंत तुलना करें।\n\n" +
-            "3. Learn Mode (Noise Profile) और Auto Adaptive ट्रैकिंग:\n" +
-            "• केवल शोर वाले हिस्से को चुनकर multi-band FFT noise profile कैप्चर करें, या Auto Adaptive मोड से लाइव शोर को अपने आप हटने दें।\n\n" +
-            "4. पूरे स्टूडियो कंट्रोल्स और क्विक प्रीसेट्स (ऑडियो व वीडियो दोनों में):\n" +
-            "• Threshold (-60 से 0 dB), Reduction (0 से 30 dB), Smoothing (0–100%), Voice/Dialogue Focus टॉगल, और 2048/4096 FFT रिज़ॉल्यूशन कंट्रोल मिलता है।\n" +
-            "• Effects Rack, Cleaning Workspace और Video Studio में Voice Clean, Fan & Motor, Studio Ultra, Gentle De-Hiss और Music De-Noise प्रीसेट्स उपलब्ध हैं।"
+        "Version 1.2.7 में नया क्या है — ऑटोमैटिक GitHub अपडेट चेक और इन-ऐप APK इंस्टॉलर:\n\n" +
+            "1. ऐप खुलते ही GitHub (main ब्रांच) से ऑटोमैटिक अपडेट चेक:\n" +
+            "• ऐप लॉन्च होते ही बैकग्राउंड में बिना UI को धीमा किए GitHub के main ब्रांच की version.json फ़ाइल से नया वर्ज़न चेक होता है।\n" +
+            "• ऑफ़लाइन रहने या नेटवर्क त्रुटि आने पर भी ऐप बिना किसी क्रैश के सामान्य रूप से चलता है।\n\n" +
+            "2. आसान और TalkBack-फ्रेंडली अपडेट डायलॉग:\n" +
+            "• नया वर्ज़न उपलब्ध होने पर स्क्रीन पर वर्ज़न नंबर और Changelog के साथ \"Update Now\" और \"Later\" बटन दिखते हैं।\n\n" +
+            "3. सीधा APK डाउनलोड और सुरक्षित इंस्टॉलेशन:\n" +
+            "• \"Update Now\" दबाने पर APK लाइव प्रोग्रेस के साथ ऐप के अंदर ही डाउनलोड होता है।\n" +
+            "• Android 8.0+ पर ज़रूरत पड़ने पर \"Install unknown apps\" सेटिंग का मार्गदर्शन मिलता है और FileProvider द्वारा सीधे Android पैकेज इंस्टॉलर खुलता है।"
 }
 
 @Composable

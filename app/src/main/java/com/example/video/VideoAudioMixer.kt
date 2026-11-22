@@ -78,25 +78,25 @@ class VideoAudioMixer(private val context: Context) {
         channels: Int = 1
     ): ShortArray {
         if (pcm.isEmpty() || strength < 0.05f) return pcm
-        val s = strength.coerceIn(0.15f, 1.0f)
-        val studioMax = s >= 0.88f
-        val config = com.example.audio.StudioNoiseReductionConfig(
-            strength = s,
-            humRemovalStrength = (0.55f + s * 0.45f).coerceIn(0f, 1.0f),
-            fanMotorRemovalStrength = (0.55f + s * 0.45f).coerceIn(0f, 1.0f),
-            spectralFloorOverride = if (studioMax) 0.008f else (0.16f - s * 0.145f).coerceIn(0.012f, 0.22f),
-            pauseAttenuationFloor = if (studioMax) 0.005f else (0.42f - s * 0.40f).coerceIn(0.012f, 0.45f),
-            lowCutHz = 62f + s * 28f,
-            lowCutAttenuation = 0.45f + s * 0.42f,
-            preserveHighFrequencies = true,
-            vocalClarityBoost = if (studioMax) 0.45f else 0.18f * s,
-            studioMaxClean = studioMax
+        val params = com.example.audio.SpectralDenoiseParams.fromLegacyIntensity(
+            intensity = strength.coerceIn(0.15f, 1.0f),
+            voiceFocus = true
         )
-        val cleaned = com.example.audio.StudioNoiseReducer.reduceNoise(
+        return reduceVideoNoise(pcm, params, sampleRate, channels)
+    }
+
+    fun reduceVideoNoise(
+        pcm: ShortArray,
+        params: com.example.audio.SpectralDenoiseParams,
+        sampleRate: Int = this.sampleRate,
+        channels: Int = 1
+    ): ShortArray {
+        if (pcm.isEmpty() || params.bypass || params.reductionDb < 0.25f) return pcm
+        val cleaned = com.example.audio.AdaptiveSpectralDenoiser.processOffline(
             samples = pcm,
             sampleRate = sampleRate,
             channels = channels,
-            config = config
+            params = params
         )
         // High sensitivity threshold avoids softening sharp consonants ('t', 'k', 's')
         return StudioAudioProcessor.deClickDeCrackle(cleaned, sensitivityThreshold = 6800)
@@ -211,7 +211,8 @@ class VideoAudioMixer(private val context: Context) {
         soundEffects: List<SoundEffectOverlay>,
         speed: Float,
         keepPitch: Boolean,
-        reverse: Boolean
+        reverse: Boolean,
+        noiseDenoiseParams: com.example.audio.SpectralDenoiseParams? = null
     ): ShortArray = withContext(Dispatchers.IO) {
         val targetSamples = ((targetDurationMs.coerceAtLeast(500L) / 1000.0) * sampleRate).toInt()
         var primary = when {
@@ -224,7 +225,11 @@ class VideoAudioMixer(private val context: Context) {
         }
 
         if (noiseReduceEnabled && primary.isNotEmpty() && audioOption != VideoAudioOption.MUTE) {
-            primary = reduceVideoNoise(primary, noiseReduceIntensity)
+            primary = if (noiseDenoiseParams != null) {
+                reduceVideoNoise(primary, noiseDenoiseParams)
+            } else {
+                reduceVideoNoise(primary, noiseReduceIntensity)
+            }
         }
 
         val musicPcms = musicTracks.map { track ->
@@ -422,7 +427,8 @@ class VideoAudioMixer(private val context: Context) {
         format: String,
         outputFileName: String,
         applyNoiseReduction: Boolean = false,
-        onProgress: (Float) -> Unit
+        onProgress: (Float) -> Unit,
+        noiseDenoiseParams: com.example.audio.SpectralDenoiseParams? = null
     ): File = withContext(Dispatchers.IO) {
         onProgress(0.1f)
         var pcm = decodeUriToPcm(videoUri)
@@ -432,7 +438,11 @@ class VideoAudioMixer(private val context: Context) {
         }
         onProgress(0.45f)
         if (applyNoiseReduction) {
-            pcm = reduceVideoNoise(pcm, 0.7f)
+            pcm = if (noiseDenoiseParams != null) {
+                reduceVideoNoise(pcm, noiseDenoiseParams)
+            } else {
+                reduceVideoNoise(pcm, 0.7f)
+            }
         }
         onProgress(0.65f)
 

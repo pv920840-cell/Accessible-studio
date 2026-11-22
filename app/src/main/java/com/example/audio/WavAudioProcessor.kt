@@ -61,9 +61,15 @@ data class AudioEditSettings(
     val reverbDamping: Float = 0.40f,
     val reverbMix: Float = 0.35f,
 
-    // Noise Reduction & Noise Gate
+    // Noise Reduction (Adaptive Spectral / Voice De-Noise) & Noise Gate
     val noiseReductionEnabled: Boolean = false,
     val noiseReductionIntensity: Float = 0.60f,
+    val noiseThresholdDb: Float = -32.0f,
+    val noiseReductionDb: Float = 18.0f,
+    val noiseSmoothing: Float = 0.65f,
+    val noiseVoiceFocus: Boolean = true,
+    val noiseBypass: Boolean = false,
+    val noiseFftSize: Int = 2048,
     val noiseGateEnabled: Boolean = false,
     val noiseGateThreshold: Float = 0.08f,
 
@@ -74,7 +80,30 @@ data class AudioEditSettings(
 
     // Studio Pro FX Rack
     val studioFx: StudioFxSettings = StudioFxSettings()
-)
+) {
+    fun effectiveDenoiseParams(): SpectralDenoiseParams {
+        val usingDefaultRx =
+            abs(noiseThresholdDb - (-32.0f)) < 0.01f &&
+                abs(noiseReductionDb - 18.0f) < 0.01f &&
+                abs(noiseSmoothing - 0.65f) < 0.01f &&
+                noiseVoiceFocus &&
+                !noiseBypass &&
+                noiseFftSize == 2048
+        return if (usingDefaultRx && abs(noiseReductionIntensity - 0.60f) > 0.02f) {
+            SpectralDenoiseParams.fromLegacyIntensity(noiseReductionIntensity, noiseVoiceFocus)
+        } else {
+            SpectralDenoiseParams(
+                thresholdDb = noiseThresholdDb,
+                reductionDb = noiseReductionDb,
+                smoothing = noiseSmoothing,
+                voiceDialogueFocus = noiseVoiceFocus,
+                bypass = noiseBypass,
+                fftSize = noiseFftSize,
+                adaptiveMode = true
+            ).clamped()
+        }
+    }
+}
 
 enum class EqPreset(val displayName: String) {
     NORMAL("Normal / Flat"),
@@ -1221,10 +1250,9 @@ class WavAudioProcessor(private val context: Context? = null) {
     }
 
     /**
-     * Studio-Clean Spectral + Harmonic Noise Reduction:
-     * Removes stationary ceiling/table fans, motors, air conditioning, hiss, room tone,
-     * and 50/60 Hz harmonic hum using Two-Step Decision-Directed Wiener STFT filtering while
-     * preserving natural voice presence, high-frequency sibilance/air, and zero robotic artifacts.
+     * Offline Studio Adaptive Spectral & Voice De-Noise (iZotope RX inspired):
+     * 75% overlap Hann STFT + Two-Step Decision-Directed Wiener filtering + Frequency-dependent
+     * musical-noise suppression + optional Learn Noise Profile & Voice/Dialogue Focus.
      */
     fun applyNoiseReduction(input: ShortArray, intensity: Float): ShortArray =
         applyNoiseReduction(input, intensity, this.sampleRate, 1)
@@ -1237,43 +1265,36 @@ class WavAudioProcessor(private val context: Context? = null) {
         customNoisePrintPcm: ShortArray? = null
     ): ShortArray {
         if (input.isEmpty() || intensity < 0.02f) return input
-        val strength = intensity.coerceIn(0.05f, 1.0f)
-        val isStudioMax = strength >= 0.94f
-
-        val config = StudioNoiseReductionConfig(
-            strength = strength,
-            humRemovalStrength = (0.48f + strength * 0.52f).coerceIn(0f, 1.0f),
-            fanMotorRemovalStrength = (0.42f + strength * 0.58f).coerceIn(0f, 1.0f),
-            spectralFloorOverride = when {
-                isStudioMax -> 0.007f
-                strength <= 0.40f -> (0.26f - strength * 0.30f).coerceIn(0.12f, 0.26f)
-                else -> (0.13f - (strength - 0.40f) * 0.23f).coerceIn(0.010f, 0.13f)
-            },
-            pauseAttenuationFloor = when {
-                isStudioMax -> 0.004f
-                strength <= 0.40f -> (0.72f - strength * 0.72f).coerceIn(0.38f, 0.72f)
-                else -> (0.36f - (strength - 0.40f) * 0.66f).coerceIn(0.010f, 0.36f)
-            },
-            lowCutHz = if (isStudioMax) 88f else (44f + strength * 36f),
-            lowCutAttenuation = 0.28f + strength * 0.52f,
-            preserveHighFrequencies = true,
-            vocalClarityBoost = if (isStudioMax) 0.55f else 0f,
-            studioMaxClean = isStudioMax,
-            customNoisePrintPcm = customNoisePrintPcm
-        )
-
-        return StudioNoiseReducer.reduceNoise(
+        val params = SpectralDenoiseParams.fromLegacyIntensity(intensity, voiceFocus = true)
+            .copy(fftSize = if (sampleRate > 56_000) 4096 else 2048)
+        val profile = customNoisePrintPcm?.let {
+            if (it.size >= 256) AdaptiveSpectralDenoiser.captureNoiseProfile(it, sampleRate, params.fftSize) else null
+        }
+        return AdaptiveSpectralDenoiser.processOffline(
             samples = input,
             sampleRate = sampleRate,
             channels = channels,
-            config = config
+            params = params,
+            noiseProfile = profile
         )
     }
 
-    /**
-     * One-tap Offline Studio Deep Clean: aggressively strips ceiling/table fans, motors, pumps,
-     * AC rumble, 50/60Hz electrical hum, and broadband hiss to studio silence while polishing voice clarity.
-     */
+    fun applyAdaptiveNoiseReduction(
+        input: ShortArray,
+        params: SpectralDenoiseParams,
+        sampleRate: Int = this.sampleRate,
+        channels: Int = 1,
+        noiseProfile: SpectralNoiseProfile? = null
+    ): ShortArray {
+        return AdaptiveSpectralDenoiser.processOffline(
+            samples = input,
+            sampleRate = sampleRate,
+            channels = channels,
+            params = params,
+            noiseProfile = noiseProfile
+        )
+    }
+
     fun studioDeepClean(
         input: ShortArray,
         sampleRate: Int = this.sampleRate,
@@ -1359,9 +1380,9 @@ class WavAudioProcessor(private val context: Context? = null) {
             pcm = applyNoiseGate(pcm, settings.noiseGateThreshold, sampleRate, channels)
         }
 
-        // 2. Noise Reduction
-        if (settings.noiseReductionEnabled) {
-            pcm = applyNoiseReduction(pcm, settings.noiseReductionIntensity, sampleRate, channels)
+        // 2. Adaptive Spectral De-Noise (iZotope RX inspired)
+        if (settings.noiseReductionEnabled && !settings.noiseBypass) {
+            pcm = applyAdaptiveNoiseReduction(pcm, settings.effectiveDenoiseParams(), sampleRate, channels)
         }
 
         // 3. Bass & Treble booster

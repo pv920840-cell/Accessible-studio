@@ -54,21 +54,21 @@ object StudioUserGuideContent {
             "• Use File -> New Blank Project to create a clean empty or silent project tab.\n" +
             "• Open multiple files in separate tabs and switch tracks anytime.\n" +
             "• Tap Record on the transport dock to capture live microphone audio.\n\n" +
-            "2. Select, Delete, Paste & Mix Audio:\n" +
+            "2. Select, Delete, Mute, Paste & Mix Audio:\n" +
             "• Use Selection -> Select All (or [ Start / ] End markers) to mark any region.\n" +
-            "• Use Edit -> Copy, Cut, Delete, Paste, Undo, and Redo.\n" +
-            "• Clean Replace & Mix workflow: open a blank or main tab, run Select All -> Delete if clearing old audio, Paste your new track, and open Mix Audio (File or Edit menu) to blend clipboard, open tabs, or phone audio files with custom volume balance.\n\n" +
-            "3. Audio Effects & Per-Effect Presets:\n" +
-            "• Open Effect for Repair, Cleaning, Compressor, Peak Limiter, Noise Reduction, 7-Band EQ, Echo, Reverb, Speed/Pitch, Flanger, and Chorus.\n" +
+            "• Use Edit -> Copy, Cut, Mute Selection, Delete, Paste, Undo, and Redo.\n" +
+            "• Clean Replace & Mix workflow: open a blank or main tab, run Select All -> Delete if clearing old audio, Paste your new track, and open Mix Audio or Voice Over (File, Edit, or Tools menu) to blend clipboard, open tabs, or phone audio files with Auto-Ducking.\n\n" +
+            "3. Audio Effects, Adaptive De-Noise & Auto Gain:\n" +
+            "• Open Effect for Repair, Cleaning, Adaptive Noise Reduction (with Real-Time Live Preview, Learn Mode, and A/B Compare), Auto Gain, Compressor, Peak Limiter, 7-Band EQ, Echo, Reverb, Speed/Pitch, Flanger, and Chorus.\n" +
             "• Inside each effect panel, use the Presets menu at the top to apply studio presets, fine-tune with custom sliders, or choose Default / Reset.\n\n" +
-            "4. Playback & Scrubbing:\n" +
-            "• Play 1 plays the active selection; Play 2 plays continuously.\n" +
-            "• Tap -5s / +5s for audible reverse rewind or fast forward; tap again to resume.\n\n" +
+            "4. Playback, View, Scrubbing & Rewind/Forward Speed:\n" +
+            "• Play 1 plays the active selection; Play 2 plays continuously; toggle Follow Cursor and Time/Amplitude Zoom in View.\n" +
+            "• Tap -5s / +5s for audible reverse rewind or fast forward (adjust rewind/forward speed in Audio Editing); tap again to resume.\n\n" +
             "5. Save, Original File Names & Export Settings:\n" +
             "• Saving preserves the exact file name you opened.\n" +
             "• Open Settings from the Home screen to choose your default Export Selection Format (WAV, MP3, FLAC, M4A), High Contrast mode, and Haptic vibration, then tap Save All Settings.\n\n" +
             "6. Video Studio & Batch Processing:\n" +
-            "• Switch to the Video Studio tab to trim video, replace audio tracks, apply effects, and export MP4.\n" +
+            "• Switch to the Video Studio tab to trim video, reduce fan/room noise, replace audio tracks, apply effects, and export MP4.\n" +
             "• Use Vocal & Karaoke Maker (in Project Hub or Tools menu) to extract singing vocals only or remove vocals to create Karaoke instrumentals.\n" +
             "• Use Tools -> Batch Processing to convert or process multiple files at once.\n" +
             "• Exports save offline to Music/Audio Studio/ and Movies/Accessible Studio/."
@@ -82,21 +82,21 @@ object StudioUserGuideContent {
             "• खाली या साइलेंस प्रोजेक्ट बनाने के लिए File -> New Blank Project चुनें।\n" +
             "• एक साथ कई फ़ाइलें अलग-अलग टैब्स में खोलें और कभी भी स्विच करें।\n" +
             "• लाइव आवाज़ रिकॉर्ड करने के लिए नीचे Record बटन का उपयोग करें।\n\n" +
-            "2. Select All, Delete, Paste और Audio Mix:\n" +
+            "2. Select All, Delete, Mute Selection, Paste और Audio Mix:\n" +
             "• किसी भी हिस्से को चुनने के लिए Selection -> Select All (या [ Start / ] End) का उपयोग करें।\n" +
-            "• Edit मेनू से Copy, Cut, Delete, Paste, Undo और Redo करें।\n" +
-            "• नया ऑडियो जोड़ने या मिक्स करने के लिए: Select All -> Delete से पुराना ऑडियो हटाकर नई फ़ाइल Paste करें, या File / Edit -> Mix Audio खोलकर दो या अधिक ऑडियो को वॉल्यूम बैलेंस के साथ मिक्स करें।\n\n" +
-            "3. ऑडियो इफ़ेक्ट्स और हर इफ़ेक्ट में Presets:\n" +
-            "• Effect मेनू में Compressor, Peak Limiter, Noise Reduction, 7-Band EQ, Echo, Reverb, Speed/Pitch, Flanger और Chorus उपलब्ध हैं।\n" +
+            "• Edit मेनू से Copy, Cut, Mute Selection, Delete, Paste, Undo और Redo करें।\n" +
+            "• नया ऑडियो जोड़ने या मिक्स करने के लिए: Select All -> Delete से पुराना ऑडियो हटाकर नई फ़ाइल Paste करें, या File / Edit -> Mix Audio व Tools -> Voice Over (Auto-Ducking के साथ) का उपयोग करें।\n\n" +
+            "3. ऑडियो इफ़ेक्ट्स, Adaptive Noise Reduction और Auto Gain:\n" +
+            "• Effect मेनू में Adaptive Noise Reduction (Live Preview, Learn Mode व A/B Compare के साथ), Auto Gain, Compressor, Peak Limiter, 7-Band EQ, Echo, Reverb, Speed/Pitch, Flanger और Chorus उपलब्ध हैं।\n" +
             "• हर इफ़ेक्ट पैनल के ऊपर Presets मेनू दिया गया है — प्रीसेट चुनते ही स्लाइडर्स अपने आप सेट हो जाते हैं, और आप चाहें तो स्लाइडर्स से कस्टम बदलाव या Default / Reset कर सकते हैं।\n\n" +
-            "4. प्लेबैक और नेविगेशन:\n" +
-            "• Play 1 चुने हुए हिस्से को सुनाता है और Play 2 लगातार प्ले करता है।\n" +
-            "• -5s / +5s बटन से सुनते हुए तेज़ी से पीछे या आगे जाएं।\n\n" +
+            "4. प्लेबैक, View, नेविगेशन और Rewind/Forward स्पीड:\n" +
+            "• Play 1 चुने हुए हिस्से को सुनाता है और Play 2 लगातार प्ले करता है; View में Follow Cursor व Time/Amplitude Zoom चुनें।\n" +
+            "• -5s / +5s बटन से सुनते हुए तेज़ी से पीछे या आगे जाएं (ऑडियो एडिटिंग में रिवाइंड/फॉरवर्ड स्पीड बदल सकते हैं)।\n\n" +
             "5. फ़ाइल सेव नाम और एक्सपोर्ट सेटिंग्स:\n" +
             "• सेव करते समय आपकी ओपन की गई फ़ाइल का वही मूल नाम सुरक्षित रहता है।\n" +
             "• होम स्क्रीन पर Settings खोलकर Export Selection Format (WAV, MP3, FLAC, M4A), High Contrast और Haptics चुनें और Save All Settings दबाएं।\n\n" +
             "6. वीडियो स्टूडियो और बैच प्रोसेसिंग:\n" +
-            "• Video Studio टैब से वीडियो ट्रिम, ऑडियो रिप्लेस और MP4 एक्सपोर्ट करें।\n" +
+            "• Video Studio टैब से वीडियो ट्रिम, Adaptive Noise Reduction, ऑडियो रिप्लेस और MP4 एक्सपोर्ट करें।\n" +
             "• किसी गाने से केवल आवाज़ (Vocals) निकालने या Karaoke (बिना आवाज़ का म्यूज़िक) बनाने के लिए Project Hub या Tools -> Vocal Extractor & Karaoke Maker का उपयोग करें।\n" +
             "• Tools -> Batch Processing से कई फ़ाइलों को एक साथ प्रोसेस करें। सभी फ़ाइलें फ़ोन में Music/Audio Studio/ और Movies/Accessible Studio/ में सेव होती हैं।"
 
@@ -118,72 +118,33 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "1. Long Audio Duration & Playback Fix (6+ Minutes):\n" +
-            "• Removed the 5-minute (300s) import cutoff and fixed MediaCodec EOS/format handling so 6+ minute and long audio tracks import, play, scrub, and export completely.\n\n" +
-            "2. Mute Selection in Edit Menu:\n" +
-            "• Added Edit -> Mute Selection to silence audio between Trim Start and Trim End markers while preserving total track duration and full Undo/Redo support.\n\n" +
-            "3. Complete View, Time Zoom, Go To & Amplitude Zoom:\n" +
-            "• Added All, Selection, Specify..., Previous view history, Preset, Follow Cursor toggle, Time Zoom (Zoom In, Zoom Out, 10:1, 1:1, 1s, 10s, 1m, 10m, 1h), Go To (Start, Finish, Beginning, End), and Amplitude Zoom (Vertical Zoom In/Out/All).\n\n" +
-            "4. Blank Canvas, Multi-Tab Editing & Audio Mixing:\n" +
-            "• Open multiple project tabs, create 0s or silent Blank Projects, delete entire audio cleanly with Select All -> Delete, paste cleanly, and mix tracks with volume balance & peak limiter.\n\n" +
-            "5. Saved Filenames, Export Settings & Effect Presets:\n" +
-            "• Original filenames are preserved when saving, Accessibility Settings (Export Format, High Contrast, Haptics) persist properly, and Effects include built-in Presets with Reset.\n\n" +
-            "6. Bilingual User Guide & Launch Welcome:\n" +
-            "• Added English & Hindi User Guide inside Help, first-launch Welcome modal with Don't Show Again & OK, plus Batch Processing trim and empty-canvas stability fixes.\n\n" +
-            "7. Dual-File / Multi-Tab Import & Playback Fix:\n" +
-            "• Fixed playback race conditions when opening or switching between multiple audio tabs, added end-of-track auto-rewind on Play, direct RIFF WAV + 24-bit/32-bit Float PCM decoding, and Import Multiple Files (Tabs).\n\n" +
-            "8. Help Menu & Direct What's New Modal:\n" +
-            "• Added a dedicated Help dropdown menu in the top DAW bar with direct access to What's New and the bilingual User Guide.\n\n" +
-            "9. Version 1.1 — Auto Gain & Voice Over Music Presets:\n" +
-            "• Added one-tap Auto Gain leveling in Effects and Workspace to bring uneven audio to a clear, balanced loudness with peak protection.\n" +
-            "• Upgraded Tools -> Voice Over Auto-Ducking with a separate Add Audio / Music File button alongside Clipboard, Auto-Ducking toggle, and presets (Tutorial, Podcast, Vlog / YouTube, Story / Calm, Steady Music).\n\n" +
-            "10. Version 1.1 — Trim → Save → Export Fix & Cleaner UI:\n" +
-            "• Fixed Trim & Cut so adjusting Start/End markers and tapping Save crops and commits the trimmed audio before final export.\n" +
-            "• Streamlined top & home bars by keeping About Accessible Studio cleanly inside Settings and removing extra About & Open Accessibility Settings icons.\n\n" +
-            "11. Version 1.2 — Isolate Spoken Audio (inside Effect -> Noise Reduction):\n" +
-            "• Added STFT Adaptive Spectral Subtraction & 50/60 Hz Harmonic Hum Suppression directly inside Effect -> Noise Reduction & De-Click Cleaner.\n" +
-            "• Includes Light Filtering, Medium Filtering, and Strong Filtering presets plus fine sliders preserving pristine vocal clarity.\n" +
-            "• Consolidated User Guide and What's New cleanly into a single location inside Settings -> About Accessible Studio.\n\n" +
-            "12. Vocal Extractor & Karaoke Maker:\n" +
-            "• Added offline Vocal Extractor (Vocals Only / Acapella) and Karaoke Maker (Instrumental with bass preservation) in Project Hub and Tools -> Vocal Extractor & Karaoke Maker.\n" +
-            "• Supports Stereo Mid/Side + STFT phase separation on stereo songs, Mono spectral harmonic separation, Gentle/Balanced/Deep presets, stem preview, multi-tab splitting, and direct stem export.\n\n" +
-            "13. Version 1.2.5 — Offline Studio Ultra Clean (Fan, Motor & Background Noise Remover):\n" +
-            "• Upgraded the 100% offline noise reduction engine to 2048-pt 4x Overlap-Add STFT, 4th-order Butterworth sub-sonic rumble cut, Two-Step Decision-Directed Wiener filtering, and Adaptive Fan & Motor Harmonic Hunter (40 Hz–4,500 Hz).\n" +
-            "• Added one-tap 'Studio Ultra (Fan & Motor)' preset and 'Learn Noise Print (Selection)' in Effects & Cleaning, Full DAW Noise Reduction, and Video Noise Reducer to eliminate ceiling fans, motors, AC, hum & hiss completely while preserving broadcast vocal clarity."
+        "What's New in Version 1.2.6 — Offline Adaptive Spectral & Voice De-Noise:\n\n" +
+            "1. Replaced Legacy Noise Reduction with Studio Adaptive Spectral De-Noise:\n" +
+            "• Built a 100% offline 2048/4096-point 75% Overlap-Add STFT Wiener + Bark smoothing DSP engine inspired by studio mastering tools.\n" +
+            "• Cleanly eliminates fan noise, motor hum, AC buzz, and broadband room hiss without metallic 'musical noise' or clipping (-0.8 dBFS limiter).\n\n" +
+            "2. Real-Time Live Preview & Instant A/B Bypass Compare:\n" +
+            "• Hear slider and toggle changes live during audio playback with low latency without stopping or restarting playback.\n" +
+            "• Tap the clickless, time-aligned A/B Bypass Compare toggle to instantly switch between Original and De-Noised audio.\n\n" +
+            "3. Learn Mode (Noise Profile) & Auto Adaptive Floor Tracking:\n" +
+            "• Capture a multi-band FFT frequency noise profile directly from any selected noise-only audio segment.\n" +
+            "• Or use Auto Adaptive mode to continuously track and clean changing background noise automatically.\n\n" +
+            "4. Full Studio Controls & Presets (Audio & Video Studio):\n" +
+            "• Fine-tune Threshold (-60 to 0 dB), Reduction (0 to 30 dB), Smoothing / Musical Noise Suppression (0–100%), Voice / Dialogue Focus toggle, and STFT 2048/4096 resolution.\n" +
+            "• Includes one-tap presets (Voice Clean, Fan & Motor, Studio Ultra, Gentle De-Hiss, Music De-Noise) across Effects Rack, Cleaning Workspace, and Video Studio."
 
     const val WHATS_NEW_HINDI =
-        "1. लंबे ऑडियो (6+ मिनट) ड्यूरेशन और प्लेबैक बग फ़िक्स:\n" +
-            "• 5 मिनट (300 सेकंड) पर रुकने की सीमा हटा दी गई है और MediaCodec डिकोडिंग को ठीक किया गया है—अब 6 मिनट या उससे लंबे ऑडियो पूरी लंबाई के साथ इम्पोर्ट, प्ले और एक्सपोर्ट होते हैं।\n\n" +
-            "2. Edit मेनू में Mute Selection:\n" +
-            "• अब Edit -> Mute Selection से Trim Start और Trim End मार्कर के बीच का ऑडियो शांत (0) कर सकते हैं। इससे कुल समय नहीं बदलता और Undo/Redo भी काम करता है।\n\n" +
-            "3. नए View, Time Zoom, Go To और Amplitude Zoom विकल्प:\n" +
-            "• View मेनू में All, Selection, Specify..., Previous, Preset, Follow Cursor, Time Zoom (Zoom In/Out, 10:1, 1:1, 1s, 10s, 1m, 10m, 1h), Go To (Start, Finish, Beginning, End), और Vertical Amplitude Zoom जोड़े गए हैं।\n\n" +
-            "4. मल्टी-टैब, ब्लैंक प्रोजेक्ट और ऑडियो मिक्सिंग:\n" +
-            "• कई फ़ाइलें अलग टैब में खोलें, New Blank Project बनाएं, Select All -> Delete से पूरा ट्रैक साफ करके नया ऑडियो Paste और Mix करें।\n\n" +
-            "5. ओरिजिनल फ़ाइल नाम, एक्सपोर्ट सेटिंग्स और इफ़ेक्ट Presets:\n" +
-            "• सेव करते समय मूल फ़ाइल नाम सुरक्षित रहता है, Export Format व Settings सेव होती हैं, और इफ़ेक्ट्स में Presets व Reset बटन मिलते हैं।\n\n" +
-            "6. हिंदी-अंग्रेज़ी हेल्प गाइड और वेलकम स्क्रीन:\n" +
-            "• Help में पूरी गाइड, पहली बार ऐप खोलने पर Welcome डायलॉग (Don't Show Again और OK बटन के साथ), तथा Batch Processing क्रैश फ़िक्स शामिल किए गए हैं।\n\n" +
-            "7. दो फ़ाइलें / मल्टी-टैब इम्पोर्ट और प्लेबैक बग फ़िक्स:\n" +
-            "• दो या अधिक ऑडियो फ़ाइलें खोलने या टैब बदलने पर प्लेबैक न होने की समस्या ठीक कर दी गई है। साथ ही 8/16/24/32-बिट और Float WAV डायरेक्ट डिकोडिंग, अंत से ऑटो-रीस्टार्ट और एक साथ कई फ़ाइलें खोलने का बटन जोड़ा गया है।\n\n" +
-            "8. Help मेनू में सीधा What's New विकल्प:\n" +
-            "• शीर्ष मेनू बार में नया Help मेनू जोड़ा गया है, जहाँ से आप सीधे What's New डायलॉग खोलकर सभी हालिया बदलाव और सुधार देख सकते हैं।\n\n" +
-            "9. Version 1.1 — Auto Gain लेवलिंग और Voice Over म्यूज़िक प्रीसेट्स:\n" +
-            "• ऑडियो के उतार-चढ़ाव को एक समान स्पष्ट लेवल पर लाने के लिए Auto Gain फ़ीचर जोड़ा गया है।\n" +
-            "• Tools -> Voice Over में Clipboard के साथ अलग से Add Audio / Music File चुनने का बटन, Auto-Ducking ऑन/ऑफ़ टॉगल और प्रीसेट्स (Tutorial, Podcast, Vlog / YouTube, Story / Calm, Steady Music) जोड़े गए हैं।\n\n" +
-            "10. Version 1.1 — Trim → Save → Export बग फ़िक्स और साफ नेविगेशन:\n" +
-            "• Trim & Cut में Start/End मार्कर सेट करके Save दबाने पर ट्रिम किया हुआ ऑडियो सीधे प्रोजेक्ट में सेव होकर सही अवधि के साथ एक्सपोर्ट होता है।\n" +
-            "• About सेक्शन को केवल Settings के अंदर रखा गया है और बाहर के अतिरिक्त About व Open Accessibility Settings बटन हटा दिए गए हैं।\n\n" +
-            "11. Version 1.2 — Noise Reduction में Isolate Spoken Audio और साफ़ मेनू:\n" +
-            "• अब Effect -> Noise Reduction के अंदर ही Adaptive Spectral Subtraction और 50/60 Hz Hum सप्रेशन इंजन जोड़ा गया है।\n" +
-            "• इसमें Light, Medium और Strong फ़िल्टरिंग प्रीसेट्स मिलते हैं जो बैकग्राउंड शोर हटाकर आवाज़ की स्पष्टता को बिल्कुल साफ़ बनाए रखते हैं।\n" +
-            "• अब User Guide और What's New दोनों बटन एक ही जगह — Settings -> About Accessible Studio के अंदर उपलब्ध हैं।\n\n" +
-            "12. Vocal Extractor और Karaoke Maker फ़ीचर:\n" +
-            "• अब Project Hub और Tools -> Vocal Extractor & Karaoke Maker से किसी भी गाने से केवल सिंगिंग वोकल्स (Vocals Only) अलग कर सकते हैं या लीड आवाज़ हटाकर Karaoke (Instrumental) बना सकते हैं।\n" +
-            "• स्टीरियो गानों के लिए Stereo Mid/Side + STFT इंजन (बेस सुरक्षित रखते हुए), Gentle/Balanced/Deep प्रीसेट्स, स्टेम प्रिव्यू और अलग-अलग फ़ाइल सेव करने की सुविधा जोड़ी गई है।\n\n" +
-            "13. Version 1.2.5 — 100% ऑफ़लाइन Studio Ultra Clean (पंखा, मोटर और सारा शोर हटाएं):\n" +
-            "• नए 2048-pt 4x-Overlap STFT, 4th-order सब-सोनिक रम्बल कट और Adaptive Fan & Motor Harmonic Hunter (40 Hz–4,500 Hz) इंजन से सीलिंग/टेबल फैन, मोटर की भनभनाहट, AC और बैकग्राउंड शोर पूरी तरह साफ़ होता है।\n" +
-            "• Effects & Cleaning, Full DAW Noise Reduction और Video Noise Reducer में 'Studio Ultra (Fan & Motor)' व चुने हुए हिस्से से 'Learn Noise Print' फ़ीचर जोड़ा गया है ताकि आवाज़ बिल्कुल स्टूडियो क्वालिटी की मिले।"
+        "Version 1.2.6 में नया क्या है — नया ऑफ़लाइन Adaptive Noise Reduction व Live Preview:\n\n" +
+            "1. पुराने Noise Reduction की जगह नया Studio Adaptive Spectral De-Noise इंजन:\n" +
+            "• 100% ऑफ़लाइन 2048/4096-point 75% Overlap-Add STFT Wiener + Bark Smoothing DSP इंजन जोड़ा गया है।\n" +
+            "• पंखे की आवाज़, मोटर की भनभनाहट, AC हम और बैकग्राउंड हिस को बिना किसी रोबोटिक आवाज़ ('musical noise') या क्लिपिंग (-0.8 dBFS limiter) के पूरी तरह साफ़ करता है।\n\n" +
+            "2. Real-Time Live Preview और तुरंत A/B Bypass Compare:\n" +
+            "• ऑडियो चलते समय ही बिना प्लेबैक रोके स्लाइडर्स बदलकर तुरंत लाइव बदलाव सुनें।\n" +
+            "• क्लिक-फ्री A/B Bypass Compare बटन से एक टैप में Original और De-Noised आवाज़ की तुरंत तुलना करें।\n\n" +
+            "3. Learn Mode (Noise Profile) और Auto Adaptive ट्रैकिंग:\n" +
+            "• केवल शोर वाले हिस्से को चुनकर multi-band FFT noise profile कैप्चर करें, या Auto Adaptive मोड से लाइव शोर को अपने आप हटने दें।\n\n" +
+            "4. पूरे स्टूडियो कंट्रोल्स और क्विक प्रीसेट्स (ऑडियो व वीडियो दोनों में):\n" +
+            "• Threshold (-60 से 0 dB), Reduction (0 से 30 dB), Smoothing (0–100%), Voice/Dialogue Focus टॉगल, और 2048/4096 FFT रिज़ॉल्यूशन कंट्रोल मिलता है।\n" +
+            "• Effects Rack, Cleaning Workspace और Video Studio में Voice Clean, Fan & Motor, Studio Ultra, Gentle De-Hiss और Music De-Noise प्रीसेट्स उपलब्ध हैं।"
 }
 
 @Composable
@@ -374,7 +335,7 @@ fun StudioWhatsNewDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "Recent Updates & Fixes (English)",
+                            text = "What's New in Version ${com.example.BuildConfig.VERSION_NAME} (English)",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Black,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -399,7 +360,7 @@ fun StudioWhatsNewDialog(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "ताज़ा बदलाव और सुधार (हिंदी)",
+                            text = "Version ${com.example.BuildConfig.VERSION_NAME} में नया क्या है (हिंदी)",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Black,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,

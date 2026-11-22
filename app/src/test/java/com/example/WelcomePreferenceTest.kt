@@ -60,13 +60,21 @@ class WelcomePreferenceTest {
         assertTrue(combined.contains("Accessible Studio"))
         assertTrue(combined.contains("Mute Selection"))
         assertTrue(combined.contains("Follow Cursor"))
-        assertTrue(combined.contains("Version 1.2"))
-        assertTrue(combined.contains("Isolate Spoken Audio"))
         assertTrue(combined.contains("Auto Gain"))
         assertTrue(combined.contains("Voice Over"))
         assertTrue(combined.contains("हिंदी") || combined.contains("कैसे"))
         assertFalse(combined.contains("goldwave", ignoreCase = true))
         assertFalse(combined.contains("gurudev", ignoreCase = true))
+
+        // What's New inside About must show ONLY the current version's changes (older versions removed)
+        val whatsNewCombined = "${StudioUserGuideContent.WHATS_NEW_ENGLISH}\n${StudioUserGuideContent.WHATS_NEW_HINDI}"
+        assertTrue(whatsNewCombined.contains(com.example.BuildConfig.VERSION_NAME))
+        assertTrue(whatsNewCombined.contains("Adaptive Spectral"))
+        assertTrue(whatsNewCombined.contains("Real-Time Live Preview"))
+        assertTrue(whatsNewCombined.contains("A/B Bypass"))
+        assertFalse(whatsNewCombined.contains("Version 1.1"))
+        assertFalse(whatsNewCombined.contains("Version 1.2 —"))
+        assertFalse(whatsNewCombined.contains("Version 1.2.5"))
     }
 
     @Test
@@ -142,7 +150,7 @@ class WelcomePreferenceTest {
 
         composeRule.onNodeWithTag("accessibility_settings_sheet").assertExists()
         composeRule.onNodeWithTag("card_about_accessible_studio").performScrollTo().assertExists()
-        assertEquals("1.2.5", com.example.BuildConfig.VERSION_NAME)
+        assertEquals("1.2.6", com.example.BuildConfig.VERSION_NAME)
         composeRule.onNodeWithText("Version ${com.example.BuildConfig.VERSION_NAME} • 100% Free & Open Accessible Studio • 100% Offline").performScrollTo().assertExists()
 
         // First button inside About: User Guide

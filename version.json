@@ -1,9 +1,9 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 18,
-  "versionName": "1.2.5",
-  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.5.apk",
+  "versionCode": 19,
+  "versionName": "1.2.6",
+  "apkUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/AccessibleStudio_V1.2.6.apk",
   "pageUrl": "https://ais-pre-3czeatab7cb5he5dvgdk6n-875513992455.asia-east1.run.app/",
-  "apkSizeBytes": 20115021,
-  "releaseNotes": "100% Offline Studio Ultra Clean (Fan, Motor & Background Noise Remover) with 2048-pt 4x-OLA STFT, 4th-order Butterworth sub-sonic cut, Adaptive Fan & Motor Harmonic Comb Hunter (40 Hz–4,500 Hz), Two-Step Decision-Directed Wiener filtering, deep pause floor silence, and Learn Noise Print (from Selection) across Audio & Video Noise Reducers."
+  "apkSizeBytes": 20147789,
+  "releaseNotes": "Replaced legacy noise reduction with a studio-grade Offline Adaptive Spectral & Voice De-Noise engine (2048/4096-pt 75% Overlap STFT Wiener + Bark Smoothing), featuring Learn Noise Profile, Auto Adaptive live noise-floor tracking, Threshold (-60..0 dB), Reduction (0..30 dB), Smoothing (0..100%), Voice/Dialogue Focus, and clickless Real-Time Live Preview with instant A/B Bypass compare."
 }

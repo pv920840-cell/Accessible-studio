@@ -154,28 +154,34 @@ object AudioEffectPresetsCatalog {
         ),
         EffectPresetGroup(
             effectId = "noise_gate_reduction",
-            effectName = "3. Noise Gate & Reduction",
+            effectName = "3. Adaptive De-Noise & Noise Gate",
             presets = listOf(
                 AudioEffectPresetItem(
                     id = "vocal_iso_light",
-                    name = "Isolate Speech: Light Filtering",
+                    name = "Voice De-Noise: Light Room",
                     targetCategory = "Spoken Audio / Natural Room",
                     intensityTier = "Subtle",
-                    parameterSummary = "Adaptive Spectral • Light • Clarity +1.2dB",
-                    accessibilityDescription = "Isolate Speech Light Filtering. Gentle adaptive spectral subtraction and rumble cut while keeping natural room warmth and vocal air.",
+                    parameterSummary = "Thresh -40 dB • Red 11 dB • Smooth 58% • Voice Focus",
+                    accessibilityDescription = "Voice De-Noise Light Room. Gentle adaptive spectral Wiener suppression keeping natural vocal room air.",
                     applyTransform = { pcm, _, _, _ ->
-                        VocalIsolationProcessor.isolateSpokenAudio(pcm, VocalIsolationPreset.LIGHT)
+                        AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -40f, reductionDb = 11f, smoothing = 0.58f, voiceDialogueFocus = true)
+                        )
                     }
                 ),
                 AudioEffectPresetItem(
                     id = "vocal_iso_medium",
-                    name = "Isolate Speech: Medium Filtering",
+                    name = "Voice De-Noise: Dialogue Clean",
                     targetCategory = "Spoken Audio / Podcast & Voice",
                     intensityTier = "Standard",
-                    parameterSummary = "Adaptive Spectral • Medium • De-Hum + Clarity",
-                    accessibilityDescription = "Isolate Speech Medium Filtering. Removes ambient noise and 50 or 60 hertz hum using adaptive spectral subtraction with crisp vocal clarity.",
+                    parameterSummary = "Thresh -32 dB • Red 18 dB • Smooth 65% • Voice Focus",
+                    accessibilityDescription = "Voice De-Noise Dialogue Clean. Removes ambient noise, AC hiss, and 50 or 60 hertz hum while preserving vocal formants.",
                     applyTransform = { pcm, _, _, _ ->
-                        VocalIsolationProcessor.isolateSpokenAudio(pcm, VocalIsolationPreset.MEDIUM)
+                        AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -32f, reductionDb = 18f, smoothing = 0.65f, voiceDialogueFocus = true)
+                        )
                     }
                 ),
                 AudioEffectPresetItem(
@@ -183,32 +189,41 @@ object AudioEffectPresetsCatalog {
                     name = "Studio Ultra Clean: Fan, Motor & All Noise",
                     targetCategory = "Studio Clean / Fan & Motor Removal",
                     intensityTier = "Aggressive",
-                    parameterSummary = "2048 STFT • Motor Comb Hunter • Studio Clarity",
-                    accessibilityDescription = "Studio Ultra Clean Fan and Motor Remover. Completely removes ceiling fans, table fans, motors, air conditioning rumble, hum, and hiss offline with broadcast studio voice clarity.",
+                    parameterSummary = "Thresh -14 dB • Red 30 dB • Smooth 74% • Voice Focus",
+                    accessibilityDescription = "Studio Ultra Clean Fan and Motor Remover. Eliminates ceiling fans, motors, air conditioning rumble, hum, and hiss completely with studio clarity.",
                     applyTransform = { pcm, _, _, _ ->
-                        VocalIsolationProcessor.isolateSpokenAudio(pcm, VocalIsolationPreset.STUDIO_DEEP_CLEAN)
+                        AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -14f, reductionDb = 30f, smoothing = 0.74f, voiceDialogueFocus = true)
+                        )
                     }
                 ),
                 AudioEffectPresetItem(
                     id = "vocal_iso_strong",
-                    name = "Isolate Speech: Strong Filtering",
+                    name = "Voice De-Noise: Strong Rescue",
                     targetCategory = "Spoken Audio / Heavy Ambient Rescue",
                     intensityTier = "Aggressive",
-                    parameterSummary = "Adaptive Spectral • Strong • Full Isolation",
-                    accessibilityDescription = "Isolate Speech Strong Filtering. Maximum spoken audio isolation removing heavy ambient noise and electrical hum while preserving pristine vocal clarity.",
+                    parameterSummary = "Thresh -18 dB • Red 27 dB • Smooth 72% • Voice Focus",
+                    accessibilityDescription = "Voice De-Noise Strong Rescue. Deep adaptive spectral noise attenuation removing heavy ambient noise and electrical hum.",
                     applyTransform = { pcm, _, _, _ ->
-                        VocalIsolationProcessor.isolateSpokenAudio(pcm, VocalIsolationPreset.STRONG)
+                        AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -18f, reductionDb = 27f, smoothing = 0.72f, voiceDialogueFocus = true)
+                        )
                     }
                 ),
                 AudioEffectPresetItem(
                     id = "nr_transparent_studio_clean",
-                    name = "Transparent Studio De-Hiss",
-                    targetCategory = "Vocal / Acoustic",
+                    name = "Transparent Music & Acoustic De-Hiss",
+                    targetCategory = "Vocal / Acoustic / Instruments",
                     intensityTier = "Subtle",
-                    parameterSummary = "Spectral 35% • Gate -54dB",
-                    accessibilityDescription = "Transparent Studio De-Hiss. Light 35 percent spectral hiss removal that preserves natural room breath and high-frequency detail.",
+                    parameterSummary = "4096-pt • Thresh -38 dB • Red 12 dB • Smooth 72%",
+                    accessibilityDescription = "Transparent Music and Acoustic De-Hiss. Full-bandwidth 4096-point spectral hiss removal for instruments and acoustic tracks.",
                     applyTransform = { pcm, wav, _, _ ->
-                        val nr = wav.applyNoiseReduction(pcm, 0.35f)
+                        val nr = AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -38f, reductionDb = 12f, smoothing = 0.72f, voiceDialogueFocus = false, fftSize = 4096)
+                        )
                         wav.applyNoiseGate(nr, 0.004f)
                     }
                 ),
@@ -217,10 +232,13 @@ object AudioEffectPresetsCatalog {
                     name = "Podcast Fan & Room Cleaner",
                     targetCategory = "Podcast / Voiceover",
                     intensityTier = "Standard",
-                    parameterSummary = "Spectral 60% • Gate -38dB",
-                    accessibilityDescription = "Podcast Fan and Room Cleaner. Removes computer fan and air conditioning hum at 60 percent strength while gating pauses cleanly.",
+                    parameterSummary = "Thresh -26 dB • Red 22 dB • Smooth 68% • Gate -38 dB",
+                    accessibilityDescription = "Podcast Fan and Room Cleaner. Removes computer fan and air conditioning hum while gating pauses cleanly.",
                     applyTransform = { pcm, wav, _, _ ->
-                        val nr = wav.applyNoiseReduction(pcm, 0.60f)
+                        val nr = AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -26f, reductionDb = 22f, smoothing = 0.68f, voiceDialogueFocus = true)
+                        )
                         wav.applyNoiseGate(nr, 0.02f)
                     }
                 ),
@@ -229,10 +247,13 @@ object AudioEffectPresetsCatalog {
                     name = "Heavy Field Recording Rescue",
                     targetCategory = "Field Recording / Interview",
                     intensityTier = "Aggressive",
-                    parameterSummary = "Spectral 85% • Gate -30dB",
-                    accessibilityDescription = "Heavy Field Recording Rescue. Strong 85 percent noise suppression and tighter gate to rescue speech recorded outdoors or in noisy rooms.",
+                    parameterSummary = "Thresh -18 dB • Red 28 dB • Smooth 74% • Gate -30 dB",
+                    accessibilityDescription = "Heavy Field Recording Rescue. Strong spectral noise suppression and gate to rescue outdoor or noisy room dialogue.",
                     applyTransform = { pcm, wav, _, _ ->
-                        val nr = wav.applyNoiseReduction(pcm, 0.85f)
+                        val nr = AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -18f, reductionDb = 28f, smoothing = 0.74f, voiceDialogueFocus = true)
+                        )
                         wav.applyNoiseGate(nr, 0.045f)
                     }
                 ),
@@ -241,10 +262,13 @@ object AudioEffectPresetsCatalog {
                     name = "Tight Drum & Perc Gate",
                     targetCategory = "Instrumental / Drums",
                     intensityTier = "Specialized",
-                    parameterSummary = "Gate -22dB • Spectral 15%",
+                    parameterSummary = "Gate -22dB • De-Hiss 6 dB",
                     accessibilityDescription = "Tight Drum and Percussion Gate. High-threshold gating mutes mic bleed cleanly between drum hits.",
                     applyTransform = { pcm, wav, _, _ ->
-                        val nr = wav.applyNoiseReduction(pcm, 0.15f)
+                        val nr = AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -46f, reductionDb = 6f, smoothing = 0.55f, voiceDialogueFocus = false)
+                        )
                         wav.applyNoiseGate(nr, 0.09f)
                     }
                 ),
@@ -253,10 +277,13 @@ object AudioEffectPresetsCatalog {
                     name = "Narration Breath & Pause Gate",
                     targetCategory = "Audiobook / Accessibility Narration",
                     intensityTier = "Specialized",
-                    parameterSummary = "Spectral 50% • Gate -34dB",
+                    parameterSummary = "Thresh -32 dB • Red 16 dB • Smooth 64% • Gate -34 dB",
                     accessibilityDescription = "Narration Breath and Pause Gate. Smoothly reduces background noise and quiet breaths between spoken sentences.",
                     applyTransform = { pcm, wav, _, _ ->
-                        val nr = wav.applyNoiseReduction(pcm, 0.50f)
+                        val nr = AdaptiveSpectralDenoiser.processOffline(
+                            samples = pcm,
+                            params = SpectralDenoiseParams(thresholdDb = -32f, reductionDb = 16f, smoothing = 0.64f, voiceDialogueFocus = true)
+                        )
                         wav.applyNoiseGate(nr, 0.03f)
                     }
                 )

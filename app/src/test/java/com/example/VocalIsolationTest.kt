@@ -1,9 +1,15 @@
 package com.example
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
@@ -11,12 +17,13 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.audio.AudioEffectPresetsCatalog
 import com.example.audio.AudioPlayerManager
 import com.example.audio.AudioRecorderManager
+import com.example.audio.EqPreset
+import com.example.audio.SpectralDenoiseParams
 import com.example.audio.StudioAudioProcessor
+import com.example.audio.StudioFxSettings
 import com.example.audio.VocalIsolationPreset
 import com.example.audio.VocalIsolationProcessor
 import com.example.audio.WavAudioProcessor
-import com.example.audio.EqPreset
-import com.example.audio.StudioFxSettings
 import com.example.data.MediaRepository
 import com.example.ui.components.AudioStudioCommand
 import com.example.ui.components.StudioDawTopBar
@@ -128,13 +135,11 @@ class VocalIsolationTest {
     }
 
     @Test
-    fun noiseReductionRackTab_selectsIsolationPresetsAndSubmitsParameters() {
-        var appliedPreset: VocalIsolationPreset? = null
-        var appliedSub = 0f
-        var appliedHum = 0f
-        var appliedClarity = 0f
+    fun noiseReductionRackTab_usesUnifiedAdaptivePanelWithAllRequiredControls() {
+        var appliedParams: SpectralDenoiseParams? = null
 
         composeRule.setContent {
+            var currentParams by remember { mutableStateOf(SpectralDenoiseParams()) }
             AccessibleStudioTheme(isHighContrast = false) {
                 StudioEffectsRackDialog(
                     selectedTabIndex = 1,
@@ -159,6 +164,9 @@ class VocalIsolationTest {
                     onNoiseReductionEnabledChange = {},
                     noiseReductionIntensity = 0.60f,
                     onNoiseReductionIntensityChange = {},
+                    denoiseParams = currentParams,
+                    onDenoiseParamsChange = { currentParams = it },
+                    onApplyAdaptiveNoiseReduction = { appliedParams = it },
                     noiseGateEnabled = false,
                     onNoiseGateEnabledChange = {},
                     noiseGateThreshold = 0.08f,
@@ -177,30 +185,34 @@ class VocalIsolationTest {
                     onStudioFxSettingsChange = {},
                     onAudition = {},
                     onApplyDeClick = {},
-                    onApplyVocalIsolation = { p, sub, hum, clarity ->
-                        appliedPreset = p
-                        appliedSub = sub
-                        appliedHum = hum
-                        appliedClarity = clarity
-                    },
                     onDismiss = {}
                 )
             }
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("section_noise_reduction_vocal_isolation").performScrollTo().assertExists()
-        composeRule.onNodeWithTag("btn_isolation_preset_light").performScrollTo().performClick()
-        composeRule.onNodeWithTag("btn_isolation_preset_strong").performScrollTo().performClick()
+        // Old duplicated NR cards must be completely removed
+        assertTrue(composeRule.onAllNodes(hasTestTag("section_noise_reduction_vocal_isolation")).fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodes(hasTestTag("slider_noise_reduction")).fetchSemanticsNodes().isEmpty())
+
+        // Unified Adaptive De-Noise panel + all 5 core controls exist
+        composeRule.onNodeWithTag("panel_adaptive_denoise").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("btn_dn_learn_profile").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("btn_dn_live_preview").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("btn_dn_bypass_ab").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("slider_dn_threshold").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("slider_dn_reduction").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("slider_dn_smoothing").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("switch_dn_voice_focus").performScrollTo().assertExists()
+
+        composeRule.onNodeWithTag("chip_dn_preset_fan_motor").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("btn_dn_apply_offline").performScrollTo().performClick()
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("btn_confirm_vocal_isolation").performScrollTo().performClick()
-        composeRule.waitForIdle()
-
-        assertEquals(VocalIsolationPreset.STRONG, appliedPreset)
-        assertEquals(VocalIsolationPreset.STRONG.subtractionStrength, appliedSub, 0.01f)
-        assertEquals(VocalIsolationPreset.STRONG.humRemovalStrength, appliedHum, 0.01f)
-        assertEquals(VocalIsolationPreset.STRONG.vocalClarityBoost, appliedClarity, 0.01f)
+        assertEquals(27f, appliedParams?.reductionDb ?: 0f, 0.5f)
+        assertEquals(-20f, appliedParams?.thresholdDb ?: 0f, 0.5f)
+        assertTrue(appliedParams?.voiceDialogueFocus == true)
     }
 
     @Test
@@ -236,67 +248,7 @@ class VocalIsolationTest {
     }
 
     @Test
-    fun workspaceEffects_appliesVocalIsolationWithPresetChipsAndUndo() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val sr = StudioAudioProcessor.SAMPLE_RATE
-        val samplePcm = ShortArray(sr) { i ->
-            (8000.0 * sin(2.0 * PI * 300.0 * i / sr) + 1500.0 * sin(2.0 * PI * 60.0 * i / sr)).toInt().toShort()
-        }
-        val session = AudioProjectSessionState(
-            projectId = "iso_ws",
-            title = "Voice Clip",
-            pcm = samplePcm,
-            sampleRate = sr,
-            trimStartMs = 0L,
-            trimEndMs = 1000L
-        )
-        val audioProcessor = WavAudioProcessor(context)
-        val playerManager = AudioPlayerManager(context)
-        val recorderManager = AudioRecorderManager(context)
-        val repo = MediaRepository(context)
-        var saved: AudioProjectSessionState? = null
-
-        composeRule.setContent {
-            AccessibleStudioTheme(isHighContrast = false) {
-                AudioFeatureWorkspaceScreen(
-                    tool = AudioFeatureTool.EFFECTS_CLEANING,
-                    session = session,
-                    audioProcessor = audioProcessor,
-                    playerManager = playerManager,
-                    recorderManager = recorderManager,
-                    mediaRepository = repo,
-                    hapticsEnabled = false,
-                    isHighContrast = false,
-                    defaultExportFormat = "WAV",
-                    followCursor = true,
-                    onToggleHighContrast = {},
-                    onOpenAbout = {},
-                    onOpenSettings = {},
-                    onOpenHelp = {},
-                    onOpenWhatsNew = {},
-                    onOpenBatchProcessing = {},
-                    onSaveAndReturn = { saved = it },
-                    onCancelBack = {}
-                )
-            }
-        }
-        composeRule.waitForIdle()
-
-        composeRule.onNodeWithTag("card_workspace_vocal_isolation").performScrollTo().assertExists()
-        composeRule.onNodeWithTag("btn_isolate_strong").performScrollTo().performClick()
-        composeRule.onNodeWithTag("btn_apply_isolate_speech").performScrollTo().performClick()
-        composeRule.waitUntil(timeoutMillis = 5_000L) {
-            composeRule.onAllNodes(hasTestTag("btn_workspace_undo")).fetchSemanticsNodes().isNotEmpty()
-        }
-        composeRule.onNodeWithTag("btn_workspace_save").performClick()
-        composeRule.waitForIdle()
-
-        assertTrue(saved?.hasUnsavedChanges == true)
-        playerManager.release()
-    }
-
-    @Test
-    fun workspaceEffects_studioUltraFanMotorAndNoisePrintControlsWork() {
+    fun workspaceEffects_learnModeBypassAbAndOfflineCleanWorkWithoutOldWidgets() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val sr = StudioAudioProcessor.SAMPLE_RATE
         val samplePcm = ShortArray(sr * 2) { i ->
@@ -306,7 +258,7 @@ class VocalIsolationTest {
             (speech + fan).toInt().coerceIn(-32767, 32767).toShort()
         }
         val session = AudioProjectSessionState(
-            projectId = "studio_ultra_ws",
+            projectId = "adaptive_dn_ws",
             title = "Fan Test Clip",
             pcm = samplePcm,
             sampleRate = sr,
@@ -345,12 +297,29 @@ class VocalIsolationTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithTag("btn_isolate_studio_ultra").performScrollTo().assertExists().performClick()
-        composeRule.onNodeWithTag("btn_capture_noise_print").performScrollTo().assertExists().performClick()
-        composeRule.waitForIdle()
-        composeRule.onNodeWithTag("txt_noise_print_status").performScrollTo().assertExists()
+        // Old duplicated cards must not exist
+        assertTrue(composeRule.onAllNodes(hasTestTag("card_workspace_vocal_isolation")).fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodes(hasTestTag("slider_fx_noise")).fetchSemanticsNodes().isEmpty())
 
-        composeRule.onNodeWithTag("btn_fx_studio_deep_clean").performScrollTo().assertExists().performClick()
+        // Unified Adaptive De-Noise panel + Learn Mode + A/B Compare + FFT resolution + Offline Render
+        composeRule.onNodeWithTag("panel_adaptive_denoise").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("chip_dn_preset_ultra").performScrollTo().performClick()
+        composeRule.onNodeWithTag("btn_dn_learn_profile").performScrollTo().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("txt_dn_profile_status").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("btn_dn_clear_profile").performScrollTo().assertExists()
+
+        // Toggle A/B Compare Bypass on and off
+        composeRule.onNodeWithTag("btn_dn_bypass_ab").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("A/B: Original", substring = true).assertIsDisplayed()
+        composeRule.onNodeWithTag("btn_dn_bypass_ab").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("A/B: De-Noised", substring = true).assertIsDisplayed()
+
+        // Apply offline clean
+        composeRule.onNodeWithTag("btn_dn_apply_offline").performScrollTo().performClick()
         composeRule.waitUntil(timeoutMillis = 6_000L) {
             composeRule.onAllNodes(hasTestTag("btn_workspace_undo")).fetchSemanticsNodes().isNotEmpty()
         }

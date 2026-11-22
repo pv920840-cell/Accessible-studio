@@ -62,6 +62,66 @@ class AudioPlayerManager(private val context: Context) {
     @Volatile
     var scrubSpeedMultiplier: Float = 3.5f
 
+    // Real-time Adaptive Spectral De-Noise Live Preview state (zero-latency toggle & parameter updates)
+    @Volatile
+    private var realtimeDenoiseEnabled: Boolean = false
+
+    @Volatile
+    private var realtimeDenoiseParams: SpectralDenoiseParams = SpectralDenoiseParams()
+
+    @Volatile
+    private var realtimeNoiseProfile: SpectralNoiseProfile? = null
+
+    private var realtimeDenoiseProcessor: RealtimeSpectralDenoiseProcessor? = null
+    private val realtimeProcessorLock = Any()
+
+    fun setRealtimeDenoiseEnabled(enabled: Boolean) {
+        realtimeDenoiseEnabled = enabled
+    }
+
+    fun setRealtimeDenoiseParams(params: SpectralDenoiseParams) {
+        val clean = params.clamped()
+        realtimeDenoiseParams = clean
+        synchronized(realtimeProcessorLock) {
+            val proc = realtimeDenoiseProcessor
+            if (proc != null) {
+                if (proc.n != clean.fftSize) {
+                    val sr = _sampleRate.value.coerceIn(8000, 96000)
+                    realtimeDenoiseProcessor = RealtimeSpectralDenoiseProcessor(sr, clean.fftSize).apply {
+                        this.params = clean
+                        setNoiseProfile(realtimeNoiseProfile)
+                    }
+                } else {
+                    proc.params = clean
+                }
+            }
+        }
+    }
+
+    fun setRealtimeNoiseProfile(profile: SpectralNoiseProfile?) {
+        realtimeNoiseProfile = profile
+        synchronized(realtimeProcessorLock) {
+            realtimeDenoiseProcessor?.setNoiseProfile(profile)
+        }
+    }
+
+    private fun getOrCreateRealtimeProcessor(sr: Int): RealtimeSpectralDenoiseProcessor {
+        val targetFft = realtimeDenoiseParams.fftSize
+        synchronized(realtimeProcessorLock) {
+            val existing = realtimeDenoiseProcessor
+            if (existing != null && existing.n == targetFft) {
+                existing.params = realtimeDenoiseParams
+                return existing
+            }
+            val created = RealtimeSpectralDenoiseProcessor(sr, targetFft).apply {
+                params = realtimeDenoiseParams
+                setNoiseProfile(realtimeNoiseProfile)
+            }
+            realtimeDenoiseProcessor = created
+            return created
+        }
+    }
+
     companion object {
         internal fun resolvePlayStartMs(
             requestedStartMs: Long?,
@@ -378,6 +438,7 @@ class AudioPlayerManager(private val context: Context) {
 
         playbackJob = scope.launch(Dispatchers.Default) {
             val normalChunkSize = 1024
+            val processedChunkBuf = ShortArray(normalChunkSize)
             val scrubChunkSize = 1024 // ~23ms low-latency grain for instant scrub response
             val scrubBuf = ShortArray(scrubChunkSize)
             var currentIdx = startSample
@@ -385,12 +446,19 @@ class AudioPlayerManager(private val context: Context) {
             var lastEmittedPosMs = ((startSample.toDouble() / sr) * 1000.0).toLong()
             val minEmitDeltaMs = 120L
 
+            synchronized(realtimeProcessorLock) {
+                realtimeDenoiseProcessor?.reset()
+            }
+
             while (isActive && _isPlaying.value && playbackGeneration.get() == myGen) {
                 while (isActive && _isPlaying.value && playbackGeneration.get() == myGen) {
                     val pending = seekRequestSample
                     if (pending != null) {
                         seekRequestSample = null
                         currentIdx = pending.coerceIn(0, samples.size)
+                        synchronized(realtimeProcessorLock) {
+                            realtimeDenoiseProcessor?.reset()
+                        }
                         try {
                             track.pause()
                             track.flush()
@@ -410,10 +478,24 @@ class AudioPlayerManager(private val context: Context) {
                             val activeLimit = if (scrubActivated) samples.size else endSample
                             if (currentIdx >= activeLimit) break
                             val writeCount = Math.min(normalChunkSize, activeLimit - currentIdx)
+
+                            val useRealtimeDenoise = realtimeDenoiseEnabled
+                            val srcBuffer: ShortArray
+                            val srcOffset: Int
+                            if (useRealtimeDenoise) {
+                                val proc = getOrCreateRealtimeProcessor(sr)
+                                proc.processChunk(samples, currentIdx, writeCount, processedChunkBuf)
+                                srcBuffer = processedChunkBuf
+                                srcOffset = 0
+                            } else {
+                                srcBuffer = samples
+                                srcOffset = currentIdx
+                            }
+
                             val written = synchronized(trackLock) {
                                 if (customAudioTrack === track && playbackGeneration.get() == myGen) {
                                     try {
-                                        track.write(samples, currentIdx, writeCount)
+                                        track.write(srcBuffer, srcOffset, writeCount)
                                     } catch (_: Throwable) {
                                         -1
                                     }

@@ -77,6 +77,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import com.example.accessibility.AccessibilityHelper
 import com.example.accessibility.VibrationType
+import com.example.audio.AdaptiveSpectralDenoiser
 import com.example.audio.AudioEditSettings
 import com.example.audio.AudioEffectsProEngine
 import com.example.audio.AudioPlayerManager
@@ -84,9 +85,10 @@ import com.example.audio.AudioRecorderManager
 import com.example.audio.CuePoint
 import com.example.audio.EqPreset
 import com.example.audio.ScrubDirection
+import com.example.audio.SpectralDenoiseParams
+import com.example.audio.SpectralNoiseProfile
 import com.example.audio.StudioAudioProcessor
 import com.example.audio.StudioFxSettings
-import com.example.audio.VocalIsolationProcessor
 import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
@@ -315,8 +317,9 @@ fun AudioStudioScreen(
     var reverbMix by remember { mutableFloatStateOf(0.35f) }
     var noiseReductionEnabled by remember { mutableStateOf(false) }
     var noiseReductionIntensity by remember { mutableFloatStateOf(0.60f) }
-    var capturedNoisePrintPcm by remember(activeProjectIndex) { mutableStateOf<ShortArray?>(null) }
-    var noisePrintStatus by remember(activeProjectIndex) { mutableStateOf<String?>(null) }
+    var denoiseParams by remember { mutableStateOf(SpectralDenoiseParams()) }
+    var capturedNoiseProfile by remember(activeProjectIndex) { mutableStateOf<SpectralNoiseProfile?>(null) }
+    var liveDenoiseArmed by remember { mutableStateOf(true) }
     var noiseGateEnabled by remember { mutableStateOf(false) }
     var noiseGateThreshold by remember { mutableFloatStateOf(0.08f) }
     var bassBoost by remember { mutableFloatStateOf(0.0f) }
@@ -357,6 +360,28 @@ fun AudioStudioScreen(
     var showProSuiteDialog by remember { mutableIntStateOf(0) }.let { mutableStateOf(false) }
     var proSuiteCategoryIndex by remember { mutableIntStateOf(0) }
     var isApplyingProFx by remember { mutableStateOf(false) }
+
+    LaunchedEffect(
+        showEffectsRackDialog,
+        effectsCategoryIndex,
+        noiseReductionEnabled,
+        denoiseParams,
+        capturedNoiseProfile,
+        liveDenoiseArmed
+    ) {
+        val liveActive = showEffectsRackDialog &&
+            effectsCategoryIndex == 1 &&
+            noiseReductionEnabled &&
+            liveDenoiseArmed
+        playerManager.setRealtimeDenoiseParams(denoiseParams)
+        playerManager.setRealtimeNoiseProfile(capturedNoiseProfile)
+        playerManager.setRealtimeDenoiseEnabled(liveActive)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            playerManager.setRealtimeDenoiseEnabled(false)
+        }
+    }
 
     // Mic & Anti-Crackle Recording Parameters
     var showMicAdvancedSettings by remember { mutableStateOf(false) }
@@ -615,6 +640,12 @@ fun AudioStudioScreen(
             reverbMix = reverbMix,
             noiseReductionEnabled = noiseReductionEnabled,
             noiseReductionIntensity = noiseReductionIntensity,
+            noiseThresholdDb = denoiseParams.thresholdDb,
+            noiseReductionDb = denoiseParams.reductionDb,
+            noiseSmoothing = denoiseParams.smoothing,
+            noiseVoiceFocus = denoiseParams.voiceDialogueFocus,
+            noiseBypass = denoiseParams.bypass,
+            noiseFftSize = denoiseParams.fftSize,
             noiseGateEnabled = noiseGateEnabled,
             noiseGateThreshold = noiseGateThreshold,
             bassBoost = bassBoost,
@@ -632,26 +663,28 @@ fun AudioStudioScreen(
         }
         if (isApplyingProFx) return
         val snapshotSettings = currentSettings()
-        val print = capturedNoisePrintPcm
+        val profile = capturedNoiseProfile
+        liveDenoiseArmed = false
+        playerManager.setRealtimeDenoiseEnabled(false)
         isApplyingProFx = true
         scope.launch {
             try {
                 playerManager.stop()
                 val processed = withContext(Dispatchers.Default) {
-                    val nrDone = if (snapshotSettings.noiseReductionEnabled && print != null) {
-                        audioProcessor.applyNoiseReduction(
-                            orig,
-                            snapshotSettings.noiseReductionIntensity,
-                            workingSampleRate,
-                            1,
-                            print
+                    val nrDone = if (snapshotSettings.noiseReductionEnabled && !snapshotSettings.noiseBypass) {
+                        AdaptiveSpectralDenoiser.processOffline(
+                            samples = orig,
+                            sampleRate = workingSampleRate,
+                            channels = 1,
+                            params = snapshotSettings.effectiveDenoiseParams(),
+                            noiseProfile = profile
                         )
                     } else {
                         orig
                     }
                     audioProcessor.processPcm(
                         nrDone,
-                        if (print != null) snapshotSettings.copy(noiseReductionEnabled = false) else snapshotSettings,
+                        snapshotSettings.copy(noiseReductionEnabled = false),
                         workingSampleRate
                     )
                 }
@@ -2374,9 +2407,55 @@ fun AudioStudioScreen(
             reverbMix = reverbMix,
             onReverbMixChange = { reverbMix = it },
             noiseReductionEnabled = noiseReductionEnabled,
-            onNoiseReductionEnabledChange = { noiseReductionEnabled = it },
+            onNoiseReductionEnabledChange = { enabled ->
+                noiseReductionEnabled = enabled
+                liveDenoiseArmed = enabled
+                playerManager.setRealtimeDenoiseEnabled(enabled)
+            },
             noiseReductionIntensity = noiseReductionIntensity,
             onNoiseReductionIntensityChange = { noiseReductionIntensity = it },
+            denoiseParams = denoiseParams,
+            onDenoiseParamsChange = { next ->
+                denoiseParams = next
+                noiseReductionIntensity = (next.reductionDb / 30f).coerceIn(0f, 1f)
+                liveDenoiseArmed = true
+                playerManager.setRealtimeDenoiseParams(next)
+                playerManager.setRealtimeDenoiseEnabled(true)
+            },
+            learnedNoiseProfile = capturedNoiseProfile,
+            isPlayingLivePreview = isPlaying && noiseReductionEnabled && liveDenoiseArmed,
+            onToggleLivePreview = {
+                if (isPlaying) {
+                    playerManager.pause()
+                } else {
+                    if (!ensurePcmReadyForPlayback()) {
+                        Toast.makeText(context, "Track is empty. Record or open audio first.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        noiseReductionEnabled = true
+                        liveDenoiseArmed = true
+                        playerManager.setRealtimeDenoiseParams(denoiseParams)
+                        playerManager.setRealtimeNoiseProfile(capturedNoiseProfile)
+                        playerManager.setRealtimeDenoiseEnabled(true)
+                        playerManager.play(startFromMs = playerManager.currentPositionMs.value, endLimitMs = null)
+                    }
+                }
+            },
+            onApplyAdaptiveNoiseReduction = { reqParams ->
+                val applied = reqParams.copy(bypass = false).clamped()
+                val profile = capturedNoiseProfile
+                denoiseParams = applied
+                liveDenoiseArmed = false
+                playerManager.setRealtimeDenoiseEnabled(false)
+                applyTransform("Applied Studio Adaptive De-Noise") { pcm ->
+                    AdaptiveSpectralDenoiser.processOffline(
+                        samples = pcm,
+                        sampleRate = workingSampleRate,
+                        channels = 1,
+                        params = applied,
+                        noiseProfile = profile
+                    )
+                }
+            },
             noiseGateEnabled = noiseGateEnabled,
             onNoiseGateEnabledChange = { noiseGateEnabled = it },
             noiseGateThreshold = noiseGateThreshold,
@@ -2399,36 +2478,18 @@ fun AudioStudioScreen(
                     StudioAudioProcessor.applyTruePeakLimiter(StudioAudioProcessor.deClickDeCrackle(pcm), -1.0f)
                 }
             },
-            onApplyVocalIsolation = { preset, subStr, humStr, clarityStr ->
-                val print = capturedNoisePrintPcm
-                applyTransform("Cleaned audio (${preset.displayName})") { pcm ->
-                    val isPresetDefault = kotlin.math.abs(subStr - preset.subtractionStrength) < 0.02f
-                    VocalIsolationProcessor.isolateSpokenAudio(
-                        samples = pcm,
-                        subtractionStrength = subStr,
-                        humRemovalStrength = humStr,
-                        vocalClarityBoost = clarityStr,
-                        spectralFloorOverride = if (isPresetDefault) preset.spectralFloor else null,
-                        vocalBandEmphasisOverride = if (isPresetDefault) preset.vocalBandEmphasis else null,
-                        pauseGateFloorOverride = if (isPresetDefault) preset.pauseGateFloor else null,
-                        highPassHz = if (isPresetDefault) preset.highPassHz else null,
-                        sampleRate = workingSampleRate,
-                        fanMotorRemovalStrength = if (isPresetDefault) preset.fanMotorRemovalStrength else null,
-                        studioMaxClean = preset.studioMaxClean,
-                        customNoisePrintPcm = print
-                    )
-                }
-            },
-            noisePrintStatus = noisePrintStatus,
             onCaptureNoisePrint = {
                 val pcm = rawOriginalPcm
                 if (pcm != null && pcm.isNotEmpty() && trimEndMs - trimStartMs >= 120L) {
                     val snippet = StudioAudioProcessor.cropToSelection(pcm, trimStartMs, trimEndMs, workingSampleRate)
-                    if (snippet.size >= 512) {
-                        capturedNoisePrintPcm = snippet
-                        val sec = (trimEndMs - trimStartMs) / 1000f
-                        val msg = "Noise Print locked (${"%.1f".format(sec)}s)"
-                        noisePrintStatus = msg
+                    val profile = AdaptiveSpectralDenoiser.captureNoiseProfile(snippet, workingSampleRate, denoiseParams.fftSize)
+                    if (profile != null) {
+                        capturedNoiseProfile = profile
+                        noiseReductionEnabled = true
+                        liveDenoiseArmed = true
+                        playerManager.setRealtimeNoiseProfile(profile)
+                        playerManager.setRealtimeDenoiseEnabled(true)
+                        val msg = "Noise Profile learned (${"%.1f".format(profile.durationMs / 1000f)}s): ${profile.bandSummary}"
                         AccessibilityHelper.announceForAccessibility(context, msg)
                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
@@ -2437,11 +2498,15 @@ fun AudioStudioScreen(
                 }
             },
             onClearNoisePrint = {
-                capturedNoisePrintPcm = null
-                noisePrintStatus = null
-                AccessibilityHelper.announceForAccessibility(context, "Custom noise print cleared")
+                capturedNoiseProfile = null
+                liveDenoiseArmed = true
+                playerManager.setRealtimeNoiseProfile(null)
+                AccessibilityHelper.announceForAccessibility(context, "Switched to Auto Adaptive live noise tracking")
             },
-            onDismiss = { showEffectsRackDialog = false }
+            onDismiss = {
+                playerManager.setRealtimeDenoiseEnabled(false)
+                showEffectsRackDialog = false
+            }
         )
     }
 
@@ -2525,9 +2590,18 @@ fun AudioStudioScreen(
                                 }
                             },
                             onApplyNoiseReduction = {
-                                val print = capturedNoisePrintPcm
-                                applyTransform("Applied Studio Noise Reduction") { pcm ->
-                                    audioProcessor.applyNoiseReduction(pcm, noiseReductionIntensity, workingSampleRate, 1, print)
+                                val applied = denoiseParams.copy(bypass = false).clamped()
+                                val profile = capturedNoiseProfile
+                                liveDenoiseArmed = false
+                                playerManager.setRealtimeDenoiseEnabled(false)
+                                applyTransform("Applied Studio Adaptive De-Noise") { pcm ->
+                                    AdaptiveSpectralDenoiser.processOffline(
+                                        samples = pcm,
+                                        sampleRate = workingSampleRate,
+                                        channels = 1,
+                                        params = applied,
+                                        noiseProfile = profile
+                                    )
                                 }
                             },
                             onApplyEqualizer = {

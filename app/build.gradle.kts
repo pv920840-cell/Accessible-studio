@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.accessiblestudio.qmztxp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 18
-    versionName = "1.2.5"
+    versionCode = 19
+    versionName = "1.2.6"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -150,6 +150,15 @@ abstract class SyncVersionedApkTask : DefaultTask() {
   @get:OutputFile
   abstract val destApk: RegularFileProperty
 
+  @get:Input
+  abstract val appVersionCode: Property<Int>
+
+  @get:Input
+  abstract val appVersionName: Property<String>
+
+  @get:Internal
+  abstract val versionJsonFile: RegularFileProperty
+
   @TaskAction
   fun syncApk() {
     val src = sourceApk.get().asFile
@@ -157,6 +166,24 @@ abstract class SyncVersionedApkTask : DefaultTask() {
     if (src.exists()) {
       dst.parentFile?.mkdirs()
       src.copyTo(dst, overwrite = true)
+
+      val jsonFile = versionJsonFile.get().asFile
+      if (jsonFile.exists()) {
+        val vCode = appVersionCode.get()
+        val vName = appVersionName.get()
+        val sizeBytes = dst.length()
+        val apkName = dst.name
+        val text = jsonFile.readText()
+        var updated = text
+          .replace(Regex(""""versionCode"\s*:\s*\d+"""), """"versionCode": $vCode""")
+          .replace(Regex(""""versionName"\s*:\s*"[^"]*""""), """"versionName": "$vName"""")
+          .replace(Regex(""""apkSizeBytes"\s*:\s*\d+"""), """"apkSizeBytes": $sizeBytes""")
+          .replace(
+            Regex(""""apkUrl"\s*:\s*"([^"]*)/AccessibleStudio_V[^"]*\.apk""""),
+            """"apkUrl": "$1/$apkName""""
+          )
+        jsonFile.writeText(updated)
+      }
     }
   }
 }
@@ -165,6 +192,9 @@ val versionedApkFileName = "AccessibleStudio_V${android.defaultConfig.versionNam
 val syncVersionedDebugApk = tasks.register<SyncVersionedApkTask>("syncVersionedDebugApk") {
   sourceApk.set(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
   destApk.set(rootProject.layout.projectDirectory.file(versionedApkFileName))
+  appVersionCode.set(android.defaultConfig.versionCode ?: 1)
+  appVersionName.set(android.defaultConfig.versionName ?: "1.0")
+  versionJsonFile.set(rootProject.layout.projectDirectory.file("version.json"))
 }
 
 tasks.matching { it.name == "assembleDebug" }.configureEach {

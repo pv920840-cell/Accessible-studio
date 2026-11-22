@@ -62,6 +62,7 @@ data class FullRenderRequest(
     val audioVolume: Float = 1.0f,
     val noiseReductionEnabled: Boolean = false,
     val noiseReductionStrength: Float = 0.7f,
+    val noiseDenoiseParams: com.example.audio.SpectralDenoiseParams? = null,
     val outputFormat: VideoFormatOption = VideoFormatOption.MP4,
     val metadataTitle: String = "",
     val metadataArtist: String = "",
@@ -175,7 +176,8 @@ class VideoRenderEngine(private val context: Context) {
             soundEffects = req.soundEffects,
             speed = req.speed,
             keepPitch = req.pitchCorrect,
-            reverse = req.reverseVideo
+            reverse = req.reverseVideo,
+            noiseDenoiseParams = req.noiseDenoiseParams
         )
         val tempAudioFile = File(context.cacheDir, "render_aud_${System.currentTimeMillis()}.m4a")
         val hasEncodedAudio = audioMixer.encodePcmToM4a(mixedPcm, tempAudioFile)

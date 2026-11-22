@@ -200,33 +200,34 @@ object VocalIsolationProcessor {
         val subStr = subtractionStrength.coerceIn(0.1f, 1.0f)
         val humStr = humRemovalStrength.coerceIn(0f, 1.0f)
         val clarityStr = vocalClarityBoost.coerceIn(0f, 1.0f)
+        val isMax = studioMaxClean || subStr >= 0.98f
 
-        val spectralFloor = spectralFloorOverride ?: (0.20f - subStr * 0.19f).coerceIn(0.007f, 0.35f)
-        val vocalEmphasis = vocalBandEmphasisOverride ?: (subStr * 0.72f).coerceIn(0.1f, 0.85f)
-        val pauseFloor = pauseGateFloorOverride ?: (0.34f - subStr * 0.335f).coerceIn(0.004f, 0.5f)
-        val hpCutoff = highPassHz ?: (62f + subStr * 30f)
-        val fanStr = (fanMotorRemovalStrength ?: max(humStr, subStr * 0.92f)).coerceIn(0f, 1f)
+        val params = SpectralDenoiseParams.fromLegacyIntensity(
+            intensity = if (isMax) 1.0f else subStr,
+            voiceFocus = humStr >= 0.2f || (fanMotorRemovalStrength ?: subStr) >= 0.2f || (highPassHz ?: 62f) >= 50f
+        ).copy(fftSize = if (sampleRate > 56_000) 4096 else 2048)
 
-        val config = StudioNoiseReductionConfig(
-            strength = subStr,
-            humRemovalStrength = humStr,
-            fanMotorRemovalStrength = fanStr,
-            spectralFloorOverride = spectralFloor,
-            pauseAttenuationFloor = pauseFloor,
-            lowCutHz = hpCutoff,
-            lowCutAttenuation = (0.38f + vocalEmphasis * 0.55f).coerceIn(0.25f, 0.95f),
-            preserveHighFrequencies = true,
-            vocalClarityBoost = clarityStr,
-            studioMaxClean = studioMaxClean || subStr >= 0.98f,
-            customNoisePrintPcm = customNoisePrintPcm
-        )
+        val profile = customNoisePrintPcm?.let { printPcm ->
+            if (printPcm.size >= 256) {
+                AdaptiveSpectralDenoiser.captureNoiseProfile(printPcm, sampleRate, params.fftSize)
+            } else null
+        }
 
-        return StudioNoiseReducer.reduceNoise(
+        val cleaned = AdaptiveSpectralDenoiser.processOffline(
             samples = samples,
             sampleRate = sampleRate,
-            channels = channels,
-            config = config
+            channels = channels.coerceIn(1, 2),
+            params = params,
+            noiseProfile = profile
         )
+
+        if (clarityStr > 0.05f && !isMax && params.reductionDb < 14f) {
+            return StudioAudioProcessor.applyTruePeakLimiter(
+                AdaptiveSpectralDenoiser.applyVocalClarityPolish(cleaned, clarityStr * 0.45f, sampleRate),
+                -0.8f
+            )
+        }
+        return cleaned
     }
 
     internal fun fft(real: FloatArray, imag: FloatArray, inverse: Boolean) {

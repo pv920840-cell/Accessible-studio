@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.accessibility.AccessibilityHelper
+import com.example.audio.SpectralDenoiseParams
 import com.example.ui.theme.LocalHighContrast
 import com.example.video.MusicLayerTrack
 import com.example.video.NarrationSegment
@@ -99,6 +100,10 @@ fun VideoAudioMusicPanel(
     noiseReduceStrength: Float,
     onToggleNoiseReduce: (Boolean) -> Unit,
     onChangeNoiseReduceStrength: (Float) -> Unit,
+    noiseDenoiseParams: SpectralDenoiseParams = SpectralDenoiseParams.fromLegacyIntensity(noiseReduceStrength),
+    onChangeNoiseDenoiseParams: (SpectralDenoiseParams) -> Unit = { p ->
+        onChangeNoiseReduceStrength((p.reductionDb / 30f).coerceIn(0.1f, 1f))
+    },
     onExtractVideoToAudio: (format: String) -> Unit,
     onToggleMusicLoop: (String, Boolean) -> Unit = { _, _ -> },
     defaultLoopNewTracks: Boolean = true,
@@ -491,47 +496,12 @@ fun VideoAudioMusicPanel(
                 testTag = "slider_video_audio_volume"
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Studio Video Noise Reducer (Fan & Motor)", fontWeight = FontWeight.Bold)
-                    Text("100% offline removes ceiling/table fan, motor whine, wind & 50/60Hz hum", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(checked = noiseReduceEnabled, onCheckedChange = onToggleNoiseReduce, modifier = Modifier.testTag("switch_video_noise_reducer"))
-            }
-
-            if (noiseReduceEnabled) {
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    listOf(
-                        Triple("Light (45%)", 0.45f, "chip_video_nr_light"),
-                        Triple("Studio Clean (75%)", 0.75f, "chip_video_nr_studio"),
-                        Triple("Max Fan & Motor (100%)", 1.00f, "chip_video_nr_max")
-                    ).forEach { (label, valF, tag) ->
-                        FilterChip(
-                            selected = kotlin.math.abs(noiseReduceStrength - valF) < 0.08f,
-                            onClick = { onChangeNoiseReduceStrength(valF) },
-                            label = { Text(label, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                            modifier = Modifier.heightIn(min = 48.dp).testTag(tag)
-                        )
-                    }
-                }
-                AccessibleEffectSlider(
-                    title = "Noise Reduction Strength",
-                    value = noiseReduceStrength,
-                    onValueChange = onChangeNoiseReduceStrength,
-                    valueRange = 0.2f..1.0f,
-                    step = 0.1f,
-                    displayValue = "${(noiseReduceStrength * 100).toInt()}%",
-                    spokenDescription = "${(noiseReduceStrength * 100).toInt()} percent noise reduction",
-                    testTag = "slider_video_noise_strength"
-                )
-            }
+            VideoAdaptiveNoiseReductionSection(
+                enabled = noiseReduceEnabled,
+                onToggleEnabled = onToggleNoiseReduce,
+                params = noiseDenoiseParams,
+                onParamsChange = onChangeNoiseDenoiseParams
+            )
         }
 
         // 5. Video to Audio Extractor

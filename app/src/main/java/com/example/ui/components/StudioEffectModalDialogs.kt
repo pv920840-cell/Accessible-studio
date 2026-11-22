@@ -63,8 +63,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.accessibility.AccessibilityHelper
 import com.example.audio.CuePoint
 import com.example.audio.EqPreset
+import com.example.audio.SpectralDenoiseParams
+import com.example.audio.SpectralNoiseProfile
 import com.example.audio.StudioFxSettings
-import com.example.audio.VocalIsolationPreset
 import com.example.ui.theme.LocalHighContrast
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -92,6 +93,14 @@ fun StudioEffectsRackDialog(
     onNoiseReductionEnabledChange: (Boolean) -> Unit,
     noiseReductionIntensity: Float,
     onNoiseReductionIntensityChange: (Float) -> Unit,
+    denoiseParams: SpectralDenoiseParams = SpectralDenoiseParams.fromLegacyIntensity(noiseReductionIntensity),
+    onDenoiseParamsChange: (SpectralDenoiseParams) -> Unit = { p ->
+        onNoiseReductionIntensityChange((p.reductionDb / 30f).coerceIn(0.1f, 1f))
+    },
+    learnedNoiseProfile: SpectralNoiseProfile? = null,
+    isPlayingLivePreview: Boolean = false,
+    onToggleLivePreview: () -> Unit = {},
+    onApplyAdaptiveNoiseReduction: (SpectralDenoiseParams) -> Unit = {},
     noiseGateEnabled: Boolean,
     onNoiseGateEnabledChange: (Boolean) -> Unit,
     noiseGateThreshold: Float,
@@ -110,13 +119,6 @@ fun StudioEffectsRackDialog(
     onStudioFxSettingsChange: (StudioFxSettings) -> Unit,
     onAudition: () -> Unit,
     onApplyDeClick: () -> Unit,
-    onApplyVocalIsolation: (
-        preset: VocalIsolationPreset,
-        subtractionStrength: Float,
-        humRemovalStrength: Float,
-        vocalClarityBoost: Float
-    ) -> Unit = { _, _, _, _ -> },
-    noisePrintStatus: String? = null,
     onCaptureNoisePrint: (() -> Unit)? = null,
     onClearNoisePrint: (() -> Unit)? = null,
     onDismiss: () -> Unit
@@ -357,244 +359,22 @@ fun StudioEffectsRackDialog(
                         }
 
                         1 -> {
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onNoiseReductionEnabledChange(!noiseReductionEnabled) },
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text("Smooth Noise Reduction", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                            Text("Soft suppression without robotic distortion", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                        Switch(
-                                            checked = noiseReductionEnabled,
-                                            onCheckedChange = onNoiseReductionEnabledChange,
-                                            modifier = Modifier.testTag("switch_noise_reduction_enabled")
-                                        )
-                                    }
-
-                                    AnimatedVisibility(visible = noiseReductionEnabled) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                            EffectPresetDropdown(
-                                                effectId = "noise_reduction",
-                                                effectTitle = "Noise Reduction",
-                                                currentValues = noiseReductionIntensity,
-                                                presets = EffectPanelPresetsCatalog.noiseReductionPresets,
-                                                defaultOption = EffectPanelPresetsCatalog.noiseReductionDefault,
-                                                valuesEqual = { a, b -> EffectPresetResolver.approxEqual(a, b) },
-                                                onApplyPreset = { preset -> onNoiseReductionIntensityChange(preset) }
-                                            )
-                                            FlowRow(
-                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                listOf(
-                                                    "Low" to 0.35f,
-                                                    "Medium" to 0.60f,
-                                                    "High" to 0.80f,
-                                                    "Max Fan/Motor" to 1.00f
-                                                ).forEach { (label, valFloat) ->
-                                                    FilterChip(
-                                                        selected = kotlin.math.abs(noiseReductionIntensity - valFloat) < 0.08f,
-                                                        onClick = { onNoiseReductionIntensityChange(valFloat) },
-                                                        label = { Text(label, fontSize = 11.sp) }
-                                                    )
-                                                }
-                                            }
-                                            AccessibleEffectSlider(
-                                                title = "Noise Suppression Level",
-                                                value = noiseReductionIntensity,
-                                                onValueChange = onNoiseReductionIntensityChange,
-                                                valueRange = 0.1f..1.0f,
-                                                step = 0.05f,
-                                                displayValue = "${(noiseReductionIntensity * 100).toInt()}%",
-                                                spokenDescription = "${(noiseReductionIntensity * 100).toInt()} percent reduction",
-                                                testTag = "slider_noise_reduction"
-                                            )
-                                        }
-                                    }
-
-                                    var selectedIsolationPreset by remember { mutableStateOf(VocalIsolationPreset.MEDIUM) }
-                                    var isolationSubtraction by remember { mutableFloatStateOf(VocalIsolationPreset.MEDIUM.subtractionStrength) }
-                                    var isolationHum by remember { mutableFloatStateOf(VocalIsolationPreset.MEDIUM.humRemovalStrength) }
-                                    var isolationClarity by remember { mutableFloatStateOf(VocalIsolationPreset.MEDIUM.vocalClarityBoost) }
-
-                                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .testTag("section_noise_reduction_vocal_isolation"),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(
-                                            text = "Isolate Spoken Audio (Adaptive Spectral Subtraction)",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Black,
-                                            color = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = "Removes ceiling/table fans, motors, AC, ambient noise & hum offline with broadcast clarity.",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-
-                                        FlowRow(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            listOf(
-                                                VocalIsolationPreset.LIGHT to "btn_isolation_preset_light",
-                                                VocalIsolationPreset.MEDIUM to "btn_isolation_preset_medium",
-                                                VocalIsolationPreset.STRONG to "btn_isolation_preset_strong",
-                                                VocalIsolationPreset.STUDIO_DEEP_CLEAN to "btn_isolation_preset_studio_ultra"
-                                            ).forEach { (preset, tag) ->
-                                                FilterChip(
-                                                    selected = selectedIsolationPreset == preset,
-                                                    onClick = {
-                                                        selectedIsolationPreset = preset
-                                                        isolationSubtraction = preset.subtractionStrength
-                                                        isolationHum = preset.humRemovalStrength
-                                                        isolationClarity = preset.vocalClarityBoost
-                                                    },
-                                                    label = { Text(preset.displayName, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
-                                                    modifier = Modifier
-                                                        .heightIn(min = 48.dp)
-                                                        .testTag(tag)
-                                                        .semantics {
-                                                            contentDescription = "${preset.displayName}. ${preset.shortDescription}"
-                                                        }
-                                                )
-                                            }
-                                        }
-                                        if (onCaptureNoisePrint != null) {
-                                            FlowRow(
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                OutlinedButton(
-                                                    onClick = onCaptureNoisePrint,
-                                                    modifier = Modifier
-                                                        .heightIn(min = 48.dp)
-                                                        .testTag("btn_rack_capture_noise_print")
-                                                ) {
-                                                    Text("Learn Noise Print (Selection)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                                }
-                                                if (noisePrintStatus != null && onClearNoisePrint != null) {
-                                                    OutlinedButton(
-                                                        onClick = onClearNoisePrint,
-                                                        modifier = Modifier
-                                                            .heightIn(min = 48.dp)
-                                                            .testTag("btn_rack_clear_noise_print")
-                                                    ) {
-                                                        Text("Clear Print", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                                    }
-                                                }
-                                            }
-                                            if (noisePrintStatus != null) {
-                                                Text(
-                                                    text = noisePrintStatus,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = MaterialTheme.colorScheme.primary,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
-
-                                        Card(
-                                            colors = CardDefaults.cardColors(
-                                                containerColor = if (isHighContrast) Color(0xFF1F1F1F) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
-                                            ),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Text(
-                                                text = selectedIsolationPreset.shortDescription,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                fontWeight = FontWeight.Medium,
-                                                color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onPrimaryContainer,
-                                                modifier = Modifier.padding(10.dp)
-                                            )
-                                        }
-
-                                        AccessibleEffectSlider(
-                                            title = "Adaptive Spectral Subtraction",
-                                            value = isolationSubtraction,
-                                            onValueChange = { isolationSubtraction = it },
-                                            valueRange = 0.1f..1.0f,
-                                            step = 0.05f,
-                                            displayValue = "${(isolationSubtraction * 100).toInt()}%",
-                                            spokenDescription = "Adaptive spectral subtraction ${(isolationSubtraction * 100).toInt()} percent",
-                                            testTag = "slider_isolation_subtraction"
-                                        )
-                                        AccessibleEffectSlider(
-                                            title = "50/60 Hz Hum & Harmonic Suppression",
-                                            value = isolationHum,
-                                            onValueChange = { isolationHum = it },
-                                            valueRange = 0f..1.0f,
-                                            step = 0.05f,
-                                            displayValue = "${(isolationHum * 100).toInt()}%",
-                                            spokenDescription = "Hum suppression ${(isolationHum * 100).toInt()} percent",
-                                            testTag = "slider_isolation_hum"
-                                        )
-                                        AccessibleEffectSlider(
-                                            title = "Vocal Clarity Preservation",
-                                            value = isolationClarity,
-                                            onValueChange = { isolationClarity = it },
-                                            valueRange = 0f..1.0f,
-                                            step = 0.05f,
-                                            displayValue = "${(isolationClarity * 100).toInt()}%",
-                                            spokenDescription = "Vocal clarity boost ${(isolationClarity * 100).toInt()} percent",
-                                            testTag = "slider_isolation_clarity"
-                                        )
-
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            OutlinedButton(
-                                                onClick = onApplyDeClick,
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .height(48.dp)
-                                                    .testTag("btn_apply_declick_filter"),
-                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary)
-                                            ) {
-                                                Icon(Icons.Default.Waves, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                Spacer(Modifier.width(4.dp))
-                                                Text("Apply De-Click", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                            }
-                                            Button(
-                                                onClick = {
-                                                    onApplyVocalIsolation(
-                                                        selectedIsolationPreset,
-                                                        isolationSubtraction,
-                                                        isolationHum,
-                                                        isolationClarity
-                                                    )
-                                                },
-                                                modifier = Modifier
-                                                    .weight(1.25f)
-                                                    .height(48.dp)
-                                                    .testTag("btn_confirm_vocal_isolation")
-                                                    .semantics {
-                                                        contentDescription = "Apply ${selectedIsolationPreset.displayName} adaptive spectral vocal isolation inside Noise Reduction"
-                                                    }
-                                            ) {
-                                                Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
-                                                Spacer(Modifier.width(4.dp))
-                                                Text("Isolate Speech", fontWeight = FontWeight.Black, fontSize = 12.sp)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                            AdaptiveNoiseReductionPanel(
+                                params = denoiseParams,
+                                onParamsChange = { next ->
+                                    if (!noiseReductionEnabled) onNoiseReductionEnabledChange(true)
+                                    onDenoiseParamsChange(next)
+                                },
+                                learnedProfile = learnedNoiseProfile,
+                                isPlayingLivePreview = isPlayingLivePreview,
+                                onToggleLivePreview = onToggleLivePreview,
+                                onLearnNoiseProfile = { onCaptureNoisePrint?.invoke() },
+                                onClearNoiseProfile = { onClearNoisePrint?.invoke() },
+                                onApplyOfflineClean = { onApplyAdaptiveNoiseReduction(denoiseParams) },
+                                onApplyDeClick = onApplyDeClick,
+                                isEnabled = noiseReductionEnabled,
+                                onEnabledChange = onNoiseReductionEnabledChange
+                            )
 
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),

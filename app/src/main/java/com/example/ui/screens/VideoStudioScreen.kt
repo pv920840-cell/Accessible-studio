@@ -198,6 +198,17 @@ fun VideoStudioScreen(
     var audioVolume by remember { mutableFloatStateOf(1.0f) }
     var noiseReduceEnabled by remember { mutableStateOf(false) }
     var noiseReduceStrength by remember { mutableFloatStateOf(0.75f) }
+    var noiseDenoiseParams by remember {
+        mutableStateOf(
+            com.example.audio.SpectralDenoiseParams(
+                thresholdDb = -26f,
+                reductionDb = 22f,
+                smoothing = 0.68f,
+                voiceDialogueFocus = true,
+                fftSize = 2048
+            )
+        )
+    }
 
     // Overlays, Blur, Subtitles, Filters, VFX
     var textOverlay by remember { mutableStateOf("") }
@@ -321,6 +332,7 @@ fun VideoStudioScreen(
             audioVolume = audioVolume,
             noiseReductionEnabled = noiseReduceEnabled,
             noiseReductionStrength = noiseReduceStrength,
+            noiseDenoiseParams = if (noiseReduceEnabled) noiseDenoiseParams else null,
             outputFormat = outputFormat,
             metadataTitle = videoMeta.title,
             metadataArtist = videoMeta.artist,
@@ -822,10 +834,22 @@ fun VideoStudioScreen(
                 noiseReduceStrength = noiseReduceStrength,
                 onToggleNoiseReduce = { noiseReduceEnabled = it },
                 onChangeNoiseReduceStrength = { noiseReduceStrength = it },
+                noiseDenoiseParams = noiseDenoiseParams,
+                onChangeNoiseDenoiseParams = { p ->
+                    noiseDenoiseParams = p
+                    noiseReduceStrength = (p.reductionDb / 30f).coerceIn(0f, 1f)
+                },
                 onExtractVideoToAudio = { fmt ->
                     val uri = currentVideoUri ?: return@VideoAudioMusicPanel
                     runAsyncTask("Extracting $fmt Audio Track...") { prog ->
-                        val f = audioMixer.extractAudioFromVideo(uri, fmt, "ExtractedAudio_$timestamp", noiseReduceEnabled, prog)
+                        val f = audioMixer.extractAudioFromVideo(
+                            videoUri = uri,
+                            format = fmt,
+                            outputFileName = "ExtractedAudio_$timestamp",
+                            applyNoiseReduction = noiseReduceEnabled,
+                            onProgress = prog,
+                            noiseDenoiseParams = if (noiseReduceEnabled) noiseDenoiseParams else null
+                        )
                         Toast.makeText(context, "Saved audio: Music/Audio Studio/${f.name}", Toast.LENGTH_LONG).show()
                         null
                     }

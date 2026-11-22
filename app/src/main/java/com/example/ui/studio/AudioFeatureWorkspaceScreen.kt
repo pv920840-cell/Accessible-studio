@@ -59,6 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -85,15 +86,17 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.accessibility.AccessibilityHelper
 import com.example.accessibility.VibrationType
+import com.example.audio.AdaptiveSpectralDenoiser
 import com.example.audio.AudioEditSettings
 import com.example.audio.AudioPlayerManager
 import com.example.audio.AudioRecorderManager
+import com.example.ui.components.AdaptiveNoiseReductionPanel
 import com.example.ui.components.MixSyncOffsetControl
 import com.example.audio.EqPreset
 import com.example.audio.ScrubDirection
+import com.example.audio.SpectralDenoiseParams
+import com.example.audio.SpectralNoiseProfile
 import com.example.audio.StudioAudioProcessor
-import com.example.audio.VocalIsolationPreset
-import com.example.audio.VocalIsolationProcessor
 import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
@@ -824,11 +827,26 @@ fun AudioFeatureWorkspaceScreen(
                 }
 
                 AudioFeatureTool.EFFECTS_CLEANING -> {
-                    var noiseStrength by remember { mutableFloatStateOf(editSettings.noiseReductionIntensity) }
+                    var denoiseParams by remember(session.projectId, tool) {
+                        mutableStateOf(editSettings.effectiveDenoiseParams())
+                    }
+                    var learnedNoiseProfile by remember(session.projectId, tool) {
+                        mutableStateOf<SpectralNoiseProfile?>(null)
+                    }
+                    var liveDenoiseArmed by remember(session.projectId, tool) { mutableStateOf(true) }
                     var echoMix by remember { mutableFloatStateOf(editSettings.echoMix) }
                     var reverbMix by remember { mutableFloatStateOf(editSettings.reverbMix) }
-                    var capturedNoisePrintPcm by remember(session.projectId, tool) { mutableStateOf<ShortArray?>(null) }
-                    var noisePrintSummary by remember(session.projectId, tool) { mutableStateOf<String?>(null) }
+
+                    LaunchedEffect(denoiseParams, learnedNoiseProfile, liveDenoiseArmed) {
+                        playerManager.setRealtimeDenoiseParams(denoiseParams)
+                        playerManager.setRealtimeNoiseProfile(learnedNoiseProfile)
+                        playerManager.setRealtimeDenoiseEnabled(liveDenoiseArmed)
+                    }
+                    DisposableEffect(tool) {
+                        onDispose {
+                            playerManager.setRealtimeDenoiseEnabled(false)
+                        }
+                    }
 
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -840,25 +858,6 @@ fun AudioFeatureWorkspaceScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Button(
-                                    onClick = {
-                                        val print = capturedNoisePrintPcm
-                                        pushUndoAndApply("Applied Studio Ultra Clean (Fan & Motor Removed)") { pcm ->
-                                            VocalIsolationProcessor.isolateSpokenAudio(
-                                                samples = pcm,
-                                                preset = VocalIsolationPreset.STUDIO_DEEP_CLEAN,
-                                                sampleRate = sampleRate,
-                                                customNoisePrintPcm = print
-                                            )
-                                        }
-                                    },
-                                    modifier = Modifier
-                                        .height(48.dp)
-                                        .testTag("btn_fx_studio_deep_clean")
-                                        .semantics {
-                                            contentDescription = "Studio Clean Fan and Motor Remover. Offline removes ceiling fan, motor whine, room noise, and hum with studio voice clarity."
-                                        }
-                                ) { Text("Studio Clean (Fan/Motor)", fontWeight = FontWeight.Black) }
                                 Button(
                                     onClick = { pushUndoAndApply("Applied Auto Gain leveling") { StudioAudioProcessor.applyAutoGain(it) } },
                                     modifier = Modifier
@@ -886,142 +885,80 @@ fun AudioFeatureWorkspaceScreen(
                                 ) { Text("Gain +3 dB", fontWeight = FontWeight.Bold) }
                             }
 
-                            var selectedIsolationPreset by remember { mutableStateOf(VocalIsolationPreset.STUDIO_DEEP_CLEAN) }
-                            Card(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("card_workspace_vocal_isolation"),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("Studio Noise Reduction & Fan/Motor Removal", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Black)
-                                    AccessibleEffectSlider(
-                                        title = "Noise Reduction Strength",
-                                        value = noiseStrength,
-                                        onValueChange = { noiseStrength = it },
-                                        valueRange = 0f..1f,
-                                        step = 0.05f,
-                                        displayValue = "${(noiseStrength * 100).toInt()}%",
-                                        spokenDescription = "Noise reduction ${(noiseStrength * 100).toInt()} percent",
-                                        testTag = "slider_fx_noise"
-                                    )
-                                    HorizontalDivider()
-                                    Text(
-                                        text = "Adaptive Fan, Motor & Hum Remover (100% Offline)",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        text = selectedIsolationPreset.shortDescription,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    FlowRow(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        listOf(
-                                            VocalIsolationPreset.LIGHT to "btn_isolate_light",
-                                            VocalIsolationPreset.MEDIUM to "btn_isolate_medium",
-                                            VocalIsolationPreset.STRONG to "btn_isolate_strong",
-                                            VocalIsolationPreset.STUDIO_DEEP_CLEAN to "btn_isolate_studio_ultra"
-                                        ).forEach { (preset, tag) ->
-                                            FilterChip(
-                                                selected = selectedIsolationPreset == preset,
-                                                onClick = { selectedIsolationPreset = preset },
-                                                label = { Text(preset.displayName, fontWeight = FontWeight.Bold) },
-                                                modifier = Modifier
-                                                    .heightIn(min = 48.dp)
-                                                    .testTag(tag)
-                                                    .semantics {
-                                                        contentDescription = "${preset.displayName}. ${preset.shortDescription}"
-                                                    }
-                                            )
+                            AdaptiveNoiseReductionPanel(
+                                params = denoiseParams,
+                                onParamsChange = { next ->
+                                    denoiseParams = next
+                                    liveDenoiseArmed = true
+                                    playerManager.setRealtimeDenoiseParams(next)
+                                    playerManager.setRealtimeDenoiseEnabled(true)
+                                },
+                                learnedProfile = learnedNoiseProfile,
+                                isPlayingLivePreview = isPlaying && liveDenoiseArmed,
+                                onToggleLivePreview = {
+                                    if (isPlaying) {
+                                        playerManager.pause()
+                                    } else {
+                                        liveDenoiseArmed = true
+                                        playerManager.setRealtimeDenoiseParams(denoiseParams)
+                                        playerManager.setRealtimeNoiseProfile(learnedNoiseProfile)
+                                        playerManager.setRealtimeDenoiseEnabled(true)
+                                        playerManager.play(startFromMs = playerManager.currentPositionMs.value, endLimitMs = null)
+                                    }
+                                },
+                                onLearnNoiseProfile = {
+                                    val s = trimStartMs
+                                    val e = trimEndMs
+                                    if (e - s < 120L) {
+                                        Toast.makeText(context, "Mark a 0.2s–4s fan or noise-only gap using Trim Start/End first.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val snippet = StudioAudioProcessor.cropToSelection(workingPcm, s, e, sampleRate)
+                                        val profile = AdaptiveSpectralDenoiser.captureNoiseProfile(snippet, sampleRate, denoiseParams.fftSize)
+                                        if (profile != null) {
+                                            learnedNoiseProfile = profile
+                                            liveDenoiseArmed = true
+                                            playerManager.setRealtimeNoiseProfile(profile)
+                                            playerManager.setRealtimeDenoiseEnabled(true)
+                                            val msg = "Learned noise profile (${"%.1f".format(profile.durationMs / 1000f)}s): ${profile.bandSummary}"
+                                            AccessibilityHelper.announceForAccessibility(context, msg)
+                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                         }
                                     }
-
-                                    // Optional Noise Print sampling from Start/End trim selection
-                                    FlowRow(
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                val s = trimStartMs
-                                                val e = trimEndMs
-                                                if (e - s < 120L) {
-                                                    Toast.makeText(context, "Mark a 0.2s–4s fan or noise-only gap using Trim Start/End first.", Toast.LENGTH_SHORT).show()
-                                                } else {
-                                                    val snippet = StudioAudioProcessor.cropToSelection(workingPcm, s, e, sampleRate)
-                                                    if (snippet.size >= 512) {
-                                                        capturedNoisePrintPcm = snippet
-                                                        val sec = (e - s) / 1000f
-                                                        val msg = "Noise Print locked (${"%.1f".format(sec)}s) — ready to clean entire track"
-                                                        noisePrintSummary = msg
-                                                        AccessibilityHelper.announceForAccessibility(context, msg)
-                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
-                                            },
-                                            modifier = Modifier
-                                                .heightIn(min = 48.dp)
-                                                .testTag("btn_capture_noise_print")
-                                                .semantics {
-                                                    contentDescription = "Learn Noise Print from selected trim region to target exact fan or motor noise."
-                                                }
-                                        ) {
-                                            Icon(Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
-                                            Spacer(Modifier.width(6.dp))
-                                            Text("Learn Noise Print (Selection)", fontWeight = FontWeight.Bold)
-                                        }
-                                        if (capturedNoisePrintPcm != null) {
-                                            OutlinedButton(
-                                                onClick = {
-                                                    capturedNoisePrintPcm = null
-                                                    noisePrintSummary = null
-                                                    AccessibilityHelper.announceForAccessibility(context, "Custom noise print cleared")
-                                                },
-                                                modifier = Modifier
-                                                    .heightIn(min = 48.dp)
-                                                    .testTag("btn_clear_noise_print")
-                                            ) {
-                                                Text("Clear Print", fontWeight = FontWeight.Bold)
-                                            }
-                                        }
-                                    }
-                                    noisePrintSummary?.let { summary ->
-                                        Text(
-                                            text = summary,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.testTag("txt_noise_print_status")
+                                },
+                                onClearNoiseProfile = {
+                                    learnedNoiseProfile = null
+                                    liveDenoiseArmed = true
+                                    playerManager.setRealtimeNoiseProfile(null)
+                                    playerManager.setRealtimeDenoiseEnabled(true)
+                                    AccessibilityHelper.announceForAccessibility(context, "Switched to Auto Adaptive live noise tracking")
+                                },
+                                onApplyOfflineClean = {
+                                    val applied = denoiseParams.copy(bypass = false).clamped()
+                                    val profile = learnedNoiseProfile
+                                    denoiseParams = applied
+                                    liveDenoiseArmed = false
+                                    playerManager.setRealtimeDenoiseEnabled(false)
+                                    editSettings = editSettings.copy(
+                                        noiseReductionEnabled = true,
+                                        noiseThresholdDb = applied.thresholdDb,
+                                        noiseReductionDb = applied.reductionDb,
+                                        noiseSmoothing = applied.smoothing,
+                                        noiseVoiceFocus = applied.voiceDialogueFocus,
+                                        noiseBypass = false,
+                                        noiseFftSize = applied.fftSize
+                                    )
+                                    pushUndoAndApply("Applied Studio Adaptive De-Noise") { pcm ->
+                                        AdaptiveSpectralDenoiser.processOffline(
+                                            samples = pcm,
+                                            sampleRate = sampleRate,
+                                            channels = 1,
+                                            params = applied,
+                                            noiseProfile = profile
                                         )
                                     }
-
-                                    Button(
-                                        onClick = {
-                                            val chosen = selectedIsolationPreset
-                                            val print = capturedNoisePrintPcm
-                                            pushUndoAndApply("Cleaned audio (${chosen.displayName})") { pcm ->
-                                                VocalIsolationProcessor.isolateSpokenAudio(pcm, chosen, sampleRate, print)
-                                            }
-                                        },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp)
-                                            .testTag("btn_apply_isolate_speech")
-                                            .semantics {
-                                                contentDescription = "Clean Audio and Isolate Speech using ${selectedIsolationPreset.displayName}."
-                                            }
-                                    ) {
-                                        Icon(Icons.Default.Mic, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Clean & Isolate (${selectedIsolationPreset.displayName})", fontWeight = FontWeight.Black)
-                                    }
                                 }
-                            }
+                            )
+
                             Text("EQ Presets", fontWeight = FontWeight.Bold)
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 EqPreset.values().forEach { preset ->
@@ -1054,20 +991,34 @@ fun AudioFeatureWorkspaceScreen(
                             )
                             Button(
                                 onClick = {
+                                    val activeDenoise = denoiseParams.copy(bypass = false).clamped()
+                                    val profile = learnedNoiseProfile
+                                    liveDenoiseArmed = false
+                                    playerManager.setRealtimeDenoiseEnabled(false)
                                     val newSettings = editSettings.copy(
                                         eqPreset = selectedEq,
-                                        noiseReductionEnabled = noiseStrength > 0.05f,
-                                        noiseReductionIntensity = noiseStrength,
+                                        noiseReductionEnabled = activeDenoise.reductionDb >= 0.5f,
+                                        noiseThresholdDb = activeDenoise.thresholdDb,
+                                        noiseReductionDb = activeDenoise.reductionDb,
+                                        noiseSmoothing = activeDenoise.smoothing,
+                                        noiseVoiceFocus = activeDenoise.voiceDialogueFocus,
+                                        noiseBypass = false,
+                                        noiseFftSize = activeDenoise.fftSize,
                                         echoEnabled = echoMix > 0.05f,
                                         echoMix = echoMix,
                                         reverbEnabled = reverbMix > 0.05f,
                                         reverbMix = reverbMix
                                     )
                                     editSettings = newSettings
-                                    val print = capturedNoisePrintPcm
                                     pushUndoAndApply("Applied Studio Effects Chain") { pcm ->
                                         val nrDone = if (newSettings.noiseReductionEnabled) {
-                                            audioProcessor.applyNoiseReduction(pcm, newSettings.noiseReductionIntensity, sampleRate, 1, print)
+                                            AdaptiveSpectralDenoiser.processOffline(
+                                                samples = pcm,
+                                                sampleRate = sampleRate,
+                                                channels = 1,
+                                                params = activeDenoise,
+                                                noiseProfile = profile
+                                            )
                                         } else {
                                             pcm
                                         }

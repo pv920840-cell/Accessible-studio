@@ -2,6 +2,9 @@ name: Build and Publish Accessible Studio APK
 
 on:
   push:
+    branches:
+      - main
+      - master
     tags:
       - "v*"
   workflow_dispatch:
@@ -58,7 +61,15 @@ jobs:
           apk_name = f"AccessibleStudio_V{vname}.apk"
           shutil.copy2("app/build/outputs/apk/debug/app-debug.apk", apk_name)
           repo = os.environ["GITHUB_REPOSITORY"]
-          tag = os.environ.get("GITHUB_REF_NAME", f"v{vname}")
+          tag = f"v{vname}"
+          existing_notes = ""
+          if os.path.exists("version.json"):
+              try:
+                  with open("version.json", "r") as vf:
+                      existing_notes = json.load(vf).get("releaseNotes", "").strip()
+              except Exception:
+                  existing_notes = ""
+          notes = existing_notes or f"Accessible Studio v{vname} release."
           payload = {
               "appName": "Accessible Studio",
               "versionCode": vcode,
@@ -66,21 +77,26 @@ jobs:
               "apkUrl": f"https://github.com/{repo}/releases/download/{tag}/{apk_name}",
               "pageUrl": f"https://github.com/{repo}/releases/latest",
               "apkSizeBytes": os.path.getsize(apk_name),
-              "releaseNotes": f"Accessible Studio {vname} release."
+              "releaseNotes": notes
           }
           with open("version.json", "w") as f:
               json.dump(payload, f, indent=2)
               f.write("\n")
+          with open("RELEASE_NOTES.md", "w") as rf:
+              rf.write(f"## Accessible Studio v{vname}\n\n{notes}\n")
           with open(os.environ["GITHUB_ENV"], "a") as env_f:
               env_f.write(f"VERSIONED_APK_NAME={apk_name}\n")
+              env_f.write(f"RELEASE_TAG={tag}\n")
+              env_f.write(f"RELEASE_VERSION={vname}\n")
           '
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', github.run_number) }}
-          name: Accessible Studio ${{ github.ref_name }}
-          generate_release_notes: true
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: Accessible Studio v${{ env.RELEASE_VERSION }}
+          body_path: RELEASE_NOTES.md
+          make_latest: true
           files: |
             ${{ env.VERSIONED_APK_NAME }}
             version.json

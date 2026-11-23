@@ -175,13 +175,25 @@ class VideoCutterTimelineTest {
 
         composeRule.waitForIdle()
 
-        // Metadata banner, scrubber, and Stream Copy switch preserved
+        // Metadata banner and top scrubber are preserved outside the dialog; lower stack is hidden until clicked
         composeRule.onNodeWithTag("video_metadata_banner").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithText("SampleTutorial.mp4").assertIsDisplayed()
         composeRule.onNodeWithTag("slider_video_timeline_scrubber").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("section_video_trimmer").assertDoesNotExist()
+        composeRule.onNodeWithTag("section_video_cutter").assertDoesNotExist()
+
+        // Open Video Trimmer dialog via top button and verify Stream Copy toggle
+        composeRule.onNodeWithTag("btn_video_feature_trimmer").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("switch_trim_stream_copy").performScrollTo().assertIsOff()
         composeRule.onNodeWithTag("switch_trim_stream_copy").performClick()
         composeRule.onNodeWithTag("switch_trim_stream_copy").assertIsOn()
+        composeRule.onNodeWithTag("btn_done_timeline_feature_dialog").performClick()
+        composeRule.waitForIdle()
+
+        // Open Video Cutter dialog via top button and verify all cutter controls
+        composeRule.onNodeWithTag("btn_video_feature_cutter").performScrollTo().performClick()
+        composeRule.waitForIdle()
 
         // Verify NO Export and save video button inside Video Cutter section
         assertTrue(composeRule.onAllNodesWithText("Export and save video", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
@@ -305,12 +317,18 @@ class VideoCutterTimelineTest {
         }
         composeRule.waitForIdle()
 
-        // Metadata, timeline scrubber, and Stream Copy switch are displayed
+        // Metadata and timeline scrubber are displayed; open Trimmer dialog to enable Stream Copy
         composeRule.onNodeWithTag("video_metadata_banner").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("slider_video_timeline_scrubber").performScrollTo().assertIsDisplayed()
+        composeRule.onNodeWithTag("btn_video_feature_trimmer").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("switch_trim_stream_copy").performScrollTo().performClick()
+        composeRule.onNodeWithTag("btn_done_timeline_feature_dialog").performClick()
+        composeRule.waitForIdle()
 
-        // Add default selected region (00:00.0 - 00:04.0) to cut list inside Video Cutter
+        // Open Video Cutter dialog and add default selected region (00:00.0 - 00:04.0) to cut list
+        composeRule.onNodeWithTag("btn_video_feature_cutter").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("btn_cutter_add_cut").performScrollTo().performClick()
         composeRule.waitForIdle()
 
@@ -319,9 +337,12 @@ class VideoCutterTimelineTest {
         composeRule.onNodeWithTag("txt_cutter_deleted_dur", useUnmergedTree = true).assertTextContains("00:04.0")
         composeRule.onNodeWithTag("txt_cutter_output_len", useUnmergedTree = true).assertTextContains("00:08.0")
 
-        // Ensure no Export button exists inside Video Cutter / Trim workspace
+        // Ensure no Export button exists inside Video Cutter / Trim dialog
         assertTrue(composeRule.onAllNodesWithText("Export and save video", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Export Trimmed Clip", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
+
+        composeRule.onNodeWithTag("btn_done_timeline_feature_dialog").performClick()
+        composeRule.waitForIdle()
 
         // Save project draft back to Project Hub
         composeRule.onNodeWithTag("btn_workspace_save").performClick()

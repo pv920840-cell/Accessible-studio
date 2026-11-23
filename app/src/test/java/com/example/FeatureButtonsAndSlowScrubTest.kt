@@ -170,13 +170,26 @@ class FeatureButtonsAndSlowScrubTest {
         }
         composeRule.waitForIdle()
 
+        // Lower timeline scroll panel cards must NOT render inline below the top buttons initially
+        composeRule.onNodeWithTag("section_video_trimmer").assertDoesNotExist()
+        composeRule.onNodeWithTag("section_video_cutter").assertDoesNotExist()
+
+        // Tapping top Trimmer button opens dedicated dialog, Done closes it cleanly
+        composeRule.onNodeWithTag("btn_video_feature_trimmer").performScrollTo().performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("dialog_video_timeline_feature").assertExists()
         composeRule.onNodeWithTag("section_video_trimmer").performScrollTo().assertExists()
-        composeRule.onNodeWithTag("btn_video_feature_cutter").performScrollTo().performClick()
+        composeRule.onNodeWithTag("btn_done_timeline_feature_dialog").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("section_video_trimmer").assertDoesNotExist()
-        composeRule.onAllNodesWithTag("btn_video_feature_all").onFirst().performScrollTo().performClick()
+
+        // Tapping top Cutter button opens Cutter dialog and closes cleanly
+        composeRule.onNodeWithTag("btn_video_feature_cutter").performScrollTo().performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("section_video_trimmer").performScrollTo().assertExists()
+        composeRule.onNodeWithTag("dialog_video_timeline_feature").assertExists()
+        composeRule.onNodeWithTag("section_video_cutter").assertExists()
+        composeRule.onNodeWithTag("btn_done_timeline_feature_dialog").performClick()
+        composeRule.waitForIdle()
 
         composeRule.onNodeWithTag("section_video_color_filters").performScrollTo().assertExists()
         composeRule.onNodeWithTag("section_video_vfx_effects").performScrollTo().assertExists()
@@ -244,9 +257,25 @@ class FeatureButtonsAndSlowScrubTest {
             composeRule.onNodeWithTag("btn_fx_eq_vocal_boost").performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithTag("card_fx_reverb").assertDoesNotExist()
 
+            // Verify all individual Echo, Reverb & Studio Pro Rack effect buttons exist cleanly
+            listOf(
+                "btn_fx_tab_echo",
+                "btn_fx_tab_reverb",
+                "btn_fx_tab_compressor",
+                "btn_fx_tab_peak_limiter",
+                "btn_fx_tab_flanger",
+                "btn_fx_tab_chorus",
+                "btn_fx_tab_distortion",
+                "btn_fx_tab_eq7band",
+                "btn_fx_tab_pitch_polarity"
+            ).forEach { tag ->
+                composeRule.onNodeWithTag(tag).performScrollTo().assertExists()
+            }
+
             composeRule.onNodeWithTag("btn_fx_tab_all").performScrollTo().performClick()
             composeRule.waitForIdle()
             composeRule.onNodeWithTag("card_fx_reverb").performScrollTo().assertIsDisplayed()
+            composeRule.onNodeWithTag("btn_workspace_audition_fx").performScrollTo().assertIsDisplayed()
             composeRule.onNodeWithTag("btn_workspace_apply_fx").performScrollTo().assertIsDisplayed()
         } finally {
             player.release()

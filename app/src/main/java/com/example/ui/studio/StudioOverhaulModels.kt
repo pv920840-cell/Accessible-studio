@@ -66,11 +66,6 @@ enum class AudioFeatureTool(
         subtitle = "Capture live microphone audio or punch-in over selection",
         tag = "hub_feature_audio_record"
     ),
-    VOCAL_KARAOKE(
-        title = "Vocal & Karaoke Maker",
-        subtitle = "Extract singing vocals or remove vocals to create Karaoke instrumental",
-        tag = "hub_feature_audio_vocal_karaoke"
-    ),
     FULL_DAW_STUDIO(
         title = "Full DAW Timeline",
         subtitle = "Open complete multi-tab workstation & File/Edit/Effect/View/Tools/Help menus",

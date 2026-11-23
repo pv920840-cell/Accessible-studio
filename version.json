@@ -1,10 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 21,
-  "versionName": "1.2.8",
-  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.2.8/AccessibleStudio_V1.2.8.apk",
+  "versionCode": 23,
+  "versionName": "1.3.0",
+  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.3.0/AccessibleStudio_V1.3.0.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 20229817,
-  "changelog": "Separated all Video Studio features into individual 48dp+ direct buttons in Project Hub and Video Studio (keeping Save, Preview & Export intact), separated Audio Effects and Video Color Filters / VFX into distinct clickable buttons and panels, and added slow Rewind & Fast-Forward scrubbing speeds (0.25x, 0.5x, 0.75x, 1.0x) alongside fast speeds.",
-  "releaseNotes": "Separated all Video Studio features into individual 48dp+ direct buttons in Project Hub and Video Studio (keeping Save, Preview & Export intact), separated Audio Effects and Video Color Filters / VFX into distinct clickable buttons and panels, and added slow Rewind & Fast-Forward scrubbing speeds (0.25x, 0.5x, 0.75x, 1.0x) alongside fast speeds."
+  "apkSizeBytes": 20295353,
+  "changelog": "Sharing APK now includes a detailed Accessible Studio feature article explaining what the app does and what makes it special (TalkBack-first offline audio & video editing, individual Pro Effects, and multi-format export), and removed the Vocal Removal feature.",
+  "releaseNotes": "Sharing APK now includes a detailed Accessible Studio feature article explaining what the app does and what makes it special (TalkBack-first offline audio & video editing, individual Pro Effects, and multi-format export), and removed the Vocal Removal feature."
 }

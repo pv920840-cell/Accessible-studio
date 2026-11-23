@@ -69,7 +69,6 @@ object StudioUserGuideContent {
             "• Open Settings from the Home screen to choose your default Export Selection Format (WAV, MP3, FLAC, M4A), High Contrast mode, and Haptic vibration, then tap Save All Settings.\n\n" +
             "6. Video Studio & Batch Processing:\n" +
             "• Switch to the Video Studio tab to trim video, reduce fan/room noise, replace audio tracks, apply effects, and export MP4.\n" +
-            "• Use Vocal & Karaoke Maker (in Project Hub or Tools menu) to extract singing vocals only or remove vocals to create Karaoke instrumentals.\n" +
             "• Use Tools -> Batch Processing to convert or process multiple files at once.\n" +
             "• Exports save offline to Music/Audio Studio/ and Movies/Accessible Studio/."
 
@@ -97,7 +96,6 @@ object StudioUserGuideContent {
             "• होम स्क्रीन पर Settings खोलकर Export Selection Format (WAV, MP3, FLAC, M4A), High Contrast और Haptics चुनें और Save All Settings दबाएं।\n\n" +
             "6. वीडियो स्टूडियो और बैच प्रोसेसिंग:\n" +
             "• Video Studio टैब से वीडियो ट्रिम, Adaptive Noise Reduction, ऑडियो रिप्लेस और MP4 एक्सपोर्ट करें।\n" +
-            "• किसी गाने से केवल आवाज़ (Vocals) निकालने या Karaoke (बिना आवाज़ का म्यूज़िक) बनाने के लिए Project Hub या Tools -> Vocal Extractor & Karaoke Maker का उपयोग करें।\n" +
             "• Tools -> Batch Processing से कई फ़ाइलों को एक साथ प्रोसेस करें। सभी फ़ाइलें फ़ोन में Music/Audio Studio/ और Movies/Accessible Studio/ में सेव होती हैं।"
 
     const val WELCOME_ENGLISH =
@@ -118,24 +116,18 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.2.8 — Separate Video Studio & Effects Buttons + Slow Rewind/Forward Speeds:\n\n" +
-            "1. Separate Video Studio Feature Buttons:\n" +
-            "• Every Video Studio tool (Trimmer, Cutter, Snapshot & Glimpse, Merger, Slideshow, Narration, Multi Music, Sound Effects, Audio Manager, Adaptive Noise Reducer, Video to Audio, Text Overlay, Blur & Mosaic, Image Overlay, Subtitles, Color Filters, VFX, Speed Changer, Resize, Aspect Ratio, Rotate/Flip/Reverse, Silence Remover, Compressor, Format Converter, GIF & Frame Extractor, and Metadata) now has its own dedicated tactile button inside Video Project Hub and Video Studio while preserving all Save, Preview, and Export flows.\n\n" +
-            "2. Separate Audio & Video Effects Buttons:\n" +
-            "• Audio Effects & Cleaning now offers individual one-tap buttons (Auto Gain, Normalize, De-Hum, Compressor, Peak Limiter, Gain +3/-3 dB, Flanger, Chorus, De-Click, DC Offset, Reverse) plus dedicated section buttons for Adaptive De-Noise, EQ Presets, Echo, and Reverb.\n" +
-            "• Video Overlays now separates Color Filters and VFX Effects into distinct button panels.\n\n" +
-            "3. Slower Rewind & Fast-Forward Speeds (0.25x – 8.0x):\n" +
-            "• Added ultra-slow 0.25x, 0.5x, 0.75x, and 1.0x Rewind and Fast-Forward scrub speeds alongside 1.5x–8.0x fast speeds with smooth interpolated reverse and slow forward playback."
+        "What's New in Version 1.3.0 — Share APK with Feature Article & Streamlined Audio Studio:\n\n" +
+            "1. Share APK with Complete Feature Article:\n" +
+            "• Tapping 'Share APK & App Article' in Settings -> About, the Update Dialog, or the Release Page now sends a clear, informative article explaining what Accessible Studio does and what makes it special (TalkBack-first design, High Contrast OLED, 100% offline Audio & Video editing, Individual Pro Effects, and multi-format export) right alongside the direct APK download link.\n\n" +
+            "2. Vocal Removal Tool Removed:\n" +
+            "• Removed the Vocal & Karaoke Removal tool cleanly from Project Hub, Tools menu, Audio Workspace, and User Guide so the studio stays focused, fast, and reliable."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.2.8 में नया क्या है — अलग-अलग वीडियो स्टूडियो और इफ़ेक्ट्स बटन + धीमी Rewind/Forward स्पीड:\n\n" +
-            "1. Video Studio के हर फ़ीचर का अलग बटन:\n" +
-            "• Video Project Hub और Video Studio में अब हर फ़ीचर (Trimmer, Cutter, Merger, Slideshow, Narration, Multi Music, Sound Effects, Noise Reducer, Text Overlay, Blur, Image Overlay, Subtitles, Speed Changer, Compressor, Format Converter आदि) का अलग-अलग बड़ा बटन दिया गया है, जबकि Save, Preview और Export पहले की तरह ही काम करते हैं।\n\n" +
-            "2. Audio और Video Effects के अलग-अलग बटन:\n" +
-            "• Audio Effects में अब Auto Gain, Normalize, De-Hum, Compressor, Peak Limiter, Gain +3/-3 dB, Flanger, Chorus, De-Click, DC Offset और Reverse के अलग-अलग बटन तथा Adaptive De-Noise, EQ, Echo और Reverb के अलग पैनल बटन दिए गए हैं।\n" +
-            "• Video Studio में Color Filters और VFX Effects को अलग-अलग बटन कार्ड्स में बाँटा गया है।\n\n" +
-            "3. Rewind और Fast-Forward के लिए धीमी (Slow) स्पीड (0.25x – 8.0x):\n" +
-            "• बारीकी से ऑडियो सुनने के लिए अब तेज़ स्पीड (1.5x–8.0x) के साथ-साथ धीमी Rewind/Forward स्पीड (0.25x, 0.5x, 0.75x, 1.0x) भी जोड़ दी गई है।"
+        "Version 1.3.0 में नया क्या है — फ़ीचर आर्टिकल के साथ Share APK और साफ़ ऑडियो स्टूडियो:\n\n" +
+            "1. Share APK के साथ पूरा फ़ीचर आर्टिकल:\n" +
+            "• अब Settings -> About, Update डायलॉग या रिलीज़ पेज से 'Share APK & App Article' दबाने पर डायरेक्ट APK डाउनलोड लिंक के साथ एक पूरा आर्टिकल भी शेयर होता है, जिसमें साफ़ लिखा है कि हमारा ऐप क्या काम करता है और इसकी खास बातें क्या हैं (TalkBack सपोर्ट, High Contrast, 100% ऑफ़लाइन ऑडियो व वीडियो एडिटिंग और अलग-अलग प्रो इफ़ेक्ट्स)।\n\n" +
+            "2. Vocal Removal फ़ीचर हटाया गया:\n" +
+            "• Project Hub, Tools मेनू, ऑडियो वर्कस्पेस और गाइड से Vocal Removal फ़ीचर को पूरी तरह हटा दिया गया है।"
 }
 
 @Composable

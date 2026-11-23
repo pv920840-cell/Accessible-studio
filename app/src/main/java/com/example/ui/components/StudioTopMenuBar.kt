@@ -415,10 +415,42 @@ fun StudioDawTopBar(
                         }
 
                         HorizontalDivider()
-                        MenuCategoryHeader("CREATIVE DSP")
-                        StudioMenuItem("Echo & Reverb Studio", Icons.Default.Waves, "menu_eff_echo_reverb") {
+                        MenuCategoryHeader("CREATIVE DSP & PRO RACK")
+                        StudioMenuItem("Echo (Delay)", Icons.Default.Waves, "menu_eff_echo") {
                             openMenu = TopDropdownMenuKey.NONE
-                            onAudioCommand(AudioStudioCommand.OpenEffectsTab(0))
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.ECHO))
+                        }
+                        StudioMenuItem("Reverb (Acoustic Space)", Icons.Default.Waves, "menu_eff_reverb") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.REVERB))
+                        }
+                        StudioMenuItem("Dynamics Compressor", Icons.Default.Tune, "menu_eff_comp_single") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.COMPRESSOR))
+                        }
+                        StudioMenuItem("Peak Limiter (Anti-Clip)", Icons.Default.Tune, "menu_eff_limiter_single") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.PEAK_LIMITER))
+                        }
+                        StudioMenuItem("Flanger", Icons.Default.Waves, "menu_eff_flanger_single") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.FLANGER))
+                        }
+                        StudioMenuItem("Chorus (Multi-Voice)", Icons.Default.Waves, "menu_eff_chorus_single") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.CHORUS))
+                        }
+                        StudioMenuItem("Overdrive & Distortion", Icons.Default.GraphicEq, "menu_eff_distortion_single") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.DISTORTION))
+                        }
+                        StudioMenuItem("7-Band Graphic Equalizer", Icons.Default.Equalizer, "menu_eff_eq7band_single") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.EQ_7_BAND))
+                        }
+                        StudioMenuItem("Pitch Shifter & Polarity", Icons.Default.AutoAwesome, "menu_eff_pitch_single") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenSingleEffect(StudioSingleEffectKey.PITCH_POLARITY))
                         }
                         StudioMenuItem("Pitch / Time Stretch / Censor", Icons.Default.AutoAwesome, "menu_eff_pitch_censor") {
                             openMenu = TopDropdownMenuKey.NONE
@@ -432,7 +464,7 @@ fun StudioDawTopBar(
                             openMenu = TopDropdownMenuKey.NONE
                             onAudioCommand(AudioStudioCommand.ReverseTrack)
                         }
-                        StudioMenuItem("7-Band EQ & Tone", Icons.Default.Equalizer, "menu_eff_eq") {
+                        StudioMenuItem("Tone & EQ Presets", Icons.Default.Equalizer, "menu_eff_eq") {
                             openMenu = TopDropdownMenuKey.NONE
                             onAudioCommand(AudioStudioCommand.OpenEffectsTab(2))
                         }
@@ -594,10 +626,6 @@ fun StudioDawTopBar(
                         StudioMenuItem("Voice Over Auto-Ducking", Icons.Default.Mic, "menu_tools_voiceover") {
                             openMenu = TopDropdownMenuKey.NONE
                             onAudioCommand(AudioStudioCommand.OpenVoiceOverDialog)
-                        }
-                        StudioMenuItem("Vocal Extractor & Karaoke Maker", Icons.Default.MusicNote, "menu_tools_vocal_karaoke") {
-                            openMenu = TopDropdownMenuKey.NONE
-                            onAudioCommand(AudioStudioCommand.OpenVocalKaraokeDialog)
                         }
                         StudioMenuItem("Tone / Noise Generator", Icons.Default.Waves, "menu_tools_tone") {
                             openMenu = TopDropdownMenuKey.NONE

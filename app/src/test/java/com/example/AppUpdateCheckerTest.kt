@@ -21,6 +21,7 @@ import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibilitySettingsSheet
 import com.example.ui.components.AppUpdateAvailableDialog
 import com.example.ui.components.InAppUpdateFlowState
+import com.example.update.ApkInstallCompatibility
 import com.example.update.AppUpdateChecker
 import com.example.update.UpdateCheckState
 import org.junit.Assert.assertEquals
@@ -319,7 +320,7 @@ class AppUpdateCheckerTest {
             {
               "tag_name": "v1.2.20261119.120000",
               "name": "Accessible Studio 1.2.20261119.120000",
-              "body": "GitHub Release with Vocal Remover speed boost.",
+              "body": "GitHub Release with Audio Effects speed boost.",
               "html_url": "https://github.com/accessible-dev/accessible-studio/releases/tag/v1.2.20261119.120000",
               "assets": [
                 {
@@ -352,7 +353,7 @@ class AppUpdateCheckerTest {
             "https://github.com/accessible-dev/accessible-studio/releases/tag/v1.2.20261119.120000",
             update.downloadUrl
         )
-        assertEquals("GitHub Release with Vocal Remover speed boost.", update.releaseNotes)
+        assertEquals("GitHub Release with Audio Effects speed boost.", update.releaseNotes)
     }
 
     @Test
@@ -602,5 +603,146 @@ class AppUpdateCheckerTest {
         composeRule.onNodeWithTag("btn_dialog_install_apk").assertExists().performClick()
         composeRule.waitForIdle()
         assertEquals(dummyApk, installedApkFile)
+    }
+
+    @Test
+    fun checkPackageInfoCompatibility_detectsSignatureConflictPackageMismatchAndDowngrade() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+
+        val compatible = AppUpdateChecker.checkPackageInfoCompatibility(
+            expectedPackageName = context.packageName,
+            installedVersionCode = 21L,
+            installedCertSha256Set = setOf("AABBCC"),
+            downloadedPackageName = context.packageName,
+            downloadedVersionCode = 22L,
+            downloadedCertSha256Set = setOf("AABBCC")
+        )
+        assertTrue(compatible is ApkInstallCompatibility.Compatible)
+
+        val sigConflict = AppUpdateChecker.checkPackageInfoCompatibility(
+            expectedPackageName = context.packageName,
+            installedVersionCode = 21L,
+            installedCertSha256Set = setOf("AABBCC"),
+            downloadedPackageName = context.packageName,
+            downloadedVersionCode = 22L,
+            downloadedCertSha256Set = setOf("DDEEFF")
+        )
+        assertTrue(sigConflict is ApkInstallCompatibility.SignatureConflict)
+
+        val pkgMismatch = AppUpdateChecker.checkPackageInfoCompatibility(
+            expectedPackageName = context.packageName,
+            installedVersionCode = 21L,
+            installedCertSha256Set = setOf("AABBCC"),
+            downloadedPackageName = "com.other.app",
+            downloadedVersionCode = 22L,
+            downloadedCertSha256Set = setOf("AABBCC")
+        )
+        assertTrue(pkgMismatch is ApkInstallCompatibility.PackageIdMismatch)
+
+        val downgrade = AppUpdateChecker.checkPackageInfoCompatibility(
+            expectedPackageName = context.packageName,
+            installedVersionCode = 22L,
+            installedCertSha256Set = setOf("AABBCC"),
+            downloadedPackageName = context.packageName,
+            downloadedVersionCode = 20L,
+            downloadedCertSha256Set = setOf("AABBCC")
+        )
+        assertTrue(downgrade is ApkInstallCompatibility.VersionDowngrade)
+    }
+
+    @Test
+    fun uninstallIntent_andShareApkDirectLinkIntent_areConstructedProperly() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+
+        val uninstallIntent = AppUpdateChecker.createUninstallCurrentAppIntent(context)
+        assertEquals(Intent.ACTION_DELETE, uninstallIntent.action)
+        assertEquals("package:${context.packageName}", uninstallIntent.dataString)
+
+        val directUrl = AppUpdateChecker.buildDirectApkDownloadUrl(
+            owner = "pv920840-cell",
+            repo = "Accessible-studio",
+            versionName = "1.3.0"
+        )
+        assertEquals(
+            "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.3.0/AccessibleStudio_V1.3.0.apk",
+            directUrl
+        )
+
+        val chooserIntent = AppUpdateChecker.createShareApkLinkIntent(directUrl, "1.3.0")
+        assertEquals(Intent.ACTION_CHOOSER, chooserIntent.action)
+        val innerIntent = chooserIntent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        assertNotNull(innerIntent)
+        assertEquals(Intent.ACTION_SEND, innerIntent?.action)
+        assertEquals("text/plain", innerIntent?.type)
+        val sharedText = innerIntent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        assertTrue(sharedText.contains(directUrl))
+        assertTrue(sharedText.contains("v1.3.0"))
+        assertTrue(sharedText.contains("What Accessible Studio Does:"))
+        assertTrue(sharedText.contains("What Makes Accessible Studio Special:"))
+        assertTrue(sharedText.contains("TalkBack"))
+        assertTrue(sharedText.contains("Video Studio"))
+        assertFalse(sharedText.contains("Karaoke", ignoreCase = true))
+        assertFalse(sharedText.contains("Vocal Remover", ignoreCase = true))
+    }
+
+    @Test
+    fun appUpdateDialog_packageConflictAndSettingsSheet_exposeUninstallAndShareApkButtons() {
+        val sampleUpdate = UpdateCheckState.UpdateAvailable(
+            currentVersion = "1.2.8",
+            latestVersion = "1.2.9",
+            latestCode = 22,
+            downloadUrl = "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.2.9/AccessibleStudio_V1.2.9.apk",
+            releaseNotes = "Conflict fix and share APK link.",
+            checkedAtMs = 6000L,
+            sourceLabel = "GitHub (main)",
+            apkUrl = "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.2.9/AccessibleStudio_V1.2.9.apk"
+        )
+        var uninstallClicks = 0
+        var dialogShareClicks = 0
+        var settingsShareClicks = 0
+        var showDialog by mutableStateOf(true)
+
+        composeRule.setContent {
+            if (showDialog) {
+                AppUpdateAvailableDialog(
+                    update = sampleUpdate,
+                    flowState = InAppUpdateFlowState.PackageConflict(
+                        message = "Installed build uses a different signing key."
+                    ),
+                    onUpdateNow = {},
+                    onOpenInstallPermissionSettings = {},
+                    onInstallDownloadedApk = {},
+                    onLater = { showDialog = false },
+                    onUninstallCurrentApp = { uninstallClicks++ },
+                    onShareApkLink = { dialogShareClicks++ }
+                )
+            } else {
+                AccessibilitySettingsSheet(
+                    isHighContrast = false,
+                    isHapticsEnabled = true,
+                    defaultExportFormat = "WAV",
+                    onSaveSettings = { _, _, _ -> },
+                    onShareApkLink = { settingsShareClicks++ },
+                    onDismiss = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("card_update_package_conflict").assertExists()
+        composeRule.onNodeWithTag("txt_update_package_conflict")
+            .assertTextContains("different signing key", substring = true)
+        composeRule.onNodeWithTag("btn_dialog_uninstall_existing").assertExists().performClick()
+        composeRule.onNodeWithTag("btn_dialog_share_apk_link").assertExists().performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, uninstallClicks)
+        assertEquals(1, dialogShareClicks)
+
+        // Dismiss dialog to switch to Settings sheet and test About Share APK Direct Link button
+        composeRule.onNodeWithTag("btn_dialog_update_later").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("btn_about_share_apk_link").performScrollTo().assertExists().performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, settingsShareClicks)
     }
 }

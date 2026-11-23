@@ -134,10 +134,10 @@ sealed class AudioStudioCommand {
 
     // Tools & Studio Modals
     object OpenVoiceOverDialog : AudioStudioCommand()
-    object OpenVocalKaraokeDialog : AudioStudioCommand()
     object OpenToneGenerator : AudioStudioCommand()
     object OpenStatsDialog : AudioStudioCommand()
     data class OpenEffectsTab(val tabIndex: Int) : AudioStudioCommand()
+    data class OpenSingleEffect(val effectKey: StudioSingleEffectKey) : AudioStudioCommand()
     data class OpenProSuiteTab(val tabIndex: Int) : AudioStudioCommand()
 
     // Transport Controls

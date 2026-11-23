@@ -851,7 +851,8 @@ fun VideoStudioScreen(
                         toolkit.exportStreamCopyRanges(uri, ranges, "Highlights_$timestamp", outputFormat, onProgress = prog)
                     }
                 },
-                initialFocusedFeature = focusedFeature
+                initialFocusedFeature = focusedFeature,
+                onFocusedFeatureChange = { focusedFeature = it }
             )
 
             VideoToolSection.AUDIO_MUSIC -> VideoAudioMusicPanel(

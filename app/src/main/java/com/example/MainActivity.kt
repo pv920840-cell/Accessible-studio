@@ -103,6 +103,7 @@ import com.example.ui.screens.BatchProcessingDialog
 import com.example.ui.studio.StudioRootCoordinator
 import com.example.ui.theme.AccessibleStudioTheme
 import com.example.update.ApkDownloadResult
+import com.example.update.ApkInstallCompatibility
 import com.example.update.AppUpdateChecker
 import com.example.update.UpdateCheckState
 
@@ -152,6 +153,30 @@ class MainActivity : ComponentActivity() {
             val appCoroutineScope = rememberCoroutineScope()
 
             fun launchApkInstallWithPermissionCheck(apkFile: java.io.File) {
+                when (val compat = AppUpdateChecker.checkDownloadedApkCompatibility(activityContext, apkFile)) {
+                    is ApkInstallCompatibility.SignatureConflict -> {
+                        updateFlowState = InAppUpdateFlowState.PackageConflict(compat.message, apkFile)
+                        AccessibilityHelper.announceForAccessibility(activityContext, compat.message)
+                        return
+                    }
+                    is ApkInstallCompatibility.PackageIdMismatch -> {
+                        updateFlowState = InAppUpdateFlowState.PackageConflict(compat.message, apkFile)
+                        AccessibilityHelper.announceForAccessibility(activityContext, compat.message)
+                        return
+                    }
+                    is ApkInstallCompatibility.VersionDowngrade -> {
+                        updateFlowState = InAppUpdateFlowState.PackageConflict(compat.message, apkFile)
+                        AccessibilityHelper.announceForAccessibility(activityContext, compat.message)
+                        return
+                    }
+                    is ApkInstallCompatibility.UnreadableArchive -> {
+                        updateFlowState = InAppUpdateFlowState.Error(compat.message)
+                        AccessibilityHelper.announceForAccessibility(activityContext, compat.message)
+                        return
+                    }
+                    ApkInstallCompatibility.Compatible -> Unit
+                }
+
                 if (AppUpdateChecker.canInstallUnknownApps(activityContext)) {
                     updateFlowState = InAppUpdateFlowState.ReadyToInstall(apkFile)
                     val launched = AppUpdateChecker.installDownloadedApk(activityContext, apkFile)
@@ -166,6 +191,21 @@ class MainActivity : ComponentActivity() {
                         activityContext,
                         "Permission required: allow installing unknown apps for Accessible Studio in Settings."
                     )
+                }
+            }
+
+            fun shareDirectApkLinkFor(state: UpdateCheckState) {
+                val url = AppUpdateChecker.resolveShareableApkUrl(activityContext, state)
+                val targetVersion = (state as? UpdateCheckState.UpdateAvailable)?.latestVersion
+                    ?: installedAppInfo.versionName
+                if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                val ok = AppUpdateChecker.shareApkDirectLink(activityContext, url, targetVersion)
+                if (!ok) {
+                    android.widget.Toast.makeText(
+                        activityContext,
+                        "Could not open Android Share sheet.",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
 
@@ -443,6 +483,9 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         },
+                        onShareApkLink = {
+                            shareDirectApkLinkFor(updateCheckState)
+                        },
                         onSaveSettings = { newHighContrast, newHaptics, newExportFormat ->
                             val cleanFormat = StudioPreferences.normalizeExportFormat(newExportFormat)
                             persistAndApplySettings(
@@ -541,6 +584,19 @@ class MainActivity : ComponentActivity() {
                         onInstallDownloadedApk = { apkFile ->
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
                             launchApkInstallWithPermissionCheck(apkFile)
+                        },
+                        onUninstallCurrentApp = {
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            if (!AppUpdateChecker.uninstallCurrentApp(activityContext)) {
+                                android.widget.Toast.makeText(
+                                    activityContext,
+                                    "Open Android App Info to uninstall the older build.",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        onShareApkLink = {
+                            shareDirectApkLinkFor(dialogUpdate)
                         },
                         onLater = {
                             dismissedUpdateVersion = dialogUpdate.latestVersion

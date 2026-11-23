@@ -15,9 +15,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.InstallMobile
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -51,6 +53,7 @@ sealed interface InAppUpdateFlowState {
     data class Downloading(val downloadedBytes: Long, val totalBytes: Long) : InAppUpdateFlowState
     data class NeedsUnknownAppsPermission(val apkFile: File) : InAppUpdateFlowState
     data class ReadyToInstall(val apkFile: File) : InAppUpdateFlowState
+    data class PackageConflict(val message: String, val apkFile: File? = null) : InAppUpdateFlowState
     data class Error(val message: String) : InAppUpdateFlowState
 }
 
@@ -61,7 +64,9 @@ fun AppUpdateAvailableDialog(
     onUpdateNow: () -> Unit,
     onOpenInstallPermissionSettings: () -> Unit,
     onInstallDownloadedApk: (File) -> Unit,
-    onLater: () -> Unit
+    onLater: () -> Unit,
+    onUninstallCurrentApp: () -> Unit = {},
+    onShareApkLink: () -> Unit = {}
 ) {
     val isHighContrast = LocalHighContrast.current
     val isDownloading = flowState is InAppUpdateFlowState.Downloading
@@ -225,6 +230,34 @@ fun AppUpdateAvailableDialog(
                         )
                     }
 
+                    is InAppUpdateFlowState.PackageConflict -> {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("card_update_package_conflict")
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "Package Conflict Detected",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Black,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                                Text(
+                                    text = flowState.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.testTag("txt_update_package_conflict")
+                                )
+                            }
+                        }
+                    }
+
                     is InAppUpdateFlowState.Error -> {
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
@@ -244,6 +277,23 @@ fun AppUpdateAvailableDialog(
                     }
 
                     InAppUpdateFlowState.Idle -> Unit
+                }
+
+                OutlinedButton(
+                    onClick = onShareApkLink,
+                    enabled = !isDownloading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_dialog_share_apk_link")
+                        .semantics {
+                            contentDescription = "Share APK Direct Link and full Accessible Studio feature article for version ${update.latestVersion}"
+                        },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Share APK & App Article", fontWeight = FontWeight.Bold)
                 }
             }
         },
@@ -277,6 +327,24 @@ fun AppUpdateAvailableDialog(
                             Icon(Icons.Default.Security, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("Open Settings", fontWeight = FontWeight.Black)
+                        }
+                    }
+                }
+
+                is InAppUpdateFlowState.PackageConflict -> {
+                    Button(
+                        onClick = onUninstallCurrentApp,
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("btn_dialog_uninstall_existing")
+                            .semantics {
+                                contentDescription = "Uninstall existing conflicting build of Accessible Studio so you can install the new update cleanly."
+                            }
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Uninstall Old Build", fontWeight = FontWeight.Black)
                         }
                     }
                 }

@@ -69,15 +69,16 @@ class WelcomePreferenceTest {
         // What's New inside About must show ONLY the current version's changes (older versions removed)
         val whatsNewCombined = "${StudioUserGuideContent.WHATS_NEW_ENGLISH}\n${StudioUserGuideContent.WHATS_NEW_HINDI}"
         assertTrue(whatsNewCombined.contains(com.example.BuildConfig.VERSION_NAME))
-        assertTrue(whatsNewCombined.contains("Video Studio"))
-        assertTrue(whatsNewCombined.contains("Effects"))
-        assertTrue(whatsNewCombined.contains("0.25x"))
-        assertTrue(whatsNewCombined.contains("Rewind"))
+        assertTrue(whatsNewCombined.contains("Share APK"))
+        assertTrue(whatsNewCombined.contains("Article") || whatsNewCombined.contains("आर्टिकल"))
+        assertTrue(whatsNewCombined.contains("Vocal Removal"))
         assertFalse(whatsNewCombined.contains("Version 1.1"))
         assertFalse(whatsNewCombined.contains("Version 1.2 —"))
         assertFalse(whatsNewCombined.contains("Version 1.2.5"))
         assertFalse(whatsNewCombined.contains("Version 1.2.6"))
         assertFalse(whatsNewCombined.contains("Version 1.2.7"))
+        assertFalse(whatsNewCombined.contains("Version 1.2.8"))
+        assertFalse(whatsNewCombined.contains("Version 1.2.9"))
     }
 
     @Test
@@ -153,7 +154,7 @@ class WelcomePreferenceTest {
 
         composeRule.onNodeWithTag("accessibility_settings_sheet").assertExists()
         composeRule.onNodeWithTag("card_about_accessible_studio").performScrollTo().assertExists()
-        assertEquals("1.2.8", com.example.BuildConfig.VERSION_NAME)
+        assertEquals("1.3.0", com.example.BuildConfig.VERSION_NAME)
         composeRule.onNodeWithText("Version ${com.example.BuildConfig.VERSION_NAME} • 100% Free & Open Accessible Studio • 100% Offline").performScrollTo().assertExists()
 
         // First button inside About: User Guide
@@ -173,5 +174,9 @@ class WelcomePreferenceTest {
         composeRule.onNodeWithText("Accessible Studio v${com.example.BuildConfig.VERSION_NAME} • Recent Features & Bug Fixes").assertExists()
         composeRule.onNodeWithTag("btn_close_whats_new").performClick()
         composeRule.waitForIdle()
+
+        assertFalse(com.example.ui.studio.AudioFeatureTool.values().any {
+            it.name.contains("VOCAL", ignoreCase = true) || it.title.contains("Karaoke", ignoreCase = true)
+        })
     }
 }

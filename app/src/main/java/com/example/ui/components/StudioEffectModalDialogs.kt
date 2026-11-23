@@ -121,10 +121,12 @@ fun StudioEffectsRackDialog(
     onApplyDeClick: () -> Unit,
     onCaptureNoisePrint: (() -> Unit)? = null,
     onClearNoisePrint: (() -> Unit)? = null,
+    initialSingleEffect: StudioSingleEffectKey? = null,
     onDismiss: () -> Unit
 ) {
     val isHighContrast = LocalHighContrast.current
     val effectTabs = listOf("Echo & Reverb", "Noise Reduction", "Tone & EQ", "Speed & Reverse", "Studio Pro Rack")
+    var selectedSingleEffect by remember(initialSingleEffect) { mutableStateOf(initialSingleEffect) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -151,13 +153,14 @@ fun StudioEffectsRackDialog(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = effectTabs[selectedTabIndex.coerceIn(0, 4)],
+                            text = selectedSingleEffect?.title ?: effectTabs[selectedTabIndex.coerceIn(0, 4)],
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Black,
-                            color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onBackground
+                            color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.testTag("txt_effects_dialog_title")
                         )
                         Text(
-                            text = "Offline DSP Studio",
+                            text = if (selectedSingleEffect != null) "Individual Effect Control" else "Offline DSP Studio",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -195,8 +198,11 @@ fun StudioEffectsRackDialog(
                 ) {
                     effectTabs.forEachIndexed { idx, title ->
                         Tab(
-                            selected = selectedTabIndex == idx,
-                            onClick = { onSelectTabIndex(idx) },
+                            selected = selectedSingleEffect == null && selectedTabIndex == idx,
+                            onClick = {
+                                selectedSingleEffect = null
+                                onSelectTabIndex(idx)
+                            },
                             text = { Text(title, fontWeight = FontWeight.Bold, fontSize = 12.sp) }
                         )
                     }
@@ -209,153 +215,90 @@ fun StudioEffectsRackDialog(
                         .padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    when (selectedTabIndex.coerceIn(0, 4)) {
-                        0 -> {
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onEchoEnabledChange(!echoEnabled) },
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text("Echo (Delay)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                        Switch(
-                                            checked = echoEnabled,
-                                            onCheckedChange = onEchoEnabledChange,
-                                            modifier = Modifier.testTag("switch_echo_enabled")
-                                        )
-                                    }
-                                    AnimatedVisibility(visible = echoEnabled) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            EffectPresetDropdown(
-                                                effectId = "echo",
-                                                effectTitle = "Echo",
-                                                currentValues = EchoParams(echoDelayMs, echoFeedback, echoMix),
-                                                presets = EffectPanelPresetsCatalog.echoPresets,
-                                                defaultOption = EffectPanelPresetsCatalog.echoDefault,
-                                                valuesEqual = { a, b ->
-                                                    a.delayMs == b.delayMs &&
-                                                        EffectPresetResolver.approxEqual(a.feedback, b.feedback) &&
-                                                        EffectPresetResolver.approxEqual(a.mix, b.mix)
-                                                },
-                                                onApplyPreset = { preset ->
-                                                    onEchoDelayChange(preset.delayMs)
-                                                    onEchoFeedbackChange(preset.feedback)
-                                                    onEchoMixChange(preset.mix)
-                                                }
-                                            )
-                                            AccessibleEffectSlider(
-                                                title = "Echo Delay Time",
-                                                value = echoDelayMs.toFloat(),
-                                                onValueChange = { onEchoDelayChange(it.toLong()) },
-                                                valueRange = 50f..800f,
-                                                step = 25f,
-                                                displayValue = "$echoDelayMs ms",
-                                                spokenDescription = "$echoDelayMs milliseconds delay",
-                                                testTag = "slider_echo_delay"
-                                            )
-                                            AccessibleEffectSlider(
-                                                title = "Echo Feedback Repeat",
-                                                value = echoFeedback,
-                                                onValueChange = onEchoFeedbackChange,
-                                                valueRange = 0.1f..0.85f,
-                                                step = 0.05f,
-                                                displayValue = "${(echoFeedback * 100).toInt()}%",
-                                                spokenDescription = "${(echoFeedback * 100).toInt()} percent feedback",
-                                                testTag = "slider_echo_feedback"
-                                            )
-                                            AccessibleEffectSlider(
-                                                title = "Echo Wet Mix",
-                                                value = echoMix,
-                                                onValueChange = onEchoMixChange,
-                                                valueRange = 0.1f..0.9f,
-                                                step = 0.05f,
-                                                displayValue = "${(echoMix * 100).toInt()}%",
-                                                spokenDescription = "${(echoMix * 100).toInt()} percent wet mix",
-                                                testTag = "slider_echo_mix"
-                                            )
-                                        }
-                                    }
-                                }
+                    StudioSingleEffectButtonsGrid(
+                        selectedEffect = selectedSingleEffect,
+                        onSelectEffect = { next ->
+                            selectedSingleEffect = next
+                            if (next != null) {
+                                onSelectTabIndex(next.rackTabIndex)
                             }
+                        }
+                    )
 
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable { onReverbEnabledChange(!reverbEnabled) },
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text("Reverb (Acoustic Space)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                                        Switch(
-                                            checked = reverbEnabled,
-                                            onCheckedChange = onReverbEnabledChange,
-                                            modifier = Modifier.testTag("switch_reverb_enabled")
-                                        )
-                                    }
-                                    AnimatedVisibility(visible = reverbEnabled) {
-                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            EffectPresetDropdown(
-                                                effectId = "reverb",
-                                                effectTitle = "Reverb",
-                                                currentValues = ReverbParams(reverbRoomSize, reverbDamping, reverbMix),
-                                                presets = EffectPanelPresetsCatalog.reverbPresets,
-                                                defaultOption = EffectPanelPresetsCatalog.reverbDefault,
-                                                valuesEqual = { a, b ->
-                                                    EffectPresetResolver.approxEqual(a.roomSize, b.roomSize) &&
-                                                        EffectPresetResolver.approxEqual(a.damping, b.damping) &&
-                                                        EffectPresetResolver.approxEqual(a.mix, b.mix)
-                                                },
-                                                onApplyPreset = { preset ->
-                                                    onReverbRoomSizeChange(preset.roomSize)
-                                                    onReverbDampingChange(preset.damping)
-                                                    onReverbMixChange(preset.mix)
-                                                }
-                                            )
-                                            AccessibleEffectSlider(
-                                                title = "Room Size / Space",
-                                                value = reverbRoomSize,
-                                                onValueChange = onReverbRoomSizeChange,
-                                                valueRange = 0.1f..0.95f,
-                                                step = 0.05f,
-                                                displayValue = "${(reverbRoomSize * 100).toInt()}%",
-                                                spokenDescription = "${(reverbRoomSize * 100).toInt()} percent room size",
-                                                testTag = "slider_reverb_room"
-                                            )
-                                            AccessibleEffectSlider(
-                                                title = "Reverb Damping",
-                                                value = reverbDamping,
-                                                onValueChange = onReverbDampingChange,
-                                                valueRange = 0.1f..0.8f,
-                                                step = 0.05f,
-                                                displayValue = "${(reverbDamping * 100).toInt()}%",
-                                                spokenDescription = "${(reverbDamping * 100).toInt()} percent damping",
-                                                testTag = "slider_reverb_damping"
-                                            )
-                                            AccessibleEffectSlider(
-                                                title = "Reverb Wet Mix",
-                                                value = reverbMix,
-                                                onValueChange = onReverbMixChange,
-                                                valueRange = 0.1f..0.9f,
-                                                step = 0.05f,
-                                                displayValue = "${(reverbMix * 100).toInt()}%",
-                                                spokenDescription = "${(reverbMix * 100).toInt()} percent reverb mix",
-                                                testTag = "slider_reverb_mix"
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                    val activeSingleEffect = selectedSingleEffect
+                    if (activeSingleEffect != null) {
+                        when (activeSingleEffect) {
+                            StudioSingleEffectKey.ECHO -> EchoEffectCard(
+                                echoEnabled = echoEnabled,
+                                onEchoEnabledChange = onEchoEnabledChange,
+                                echoDelayMs = echoDelayMs,
+                                onEchoDelayChange = onEchoDelayChange,
+                                echoFeedback = echoFeedback,
+                                onEchoFeedbackChange = onEchoFeedbackChange,
+                                echoMix = echoMix,
+                                onEchoMixChange = onEchoMixChange
+                            )
+                            StudioSingleEffectKey.REVERB -> ReverbEffectCard(
+                                reverbEnabled = reverbEnabled,
+                                onReverbEnabledChange = onReverbEnabledChange,
+                                reverbRoomSize = reverbRoomSize,
+                                onReverbRoomSizeChange = onReverbRoomSizeChange,
+                                reverbDamping = reverbDamping,
+                                onReverbDampingChange = onReverbDampingChange,
+                                reverbMix = reverbMix,
+                                onReverbMixChange = onReverbMixChange
+                            )
+                            StudioSingleEffectKey.COMPRESSOR -> CompressorEffectCard(
+                                settings = studioFxSettings,
+                                onSettingsChanged = onStudioFxSettingsChange
+                            )
+                            StudioSingleEffectKey.PEAK_LIMITER -> PeakLimiterEffectCard(
+                                settings = studioFxSettings,
+                                onSettingsChanged = onStudioFxSettingsChange
+                            )
+                            StudioSingleEffectKey.FLANGER -> FlangerEffectCard(
+                                settings = studioFxSettings,
+                                onSettingsChanged = onStudioFxSettingsChange
+                            )
+                            StudioSingleEffectKey.CHORUS -> ChorusEffectCard(
+                                settings = studioFxSettings,
+                                onSettingsChanged = onStudioFxSettingsChange
+                            )
+                            StudioSingleEffectKey.DISTORTION -> DistortionEffectCard(
+                                settings = studioFxSettings,
+                                onSettingsChanged = onStudioFxSettingsChange
+                            )
+                            StudioSingleEffectKey.EQ_7_BAND -> Eq7BandEffectCard(
+                                settings = studioFxSettings,
+                                onSettingsChanged = onStudioFxSettingsChange
+                            )
+                            StudioSingleEffectKey.PITCH_POLARITY -> PitchPolarityEffectCard(
+                                settings = studioFxSettings,
+                                onSettingsChanged = onStudioFxSettingsChange
+                            )
+                        }
+                    } else when (selectedTabIndex.coerceIn(0, 4)) {
+                        0 -> {
+                            EchoEffectCard(
+                                echoEnabled = echoEnabled,
+                                onEchoEnabledChange = onEchoEnabledChange,
+                                echoDelayMs = echoDelayMs,
+                                onEchoDelayChange = onEchoDelayChange,
+                                echoFeedback = echoFeedback,
+                                onEchoFeedbackChange = onEchoFeedbackChange,
+                                echoMix = echoMix,
+                                onEchoMixChange = onEchoMixChange
+                            )
+                            ReverbEffectCard(
+                                reverbEnabled = reverbEnabled,
+                                onReverbEnabledChange = onReverbEnabledChange,
+                                reverbRoomSize = reverbRoomSize,
+                                onReverbRoomSizeChange = onReverbRoomSizeChange,
+                                reverbDamping = reverbDamping,
+                                onReverbDampingChange = onReverbDampingChange,
+                                reverbMix = reverbMix,
+                                onReverbMixChange = onReverbMixChange
+                            )
                         }
 
                         1 -> {

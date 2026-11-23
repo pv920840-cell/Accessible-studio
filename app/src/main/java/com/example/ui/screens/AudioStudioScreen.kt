@@ -113,9 +113,9 @@ import com.example.ui.components.StudioEffectsRackDialog
 import com.example.ui.components.StudioGainDialog
 import com.example.ui.components.StudioInsertSilenceDialog
 import com.example.ui.components.StudioMixAudioDialog
+import com.example.ui.components.StudioSingleEffectKey
 import com.example.ui.components.StudioSpecifyViewDialog
 import com.example.ui.components.StudioToneGeneratorDialog
-import com.example.ui.components.StudioVocalKaraokeDialog
 import com.example.ui.components.StudioVoiceOverDialog
 import com.example.ui.components.VoiceOverSourceChoice
 import com.example.ui.components.WaveformViewportMath
@@ -350,13 +350,13 @@ fun AudioStudioScreen(
     var showPropertiesDialog by remember { mutableStateOf(false) }
     var showCuePointsDialog by remember { mutableStateOf(false) }
     var showVoiceOverDialog by remember { mutableStateOf(false) }
-    var showVocalKaraokeDialog by remember { mutableStateOf(false) }
     var pickedVoiceOverTitle by remember { mutableStateOf<String?>(null) }
     var pickedVoiceOverPcm by remember { mutableStateOf<ShortArray?>(null) }
     var pickedVoiceOverDurMs by remember { mutableLongStateOf(0L) }
     var isDecodingVoiceOverFile by remember { mutableStateOf(false) }
     var showEffectsRackDialog by remember { mutableStateOf(false) }
     var effectsCategoryIndex by remember { mutableIntStateOf(0) }
+    var selectedSingleEffect by remember { mutableStateOf<StudioSingleEffectKey?>(null) }
     var showProSuiteDialog by remember { mutableIntStateOf(0) }.let { mutableStateOf(false) }
     var proSuiteCategoryIndex by remember { mutableIntStateOf(0) }
     var isApplyingProFx by remember { mutableStateOf(false) }
@@ -1337,7 +1337,6 @@ fun AudioStudioScreen(
 
             // Tools & Modals
             AudioStudioCommand.OpenVoiceOverDialog -> showVoiceOverDialog = true
-            AudioStudioCommand.OpenVocalKaraokeDialog -> showVocalKaraokeDialog = true
             AudioStudioCommand.OpenToneGenerator -> showToneDialog = true
             AudioStudioCommand.OpenStatsDialog -> {
                 current?.let {
@@ -1346,7 +1345,13 @@ fun AudioStudioScreen(
                 }
             }
             is AudioStudioCommand.OpenEffectsTab -> {
+                selectedSingleEffect = null
                 effectsCategoryIndex = cmd.tabIndex.coerceIn(0, 4)
+                showEffectsRackDialog = true
+            }
+            is AudioStudioCommand.OpenSingleEffect -> {
+                selectedSingleEffect = cmd.effectKey
+                effectsCategoryIndex = cmd.effectKey.rackTabIndex
                 showEffectsRackDialog = true
             }
             is AudioStudioCommand.OpenProSuiteTab -> {
@@ -2278,83 +2283,6 @@ fun AudioStudioScreen(
         )
     }
 
-    if (showVocalKaraokeDialog) {
-        StudioVocalKaraokeDialog(
-            currentTrackTitle = mainTrackTitle,
-            currentTrackPcm = rawOriginalPcm ?: ShortArray(0),
-            sampleRate = workingSampleRate,
-            initialStereoSourceUri = currentTrackSourceUri,
-            audioProcessor = audioProcessor,
-            playerManager = playerManager,
-            mediaRepository = mediaRepository,
-            defaultExportFormat = defaultExportFormat,
-            hapticsEnabled = hapticsEnabled,
-            onApplySingleStem = { label, stemPcm ->
-                saveUndoSnapshot()
-                rawOriginalPcm = stemPcm
-                currentTrackSourceUri = null
-                try {
-                    playerManager.loadPcmData(stemPcm, workingSampleRate)
-                } catch (_: Throwable) {}
-                val newDurMs = ((stemPcm.size.toDouble() / workingSampleRate) * 1000.0).toLong()
-                trimStartMs = 0L
-                trimEndMs = newDurMs
-                syncActiveProjectTab()
-                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                AccessibilityHelper.announceForAccessibility(context, label)
-                Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
-            },
-            onOpenBothStemsAsTabs = { vocalsTitle, vocalsPcm, karaokeTitle, karaokePcm ->
-                syncActiveProjectTab()
-                val vDur = ((vocalsPcm.size.toDouble() / workingSampleRate) * 1000.0).toLong()
-                val kDur = ((karaokePcm.size.toDouble() / workingSampleRate) * 1000.0).toLong()
-                val vocalsTab = AudioProjectTab(
-                    title = vocalsTitle,
-                    baseFileName = StudioPreferences.extractBaseFileName(vocalsTitle).takeIf { it.isNotBlank() },
-                    pcm = vocalsPcm,
-                    sampleRate = workingSampleRate,
-                    trimStartMs = 0L,
-                    trimEndMs = vDur,
-                    currentPositionMs = 0L,
-                    cuePoints = emptyList(),
-                    isBlankProject = false,
-                    sourceUri = null
-                )
-                val karaokeTab = AudioProjectTab(
-                    title = karaokeTitle,
-                    baseFileName = StudioPreferences.extractBaseFileName(karaokeTitle).takeIf { it.isNotBlank() },
-                    pcm = karaokePcm,
-                    sampleRate = workingSampleRate,
-                    trimStartMs = 0L,
-                    trimEndMs = kDur,
-                    currentPositionMs = 0L,
-                    cuePoints = emptyList(),
-                    isBlankProject = false,
-                    sourceUri = null
-                )
-                openProjects.add(vocalsTab)
-                openProjects.add(karaokeTab)
-                activeProjectIndex = openProjects.lastIndex
-                rawOriginalPcm = karaokePcm
-                mainTrackTitle = karaokeTitle
-                openedFileBaseName = karaokeTab.baseFileName
-                currentTrackSourceUri = null
-                try {
-                    playerManager.loadPcmData(karaokePcm, workingSampleRate)
-                } catch (_: Throwable) {}
-                trimStartMs = 0L
-                trimEndMs = kDur
-                viewHistoryStack.clear()
-                resetViewToAll(false)
-                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                val msg = "Created separate Vocals and Karaoke project tabs."
-                AccessibilityHelper.announceForAccessibility(context, msg)
-                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-            },
-            onDismiss = { showVocalKaraokeDialog = false }
-        )
-    }
-
     if (showCuePointsDialog) {
         val cueDialogPosMs by playerManager.currentPositionMs.collectAsState()
         StudioCuePointsDialog(
@@ -2503,8 +2431,10 @@ fun AudioStudioScreen(
                 playerManager.setRealtimeNoiseProfile(null)
                 AccessibilityHelper.announceForAccessibility(context, "Switched to Auto Adaptive live noise tracking")
             },
+            initialSingleEffect = selectedSingleEffect,
             onDismiss = {
                 playerManager.setRealtimeDenoiseEnabled(false)
+                selectedSingleEffect = null
                 showEffectsRackDialog = false
             }
         )

@@ -54,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -411,12 +412,14 @@ fun AccessibilitySettingsSheet(
     onSaveGitHubSource: ((provider: String, owner: String, repo: String) -> Unit)? = null,
     onCheckForUpdates: (() -> Unit)? = null,
     onDownloadUpdate: ((String) -> Unit)? = null,
+    onShareApkLink: (() -> Unit)? = null,
     currentSettings: StudioSettingsState? = null,
     recordingCapabilityProbe: RecordingCapabilityProbe = AndroidRecordingCapabilityProbe,
     onImmediateSettingsUpdate: ((StudioSettingsState) -> Unit)? = null,
     onSaveFullSettings: ((StudioSettingsState) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
+    val sheetContext = LocalContext.current
     val initialState = remember(
         currentSettings,
         isHighContrast,
@@ -1003,6 +1006,31 @@ fun AccessibilitySettingsSheet(
                                         Text("Download Update (v${updateCheckState.latestVersion})", fontWeight = FontWeight.Black)
                                     }
                                 }
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (onShareApkLink != null) {
+                                        onShareApkLink()
+                                    } else {
+                                        val url = AppUpdateChecker.resolveShareableApkUrl(sheetContext, updateCheckState)
+                                        val version = (updateCheckState as? UpdateCheckState.UpdateAvailable)?.latestVersion
+                                            ?: com.example.BuildConfig.VERSION_NAME
+                                        AppUpdateChecker.shareApkDirectLink(sheetContext, url, version)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("btn_about_share_apk_link")
+                                    .semantics {
+                                        contentDescription = "Share APK Direct Link along with a detailed article about what Accessible Studio does and its special features"
+                                    },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Share APK & App Article", fontWeight = FontWeight.Bold)
                             }
 
                             // Update Source Selector (Hosted Server vs GitHub Releases)

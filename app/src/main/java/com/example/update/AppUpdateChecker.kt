@@ -2,6 +2,7 @@ package com.example.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -21,6 +22,7 @@ import java.io.FileOutputStream
 import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -42,6 +44,26 @@ sealed interface ApkDownloadResult {
     data class Success(val apkFile: File) : ApkDownloadResult
     data class OpenInBrowserFallback(val url: String) : ApkDownloadResult
     data class Error(val message: String) : ApkDownloadResult
+}
+
+sealed interface ApkInstallCompatibility {
+    data object Compatible : ApkInstallCompatibility
+    data class SignatureConflict(
+        val message: String,
+        val installedSha256: String,
+        val downloadedSha256: String
+    ) : ApkInstallCompatibility
+    data class PackageIdMismatch(
+        val expectedPackageId: String,
+        val downloadedPackageId: String,
+        val message: String
+    ) : ApkInstallCompatibility
+    data class VersionDowngrade(
+        val installedVersionCode: Long,
+        val downloadedVersionCode: Long,
+        val message: String
+    ) : ApkInstallCompatibility
+    data class UnreadableArchive(val message: String) : ApkInstallCompatibility
 }
 
 sealed interface UpdateCheckState {
@@ -589,6 +611,211 @@ object AppUpdateChecker {
             )
         } else {
             Intent(Settings.ACTION_SECURITY_SETTINGS)
+        }
+    }
+
+    fun extractSigningCertSha256Set(pkgInfo: PackageInfo?): Set<String> {
+        if (pkgInfo == null) return emptySet()
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val signingInfo = pkgInfo.signingInfo
+            when {
+                signingInfo == null -> emptyArray()
+                signingInfo.hasMultipleSigners() -> signingInfo.apkContentsSigners
+                else -> signingInfo.signingCertificateHistory
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            pkgInfo.signatures
+        } ?: return emptySet()
+
+        return signatures.mapNotNull { sig ->
+            runCatching {
+                val digest = MessageDigest.getInstance("SHA-256").digest(sig.toByteArray())
+                digest.joinToString("") { "%02X".format(it) }
+            }.getOrNull()
+        }.toSet()
+    }
+
+    fun checkPackageInfoCompatibility(
+        expectedPackageName: String,
+        installedVersionCode: Long,
+        installedCertSha256Set: Set<String>,
+        downloadedPackageName: String?,
+        downloadedVersionCode: Long,
+        downloadedCertSha256Set: Set<String>
+    ): ApkInstallCompatibility {
+        if (downloadedPackageName.isNullOrBlank()) {
+            return ApkInstallCompatibility.UnreadableArchive(
+                "Downloaded APK archive could not be parsed. Please retry download or share the APK link."
+            )
+        }
+        if (downloadedPackageName != expectedPackageName) {
+            return ApkInstallCompatibility.PackageIdMismatch(
+                expectedPackageId = expectedPackageName,
+                downloadedPackageId = downloadedPackageName,
+                message = "Package ID mismatch ($downloadedPackageName vs $expectedPackageName). Uninstall the older conflicting app or verify the release APK."
+            )
+        }
+        if (downloadedVersionCode > 0L && installedVersionCode > 0L && downloadedVersionCode < installedVersionCode) {
+            return ApkInstallCompatibility.VersionDowngrade(
+                installedVersionCode = installedVersionCode,
+                downloadedVersionCode = downloadedVersionCode,
+                message = "Downloaded APK version code ($downloadedVersionCode) is lower than installed version code ($installedVersionCode), which Android rejects. Uninstall the existing build first if you want to install an older build."
+            )
+        }
+        if (installedCertSha256Set.isNotEmpty() &&
+            downloadedCertSha256Set.isNotEmpty() &&
+            installedCertSha256Set.intersect(downloadedCertSha256Set).isEmpty()
+        ) {
+            return ApkInstallCompatibility.SignatureConflict(
+                message = "Package conflicts with the existing installation because the installed app and this update APK were signed with different keys. Uninstall the existing build first, then open or install the new APK.",
+                installedSha256 = installedCertSha256Set.first(),
+                downloadedSha256 = downloadedCertSha256Set.first()
+            )
+        }
+        return ApkInstallCompatibility.Compatible
+    }
+
+    fun checkDownloadedApkCompatibility(context: Context, apkFile: File): ApkInstallCompatibility {
+        if (!apkFile.exists() || apkFile.length() <= 0L) {
+            return ApkInstallCompatibility.UnreadableArchive("Downloaded APK file is missing or empty.")
+        }
+        return try {
+            val pm = context.packageManager
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageManager.GET_SIGNING_CERTIFICATES
+            } else {
+                @Suppress("DEPRECATION")
+                PackageManager.GET_SIGNATURES
+            }
+            val installedPkg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(context.packageName, flags)
+            }
+            val archivePkg = (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                pm.getPackageArchiveInfo(apkFile.absolutePath, PackageManager.PackageInfoFlags.of(flags.toLong()))
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageArchiveInfo(apkFile.absolutePath, flags)
+            }) ?: @Suppress("DEPRECATION") pm.getPackageArchiveInfo(apkFile.absolutePath, 0)
+
+            val installedCode = PackageInfoCompat.getLongVersionCode(installedPkg)
+            val archiveCode = archivePkg?.let { PackageInfoCompat.getLongVersionCode(it) } ?: -1L
+            checkPackageInfoCompatibility(
+                expectedPackageName = context.packageName,
+                installedVersionCode = installedCode,
+                installedCertSha256Set = extractSigningCertSha256Set(installedPkg),
+                downloadedPackageName = archivePkg?.packageName,
+                downloadedVersionCode = archiveCode,
+                downloadedCertSha256Set = extractSigningCertSha256Set(archivePkg)
+            )
+        } catch (_: Exception) {
+            ApkInstallCompatibility.Compatible
+        }
+    }
+
+    fun createUninstallCurrentAppIntent(context: Context): Intent {
+        return Intent(Intent.ACTION_DELETE, Uri.parse("package:${context.packageName}")).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun uninstallCurrentApp(context: Context): Boolean {
+        return try {
+            context.startActivity(createUninstallCurrentAppIntent(context))
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    fun buildDirectApkDownloadUrl(
+        owner: String,
+        repo: String,
+        versionName: String = BuildConfig.VERSION_NAME
+    ): String {
+        val cleanVersion = versionName.trim().removePrefix("v").removePrefix("V").ifEmpty { BuildConfig.VERSION_NAME }
+        return if (isValidGitHubRepo(owner, repo)) {
+            "https://github.com/${owner.trim()}/${repo.trim()}/releases/download/v$cleanVersion/AccessibleStudio_V$cleanVersion.apk"
+        } else {
+            "$BASE_HOST_URL/AccessibleStudio_V$cleanVersion.apk"
+        }
+    }
+
+    fun resolveShareableApkUrl(
+        context: Context,
+        updateState: UpdateCheckState = UpdateCheckState.Idle,
+        versionNameOverride: String? = null
+    ): String {
+        if (updateState is UpdateCheckState.UpdateAvailable) {
+            val direct = updateState.apkUrl.trim()
+            if (isDirectApkUrl(direct)) return resolveDownloadUrl(direct)
+            val dl = updateState.downloadUrl.trim()
+            if (isDirectApkUrl(dl)) return resolveDownloadUrl(dl)
+        }
+        val config = loadPublishConfig(context)
+        val version = when {
+            !versionNameOverride.isNullOrBlank() -> versionNameOverride.trim()
+            updateState is UpdateCheckState.UpdateAvailable -> updateState.latestVersion
+            else -> BuildConfig.VERSION_NAME
+        }
+        return buildDirectApkDownloadUrl(config.owner, config.repo, version)
+    }
+
+    fun buildShareApkArticleText(
+        apkUrl: String,
+        versionName: String = BuildConfig.VERSION_NAME
+    ): String {
+        val resolvedUrl = resolveDownloadUrl(apkUrl)
+        val cleanVersion = versionName.trim().removePrefix("v").removePrefix("V").ifEmpty { BuildConfig.VERSION_NAME }
+        return buildString {
+            appendLine("Accessible Studio (v$cleanVersion) — 100% Free & Offline Audio & Video Editing Studio for Everyone")
+            appendLine()
+            appendLine("What Accessible Studio Does:")
+            appendLine("Accessible Studio is a complete mobile Audio & Video Workstation engineered from the ground up for blind, low-vision (TalkBack), and touch creators alike—working 100% offline with zero ads, zero tracking, and no internet needed for editing or exporting.")
+            appendLine()
+            appendLine("What Makes Accessible Studio Special:")
+            appendLine("• TalkBack & Low-Vision First: Full screen-reader announcements, High Contrast OLED black-and-neon mode, tactile haptic vibration feedback, and large 48dp+ controls.")
+            appendLine("• Complete Multi-Track Audio Studio: Record clean anti-crackle voice, open multiple project tabs, Cut/Copy/Mute/Delete/Paste, Mix Audio, Voice Over with Auto-Ducking, and custom Slow & Fast Rewind/Forward speeds (0.25x to 8.0x).")
+            appendLine("• Individual Pro Audio Effects & Studio Cleaning: Dedicated one-tap buttons for Echo (Delay), Reverb (Acoustic Space), Dynamics Compressor, Peak Limiter, 7-Band Graphic EQ, Flanger, Chorus, Overdrive & Distortion, Pitch Shifter & Polarity, Studio Adaptive De-Noise, and Auto Gain.")
+            appendLine("• Full Video Studio: Separate one-tap buttons for Video Trimmer, Non-Destructive Cutter, Snapshot & Glimpse, Video Merger, Slideshow Creator, Narration & Music Layers, Color Filters & VFX, and single-file MP4 export.")
+            appendLine("• Preserves Original File Names & Multi-Format Export: Export crisp WAV, MP3, FLAC, M4A, or MP4 straight to Music/Audio Studio/ and Movies/Accessible Studio/.")
+            appendLine()
+            appendLine("खास बात (Hindi): Accessible Studio बिना इंटरनेट 100% ऑफ़लाइन काम करता है और TalkBack व टच दोनों के लिए बना है — इसमें ऑडियो रिकॉर्डिंग, मिक्सिंग, अलग-अलग प्रो इफ़ेक्ट्स (Echo, Reverb, 7-Band EQ, Compressor, De-Noise), स्लो/फ़ास्ट रिवाइंड-फॉरवर्ड और पूरा Video Studio एक ही ऐप में मिलता है।")
+            appendLine()
+            appendLine("Download Accessible Studio v$cleanVersion (Direct Android APK Link):")
+            append(resolvedUrl)
+        }
+    }
+
+    fun createShareApkLinkIntent(
+        apkUrl: String,
+        versionName: String = BuildConfig.VERSION_NAME
+    ): Intent {
+        val cleanVersion = versionName.trim().removePrefix("v").removePrefix("V").ifEmpty { BuildConfig.VERSION_NAME }
+        val shareText = buildShareApkArticleText(apkUrl = apkUrl, versionName = cleanVersion)
+        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Accessible Studio v$cleanVersion — App Guide & APK Download")
+            putExtra(Intent.EXTRA_TEXT, shareText)
+        }
+        return Intent.createChooser(sendIntent, "Share Accessible Studio Guide & APK Link").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun shareApkDirectLink(
+        context: Context,
+        apkUrl: String,
+        versionName: String = BuildConfig.VERSION_NAME
+    ): Boolean {
+        return try {
+            context.startActivity(createShareApkLinkIntent(apkUrl, versionName))
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 

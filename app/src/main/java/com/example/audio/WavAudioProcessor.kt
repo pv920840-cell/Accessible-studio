@@ -845,7 +845,7 @@ class WavAudioProcessor(private val context: Context? = null) {
     }
 
     /**
-     * Decodes an audio URI preserving true Stereo Left & Right channels for Vocal / Karaoke Mid-Side separation.
+     * Decodes an audio URI preserving true Stereo Left & Right channels for stereo processing.
      */
     suspend fun decodeUriToStereoPcm(uri: Uri): StereoPcmData? = withContext(Dispatchers.IO) {
         val ctx = context ?: return@withContext null

@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Hearing
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
@@ -91,12 +92,25 @@ import com.example.audio.AudioEditSettings
 import com.example.audio.AudioPlayerManager
 import com.example.audio.AudioRecorderManager
 import com.example.ui.components.AdaptiveNoiseReductionPanel
+import com.example.ui.components.ChorusEffectCard
+import com.example.ui.components.CompressorEffectCard
+import com.example.ui.components.DistortionEffectCard
+import com.example.ui.components.EchoParams
+import com.example.ui.components.EffectPanelPresetsCatalog
+import com.example.ui.components.EffectPresetDropdown
+import com.example.ui.components.EffectPresetResolver
+import com.example.ui.components.Eq7BandEffectCard
+import com.example.ui.components.FlangerEffectCard
 import com.example.ui.components.MixSyncOffsetControl
+import com.example.ui.components.PeakLimiterEffectCard
+import com.example.ui.components.PitchPolarityEffectCard
+import com.example.ui.components.ReverbParams
 import com.example.audio.EqPreset
 import com.example.audio.ScrubDirection
 import com.example.audio.SpectralDenoiseParams
 import com.example.audio.SpectralNoiseProfile
 import com.example.audio.StudioAudioProcessor
+import com.example.audio.StudioFxSettings
 import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
@@ -107,7 +121,6 @@ import com.example.ui.components.AccessibleTimeReadout
 import com.example.ui.components.AccessibleTrimSection
 import com.example.ui.components.AudioStudioCommand
 import com.example.ui.components.StudioDawTopBar
-import com.example.ui.components.VocalKaraokeMakerCard
 import com.example.ui.screens.AudioStudioScreen
 import com.example.ui.theme.LocalHighContrast
 import kotlinx.coroutines.CancellationException
@@ -834,8 +847,34 @@ fun AudioFeatureWorkspaceScreen(
                         mutableStateOf<SpectralNoiseProfile?>(null)
                     }
                     var liveDenoiseArmed by remember(session.projectId, tool) { mutableStateOf(true) }
-                    var echoMix by remember { mutableFloatStateOf(editSettings.echoMix) }
-                    var reverbMix by remember { mutableFloatStateOf(editSettings.reverbMix) }
+                    var echoEnabled by remember(session.projectId, tool) { mutableStateOf(editSettings.echoEnabled) }
+                    var echoDelayMs by remember(session.projectId, tool) { mutableLongStateOf(editSettings.echoDelayMs) }
+                    var echoFeedback by remember(session.projectId, tool) { mutableFloatStateOf(editSettings.echoFeedback) }
+                    var echoMix by remember(session.projectId, tool) { mutableFloatStateOf(editSettings.echoMix) }
+                    var reverbEnabled by remember(session.projectId, tool) { mutableStateOf(editSettings.reverbEnabled) }
+                    var reverbRoomSize by remember(session.projectId, tool) { mutableFloatStateOf(editSettings.reverbRoomSize) }
+                    var reverbDamping by remember(session.projectId, tool) { mutableFloatStateOf(editSettings.reverbDamping) }
+                    var reverbMix by remember(session.projectId, tool) { mutableFloatStateOf(editSettings.reverbMix) }
+                    var studioFxSettings by remember(session.projectId, tool) { mutableStateOf(editSettings.studioFx) }
+
+                    LaunchedEffect(
+                        echoEnabled, echoDelayMs, echoFeedback, echoMix,
+                        reverbEnabled, reverbRoomSize, reverbDamping, reverbMix,
+                        studioFxSettings, selectedEq
+                    ) {
+                        editSettings = editSettings.copy(
+                            eqPreset = selectedEq,
+                            echoEnabled = echoEnabled,
+                            echoDelayMs = echoDelayMs,
+                            echoFeedback = echoFeedback,
+                            echoMix = echoMix,
+                            reverbEnabled = reverbEnabled,
+                            reverbRoomSize = reverbRoomSize,
+                            reverbDamping = reverbDamping,
+                            reverbMix = reverbMix,
+                            studioFx = studioFxSettings
+                        )
+                    }
 
                     LaunchedEffect(denoiseParams, learnedNoiseProfile, liveDenoiseArmed) {
                         playerManager.setRealtimeDenoiseParams(denoiseParams)
@@ -920,7 +959,7 @@ fun AudioFeatureWorkspaceScreen(
 
                             HorizontalDivider()
 
-                            Text("Effects Panels", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                            Text("Effects & Studio Pro Rack Buttons", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -929,20 +968,27 @@ fun AudioFeatureWorkspaceScreen(
                                     null to "All Effects",
                                     "denoise" to "Adaptive De-Noise",
                                     "eq" to "EQ Presets",
-                                    "echo" to "Echo",
-                                    "reverb" to "Reverb"
+                                    "echo" to "Echo (Delay)",
+                                    "reverb" to "Reverb (Acoustic Space)",
+                                    "compressor" to "Dynamics Compressor",
+                                    "peak_limiter" to "Peak Limiter (Anti-Clip)",
+                                    "flanger" to "Flanger",
+                                    "chorus" to "Chorus (Multi-Voice)",
+                                    "distortion" to "Overdrive & Distortion",
+                                    "eq7band" to "7-Band Graphic EQ",
+                                    "pitch_polarity" to "Pitch & Polarity"
                                 ).forEach { (key, title) ->
                                     val selected = focusedEffectPanel == key
                                     val tag = "btn_fx_tab_${key ?: "all"}"
                                     if (selected) {
                                         Button(
                                             onClick = { focusedEffectPanel = null },
-                                            modifier = Modifier.height(48.dp).testTag(tag)
+                                            modifier = Modifier.heightIn(min = 48.dp).testTag(tag)
                                         ) { Text(title, fontWeight = FontWeight.Bold) }
                                     } else {
                                         OutlinedButton(
                                             onClick = { focusedEffectPanel = key },
-                                            modifier = Modifier.height(48.dp).testTag(tag)
+                                            modifier = Modifier.heightIn(min = 48.dp).testTag(tag)
                                         ) { Text(title, fontWeight = FontWeight.SemiBold) }
                                     }
                                 }
@@ -1078,18 +1124,56 @@ fun AudioFeatureWorkspaceScreen(
                         }
                     }
 
-                    // 4. Echo Separate Card
+                    // 4. Echo (Delay) Separate Card
                     if (focusedEffectPanel == null || focusedEffectPanel == "echo") {
                         Card(
                             modifier = Modifier.fillMaxWidth().testTag("card_fx_echo"),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Echo Effect", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                Text("Echo (Delay)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                EffectPresetDropdown(
+                                    effectId = "echo",
+                                    effectTitle = "Echo",
+                                    currentValues = EchoParams(echoDelayMs, echoFeedback, echoMix),
+                                    presets = EffectPanelPresetsCatalog.echoPresets,
+                                    defaultOption = EffectPanelPresetsCatalog.echoDefault,
+                                    valuesEqual = { a, b ->
+                                        a.delayMs == b.delayMs &&
+                                            EffectPresetResolver.approxEqual(a.feedback, b.feedback) &&
+                                            EffectPresetResolver.approxEqual(a.mix, b.mix)
+                                    },
+                                    onApplyPreset = { preset ->
+                                        echoEnabled = true
+                                        echoDelayMs = preset.delayMs
+                                        echoFeedback = preset.feedback
+                                        echoMix = preset.mix
+                                    }
+                                )
+                                AccessibleEffectSlider(
+                                    title = "Echo Delay Time",
+                                    value = echoDelayMs.toFloat(),
+                                    onValueChange = { echoEnabled = true; echoDelayMs = it.toLong() },
+                                    valueRange = 50f..800f,
+                                    step = 25f,
+                                    displayValue = "$echoDelayMs ms",
+                                    spokenDescription = "$echoDelayMs milliseconds echo delay",
+                                    testTag = "slider_fx_echo_delay"
+                                )
+                                AccessibleEffectSlider(
+                                    title = "Echo Feedback Repeat",
+                                    value = echoFeedback,
+                                    onValueChange = { echoEnabled = true; echoFeedback = it },
+                                    valueRange = 0.1f..0.85f,
+                                    step = 0.05f,
+                                    displayValue = "${(echoFeedback * 100).toInt()}%",
+                                    spokenDescription = "${(echoFeedback * 100).toInt()} percent feedback",
+                                    testTag = "slider_fx_echo_feedback"
+                                )
                                 AccessibleEffectSlider(
                                     title = "Echo Mix",
                                     value = echoMix,
-                                    onValueChange = { echoMix = it },
+                                    onValueChange = { echoEnabled = it > 0.05f; echoMix = it },
                                     valueRange = 0f..0.9f,
                                     step = 0.05f,
                                     displayValue = "${(echoMix * 100).toInt()}%",
@@ -1100,11 +1184,22 @@ fun AudioFeatureWorkspaceScreen(
                                     onClick = {
                                         val echoAmt = echoMix.coerceAtLeast(0.15f)
                                         echoMix = echoAmt
-                                        editSettings = editSettings.copy(echoEnabled = true, echoMix = echoAmt)
+                                        echoEnabled = true
+                                        editSettings = editSettings.copy(
+                                            echoEnabled = true,
+                                            echoDelayMs = echoDelayMs,
+                                            echoFeedback = echoFeedback,
+                                            echoMix = echoAmt
+                                        )
                                         pushUndoAndApply("Applied Echo (${(echoAmt * 100).toInt()}%)") { pcm ->
                                             audioProcessor.processPcm(
                                                 pcm,
-                                                AudioEditSettings(echoEnabled = true, echoMix = echoAmt),
+                                                AudioEditSettings(
+                                                    echoEnabled = true,
+                                                    echoDelayMs = echoDelayMs,
+                                                    echoFeedback = echoFeedback,
+                                                    echoMix = echoAmt
+                                                ),
                                                 sampleRate
                                             )
                                         }
@@ -1117,18 +1212,56 @@ fun AudioFeatureWorkspaceScreen(
                         }
                     }
 
-                    // 5. Reverb Separate Card
+                    // 5. Reverb (Acoustic Space) Separate Card
                     if (focusedEffectPanel == null || focusedEffectPanel == "reverb") {
                         Card(
                             modifier = Modifier.fillMaxWidth().testTag("card_fx_reverb"),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Reverb Effect", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                Text("Reverb (Acoustic Space)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                EffectPresetDropdown(
+                                    effectId = "reverb",
+                                    effectTitle = "Reverb",
+                                    currentValues = ReverbParams(reverbRoomSize, reverbDamping, reverbMix),
+                                    presets = EffectPanelPresetsCatalog.reverbPresets,
+                                    defaultOption = EffectPanelPresetsCatalog.reverbDefault,
+                                    valuesEqual = { a, b ->
+                                        EffectPresetResolver.approxEqual(a.roomSize, b.roomSize) &&
+                                            EffectPresetResolver.approxEqual(a.damping, b.damping) &&
+                                            EffectPresetResolver.approxEqual(a.mix, b.mix)
+                                    },
+                                    onApplyPreset = { preset ->
+                                        reverbEnabled = true
+                                        reverbRoomSize = preset.roomSize
+                                        reverbDamping = preset.damping
+                                        reverbMix = preset.mix
+                                    }
+                                )
+                                AccessibleEffectSlider(
+                                    title = "Room Size / Space",
+                                    value = reverbRoomSize,
+                                    onValueChange = { reverbEnabled = true; reverbRoomSize = it },
+                                    valueRange = 0.1f..0.95f,
+                                    step = 0.05f,
+                                    displayValue = "${(reverbRoomSize * 100).toInt()}%",
+                                    spokenDescription = "${(reverbRoomSize * 100).toInt()} percent room size",
+                                    testTag = "slider_fx_reverb_room"
+                                )
+                                AccessibleEffectSlider(
+                                    title = "Reverb Damping",
+                                    value = reverbDamping,
+                                    onValueChange = { reverbEnabled = true; reverbDamping = it },
+                                    valueRange = 0.1f..0.8f,
+                                    step = 0.05f,
+                                    displayValue = "${(reverbDamping * 100).toInt()}%",
+                                    spokenDescription = "${(reverbDamping * 100).toInt()} percent damping",
+                                    testTag = "slider_fx_reverb_damping"
+                                )
                                 AccessibleEffectSlider(
                                     title = "Reverb Mix",
                                     value = reverbMix,
-                                    onValueChange = { reverbMix = it },
+                                    onValueChange = { reverbEnabled = it > 0.05f; reverbMix = it },
                                     valueRange = 0f..0.9f,
                                     step = 0.05f,
                                     displayValue = "${(reverbMix * 100).toInt()}%",
@@ -1139,11 +1272,22 @@ fun AudioFeatureWorkspaceScreen(
                                     onClick = {
                                         val revAmt = reverbMix.coerceAtLeast(0.15f)
                                         reverbMix = revAmt
-                                        editSettings = editSettings.copy(reverbEnabled = true, reverbMix = revAmt)
+                                        reverbEnabled = true
+                                        editSettings = editSettings.copy(
+                                            reverbEnabled = true,
+                                            reverbRoomSize = reverbRoomSize,
+                                            reverbDamping = reverbDamping,
+                                            reverbMix = revAmt
+                                        )
                                         pushUndoAndApply("Applied Reverb (${(revAmt * 100).toInt()}%)") { pcm ->
                                             audioProcessor.processPcm(
                                                 pcm,
-                                                AudioEditSettings(reverbEnabled = true, reverbMix = revAmt),
+                                                AudioEditSettings(
+                                                    reverbEnabled = true,
+                                                    reverbRoomSize = reverbRoomSize,
+                                                    reverbDamping = reverbDamping,
+                                                    reverbMix = revAmt
+                                                ),
                                                 sampleRate
                                             )
                                         }
@@ -1154,6 +1298,182 @@ fun AudioFeatureWorkspaceScreen(
                                 }
                             }
                         }
+                    }
+
+                    // 6. Individual Studio Pro Rack Cards (Focused by individual buttons)
+                    when (focusedEffectPanel) {
+                        "compressor" -> CompressorEffectCard(
+                            settings = studioFxSettings,
+                            onSettingsChanged = { studioFxSettings = it; localModified = true },
+                            alwaysExpanded = true,
+                            onApplySingleEffect = {
+                                val nextFx = studioFxSettings.copy(compressorEnabled = true)
+                                studioFxSettings = nextFx
+                                editSettings = editSettings.copy(studioFx = nextFx)
+                                val isolated = StudioFxSettings(
+                                    compressorEnabled = true,
+                                    compressorThresholdDb = nextFx.compressorThresholdDb,
+                                    compressorRatio = nextFx.compressorRatio,
+                                    compressorMakeupGainDb = nextFx.compressorMakeupGainDb
+                                )
+                                pushUndoAndApply("Applied Dynamics Compressor") { pcm ->
+                                    StudioAudioProcessor.applyStudioRack(pcm, isolated)
+                                }
+                            }
+                        )
+                        "peak_limiter" -> PeakLimiterEffectCard(
+                            settings = studioFxSettings,
+                            onSettingsChanged = { studioFxSettings = it; localModified = true },
+                            alwaysExpanded = true,
+                            onApplySingleEffect = {
+                                val nextFx = studioFxSettings.copy(peakLimiterEnabled = true)
+                                studioFxSettings = nextFx
+                                editSettings = editSettings.copy(studioFx = nextFx)
+                                val isolated = StudioFxSettings(
+                                    peakLimiterEnabled = true,
+                                    peakLimiterCeilingDb = nextFx.peakLimiterCeilingDb
+                                )
+                                pushUndoAndApply("Applied Peak Limiter (${"%.1f".format(nextFx.peakLimiterCeilingDb)} dBFS)") { pcm ->
+                                    StudioAudioProcessor.applyStudioRack(pcm, isolated)
+                                }
+                            }
+                        )
+                        "flanger" -> FlangerEffectCard(
+                            settings = studioFxSettings,
+                            onSettingsChanged = { studioFxSettings = it; localModified = true },
+                            alwaysExpanded = true,
+                            onApplySingleEffect = {
+                                val nextFx = studioFxSettings.copy(flangerEnabled = true)
+                                studioFxSettings = nextFx
+                                editSettings = editSettings.copy(studioFx = nextFx)
+                                val isolated = StudioFxSettings(
+                                    flangerEnabled = true,
+                                    flangerRateHz = nextFx.flangerRateHz,
+                                    flangerDepthMs = nextFx.flangerDepthMs,
+                                    flangerFeedback = nextFx.flangerFeedback,
+                                    flangerMix = nextFx.flangerMix
+                                )
+                                pushUndoAndApply("Applied Flanger") { pcm ->
+                                    StudioAudioProcessor.applyStudioRack(pcm, isolated)
+                                }
+                            }
+                        )
+                        "chorus" -> ChorusEffectCard(
+                            settings = studioFxSettings,
+                            onSettingsChanged = { studioFxSettings = it; localModified = true },
+                            alwaysExpanded = true,
+                            onApplySingleEffect = {
+                                val nextFx = studioFxSettings.copy(chorusEnabled = true)
+                                studioFxSettings = nextFx
+                                editSettings = editSettings.copy(studioFx = nextFx)
+                                val isolated = StudioFxSettings(
+                                    chorusEnabled = true,
+                                    chorusRateHz = nextFx.chorusRateHz,
+                                    chorusDepthMs = nextFx.chorusDepthMs,
+                                    chorusMix = nextFx.chorusMix
+                                )
+                                pushUndoAndApply("Applied Chorus (Multi-Voice)") { pcm ->
+                                    StudioAudioProcessor.applyStudioRack(pcm, isolated)
+                                }
+                            }
+                        )
+                        "distortion" -> DistortionEffectCard(
+                            settings = studioFxSettings,
+                            onSettingsChanged = { studioFxSettings = it; localModified = true },
+                            alwaysExpanded = true,
+                            onApplySingleEffect = {
+                                val nextFx = studioFxSettings.copy(distortionEnabled = true)
+                                studioFxSettings = nextFx
+                                editSettings = editSettings.copy(studioFx = nextFx)
+                                val isolated = StudioFxSettings(
+                                    distortionEnabled = true,
+                                    distortionDrive = nextFx.distortionDrive,
+                                    distortionTone = nextFx.distortionTone
+                                )
+                                pushUndoAndApply("Applied Overdrive & Distortion") { pcm ->
+                                    StudioAudioProcessor.applyStudioRack(pcm, isolated)
+                                }
+                            }
+                        )
+                        "eq7band" -> Eq7BandEffectCard(
+                            settings = studioFxSettings,
+                            onSettingsChanged = { studioFxSettings = it; localModified = true },
+                            alwaysExpanded = true,
+                            onApplySingleEffect = {
+                                val nextFx = studioFxSettings.copy(eq7BandEnabled = true)
+                                studioFxSettings = nextFx
+                                editSettings = editSettings.copy(studioFx = nextFx)
+                                val isolated = StudioFxSettings(
+                                    eq7BandEnabled = true,
+                                    eqBand60Hz = nextFx.eqBand60Hz,
+                                    eqBand150Hz = nextFx.eqBand150Hz,
+                                    eqBand400Hz = nextFx.eqBand400Hz,
+                                    eqBand1kHz = nextFx.eqBand1kHz,
+                                    eqBand2_5kHz = nextFx.eqBand2_5kHz,
+                                    eqBand6kHz = nextFx.eqBand6kHz,
+                                    eqBand15kHz = nextFx.eqBand15kHz
+                                )
+                                pushUndoAndApply("Applied 7-Band Graphic EQ") { pcm ->
+                                    StudioAudioProcessor.applyStudioRack(pcm, isolated)
+                                }
+                            }
+                        )
+                        "pitch_polarity" -> PitchPolarityEffectCard(
+                            settings = studioFxSettings,
+                            onSettingsChanged = { studioFxSettings = it; localModified = true },
+                            onApplySingleEffect = {
+                                editSettings = editSettings.copy(studioFx = studioFxSettings)
+                                val isolated = StudioFxSettings(
+                                    pitchShiftSemitones = studioFxSettings.pitchShiftSemitones,
+                                    invertPhase = studioFxSettings.invertPhase
+                                )
+                                pushUndoAndApply("Applied Pitch Shifter & Polarity") { pcm ->
+                                    StudioAudioProcessor.applyStudioRack(pcm, isolated)
+                                }
+                            }
+                        )
+                    }
+
+                    // Audition Preview (non-destructive audition using current settings)
+                    OutlinedButton(
+                        onClick = {
+                            if (workingPcm.isEmpty()) {
+                                Toast.makeText(context, "Track is empty.", Toast.LENGTH_SHORT).show()
+                                return@OutlinedButton
+                            }
+                            liveDenoiseArmed = false
+                            playerManager.setRealtimeDenoiseEnabled(false)
+                            val previewSettings = editSettings.copy(
+                                eqPreset = selectedEq,
+                                echoEnabled = echoEnabled || echoMix > 0.05f,
+                                echoDelayMs = echoDelayMs,
+                                echoFeedback = echoFeedback,
+                                echoMix = echoMix,
+                                reverbEnabled = reverbEnabled || reverbMix > 0.05f,
+                                reverbRoomSize = reverbRoomSize,
+                                reverbDamping = reverbDamping,
+                                reverbMix = reverbMix,
+                                studioFx = studioFxSettings
+                            )
+                            scope.launch {
+                                try {
+                                    playerManager.stop()
+                                    val preview = withContext(Dispatchers.Default) {
+                                        audioProcessor.processPcm(workingPcm, previewSettings, sampleRate)
+                                    }
+                                    playerManager.loadPcmData(preview, sampleRate)
+                                    playerManager.play()
+                                    AccessibilityHelper.announceForAccessibility(context, "Playing effects audition preview.")
+                                } catch (t: Throwable) {
+                                    if (t is CancellationException) throw t
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_workspace_audition_fx")
+                    ) {
+                        Icon(Icons.Default.Hearing, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Audition Effects Preview", fontWeight = FontWeight.Bold)
                     }
 
                     if (focusedEffectPanel == null) {
@@ -1172,10 +1492,15 @@ fun AudioFeatureWorkspaceScreen(
                                     noiseVoiceFocus = activeDenoise.voiceDialogueFocus,
                                     noiseBypass = false,
                                     noiseFftSize = activeDenoise.fftSize,
-                                    echoEnabled = echoMix > 0.05f,
+                                    echoEnabled = echoEnabled || echoMix > 0.05f,
+                                    echoDelayMs = echoDelayMs,
+                                    echoFeedback = echoFeedback,
                                     echoMix = echoMix,
-                                    reverbEnabled = reverbMix > 0.05f,
-                                    reverbMix = reverbMix
+                                    reverbEnabled = reverbEnabled || reverbMix > 0.05f,
+                                    reverbRoomSize = reverbRoomSize,
+                                    reverbDamping = reverbDamping,
+                                    reverbMix = reverbMix,
+                                    studioFx = studioFxSettings
                                 )
                                 editSettings = newSettings
                                 pushUndoAndApply("Applied Studio Effects Chain") { pcm ->
@@ -1286,32 +1611,6 @@ fun AudioFeatureWorkspaceScreen(
                             }
                         }
                     }
-                }
-
-                AudioFeatureTool.VOCAL_KARAOKE -> {
-                    VocalKaraokeMakerCard(
-                        currentTrackTitle = workingTitle,
-                        currentTrackPcm = workingPcm,
-                        sampleRate = sampleRate,
-                        initialStereoSourceUri = if (!localModified) projectSourceUri else null,
-                        audioProcessor = audioProcessor,
-                        playerManager = playerManager,
-                        mediaRepository = mediaRepository,
-                        defaultExportFormat = defaultExportFormat,
-                        hapticsEnabled = hapticsEnabled,
-                        onApplySingleStemToTrack = { label, stemPcm ->
-                            pushUndoSnapshotSafely(workingPcm)
-                            workingPcm = stemPcm
-                            localModified = true
-                            val newDur = ((stemPcm.size.toDouble() / sampleRate) * 1000.0).toLong()
-                            trimStartMs = 0L
-                            trimEndMs = newDur
-                            hasPendingTrimRange = false
-                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                            AccessibilityHelper.announceForAccessibility(context, label)
-                            Toast.makeText(context, label, Toast.LENGTH_SHORT).show()
-                        }
-                    )
                 }
 
                 AudioFeatureTool.FULL_DAW_STUDIO -> Unit

@@ -474,7 +474,6 @@ private fun ProChannelsCategoryContent(
     var rightGain by remember { mutableFloatStateOf(1.0f) }
     var panValue by remember { mutableFloatStateOf(0f) }
     var centerWidth by remember { mutableFloatStateOf(0.55f) }
-    var vocalSuppressStrength by remember { mutableFloatStateOf(0.75f) }
     var bus1Gain by remember { mutableFloatStateOf(1.0f) }
     var bus2Gain by remember { mutableFloatStateOf(0.8f) }
 
@@ -522,16 +521,6 @@ private fun ProChannelsCategoryContent(
             displayValue = "${(centerWidth * 100).toInt()}%",
             spokenDescription = "Stereo center width ${(centerWidth * 100).toInt()} percent",
             testTag = "slider_ch_stereo_center"
-        )
-        AccessibleEffectSlider(
-            title = "Vocal Reduction Strength",
-            value = vocalSuppressStrength,
-            onValueChange = { vocalSuppressStrength = it },
-            valueRange = 0.2f..0.95f,
-            step = 0.05f,
-            displayValue = "${(vocalSuppressStrength * 100).toInt()}%",
-            spokenDescription = "Reduce vocals ${(vocalSuppressStrength * 100).toInt()} percent",
-            testTag = "slider_reduce_vocals"
         )
 
         // Multichannel Mixer Bus Sliders
@@ -583,11 +572,6 @@ private fun ProChannelsCategoryContent(
             ProActionButton("Multichannel Mixer", "btn_ch_multichannel") {
                 onApplyPcmTransform("Mixed multichannel buses into master track") { pcm ->
                     AudioEffectsProEngine.applyMultichannelMix(pcm, if (hasClipboard) clipboardPcm else null, bus1Gain, bus2Gain)
-                }
-            }
-            ProActionButton("Reduce Vocals", "btn_ch_reduce_vocals") {
-                onApplyPcmTransform("Applied Reduce Vocals center-band suppression") { pcm ->
-                    AudioEffectsProEngine.applyReduceVocals(pcm, vocalSuppressStrength)
                 }
             }
             ProActionButton("Pan", "btn_ch_pan") {

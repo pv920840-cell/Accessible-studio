@@ -531,21 +531,6 @@ object AudioEffectsProEngine {
     }
 
     /**
-     * Reduce Vocals: attenuates central speech band (300 Hz - 3400 Hz) while preserving bass & air harmonics.
-     */
-    fun applyReduceVocals(samples: ShortArray, strength: Float = 0.75f): ShortArray {
-        if (samples.size < 64) return samples
-        val midBand = StudioAudioProcessor.applyBandPassFilter(samples, 1300f, 2400f)
-        val s = strength.coerceIn(0.1f, 0.98f)
-        val out = ShortArray(samples.size)
-        for (i in samples.indices) {
-            val v = samples[i].toFloat() - midBand[i].toFloat() * s
-            out[i] = v.toInt().coerceIn(-32767, 32767).toShort()
-        }
-        return out
-    }
-
-    /**
      * Pan & Stereo Center: shapes spatial modulation or center presence depth.
      */
     fun applyPanAndStereoCenter(

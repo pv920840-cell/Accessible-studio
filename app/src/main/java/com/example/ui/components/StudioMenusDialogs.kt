@@ -67,7 +67,7 @@ fun StudioEffectMenuDialog(
                 MenuActionButton("Effect (Censor, Doppler, Pitch, Time, Voice Over...)", "menu_eff_cat_effect") {
                     onCommand(AudioStudioCommand.OpenProSuiteTab(0)); onDismiss()
                 }
-                MenuActionButton("Channels (Channel Mixer, MaxMatch, Reduce Vocals, Pan)", "menu_eff_cat_channels") {
+                MenuActionButton("Channels (Channel Mixer, MaxMatch, Pan, Stereo Center)", "menu_eff_cat_channels") {
                     onCommand(AudioStudioCommand.OpenProSuiteTab(1)); onDismiss()
                 }
                 MenuActionButton("Filter (Parametric EQ, Bandpass/stop, Pop/Click, Silence)", "menu_eff_cat_filter") {

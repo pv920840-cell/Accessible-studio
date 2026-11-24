@@ -70,6 +70,9 @@ import com.example.data.StudioSettingsState
 import com.example.ui.theme.LocalHighContrast
 import com.example.update.AppUpdateChecker
 import com.example.update.UpdateCheckState
+import com.example.video.CompressorQuality
+import com.example.video.VideoFormatOption
+import com.example.video.VideoResolutionPreset
 import java.io.File
 
 @Composable
@@ -83,11 +86,18 @@ fun AccessibleExportDialog(
     onConfirmExport: (String, String) -> Unit,
     onPlayExported: (File) -> Unit,
     onShareExported: (File) -> Unit,
-    initialFormat: String = "WAV"
+    initialFormat: String = "WAV",
+    initialVideoFormat: VideoFormatOption = VideoFormatOption.MP4,
+    initialVideoQualityPreset: VideoResolutionPreset = VideoResolutionPreset.ORIGINAL,
+    initialCompressorQuality: CompressorQuality = CompressorQuality.HIGH,
+    onConfirmVideoExport: ((fileName: String, format: VideoFormatOption, resolution: VideoResolutionPreset, quality: CompressorQuality) -> Unit)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
     var fileName by remember(defaultFileName) { mutableStateOf(defaultFileName) }
-    var selectedFormat by remember(initialFormat) { mutableStateOf(if (isVideo) "MP4" else initialFormat) }
+    var selectedFormat by remember(initialFormat) { mutableStateOf(if (isVideo) initialVideoFormat.name else initialFormat) }
+    var selectedVideoFormat by remember(initialVideoFormat) { mutableStateOf(initialVideoFormat) }
+    var selectedVideoResolution by remember(initialVideoQualityPreset) { mutableStateOf(initialVideoQualityPreset) }
+    var selectedCompressorQuality by remember(initialCompressorQuality) { mutableStateOf(initialCompressorQuality) }
 
     AlertDialog(
         onDismissRequest = { if (!isExporting) onDismiss() },
@@ -213,122 +223,170 @@ fun AccessibleExportDialog(
                     // Pre-export configuration
                     Text(
                         text = if (isVideo) {
-                            "Your edits, soundtrack, and video adjustments will be merged and exported into a single MP4 video file."
+                            "Your edits, soundtrack, and video adjustments will be merged and exported into a single video file. Choose output format and quality below:"
                         } else {
-                            "Your audio edits, effects, and trimming will be merged and exported. Choose file format below:"
+                            "Your audio edits, effects, and trimming will be merged and exported. Choose output audio format below:"
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
 
                     if (!isVideo) {
+                        val audioFormatRows = listOf(
+                            listOf("WAV" to "Lossless WAV", "MP3" to "MP3 Audio", "FLAC" to "Lossless FLAC"),
+                            listOf("AAC" to "AAC Audio", "OPUS" to "Opus Audio", "M4A" to "M4A AAC")
+                        )
                         Column(
                             modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { selectedFormat = "WAV" },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .testTag("btn_format_wav")
-                                        .semantics {
-                                            contentDescription = "Format WAV Lossless. ${if (selectedFormat == "WAV") "Selected" else "Not selected"}"
-                                        },
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (selectedFormat == "WAV") MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                                    ),
-                                    border = BorderStroke(
-                                        if (selectedFormat == "WAV") 2.dp else 1.dp,
-                                        if (selectedFormat == "WAV") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                    )
+                            audioFormatRows.forEach { rowFormats ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(
-                                        text = "WAV",
-                                        fontWeight = if (selectedFormat == "WAV") FontWeight.Black else FontWeight.Normal,
-                                        color = if (selectedFormat == "WAV") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                                    )
+                                    rowFormats.forEach { (fmt, spokenName) ->
+                                        val isSelected = selectedFormat.equals(fmt, ignoreCase = true)
+                                        OutlinedButton(
+                                            onClick = { selectedFormat = fmt },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(48.dp)
+                                                .testTag("btn_format_${fmt.lowercase()}")
+                                                .semantics {
+                                                    contentDescription = "Format $spokenName. ${if (isSelected) "Selected" else "Not selected"}"
+                                                },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                                            ),
+                                            border = BorderStroke(
+                                                if (isSelected) 2.dp else 1.dp,
+                                                if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                            )
+                                        ) {
+                                            Text(
+                                                text = fmt,
+                                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
+                                                maxLines = 1,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
                                 }
-
-                                OutlinedButton(
-                                    onClick = { selectedFormat = "MP3" },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .testTag("btn_format_mp3")
-                                        .semantics {
-                                            contentDescription = "Format MP3 Audio. ${if (selectedFormat == "MP3") "Selected" else "Not selected"}"
-                                        },
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (selectedFormat == "MP3") MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
-                                    ),
-                                    border = BorderStroke(
-                                        if (selectedFormat == "MP3") 2.dp else 1.dp,
-                                        if (selectedFormat == "MP3") MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline
-                                    )
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Text(
+                                text = "Output Video Format",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                            )
+                            val videoFormatRows = VideoFormatOption.entries.chunked(3)
+                            videoFormatRows.forEach { row ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    Text(
-                                        text = "MP3",
-                                        fontWeight = if (selectedFormat == "MP3") FontWeight.Black else FontWeight.Normal,
-                                        color = if (selectedFormat == "MP3") MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
-                                    )
+                                    row.forEach { fmt ->
+                                        val isSelected = selectedVideoFormat == fmt
+                                        OutlinedButton(
+                                            onClick = {
+                                                selectedVideoFormat = fmt
+                                                selectedFormat = fmt.name
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(48.dp)
+                                                .testTag("btn_video_format_${fmt.extension}")
+                                                .semantics {
+                                                    contentDescription = "Video format ${fmt.label}. ${if (isSelected) "Selected" else "Not selected"}"
+                                                },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                                            ),
+                                            border = BorderStroke(
+                                                if (isSelected) 2.dp else 1.dp,
+                                                if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                                            )
+                                        ) {
+                                            Text(
+                                                text = fmt.extension.uppercase(),
+                                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
+                                                maxLines = 1,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
+                                    if (row.size < 3) {
+                                        repeat(3 - row.size) {
+                                            Spacer(Modifier.weight(1f))
+                                        }
+                                    }
                                 }
                             }
 
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedButton(
-                                    onClick = { selectedFormat = "FLAC" },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .testTag("btn_format_flac")
-                                        .semantics {
-                                            contentDescription = "Format FLAC Lossless. ${if (selectedFormat == "FLAC") "Selected" else "Not selected"}"
-                                        },
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (selectedFormat == "FLAC") MaterialTheme.colorScheme.tertiaryContainer else Color.Transparent
-                                    ),
-                                    border = BorderStroke(
-                                        if (selectedFormat == "FLAC") 2.dp else 1.dp,
-                                        if (selectedFormat == "FLAC") MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline
-                                    )
+                            Text(
+                                text = "Video Quality Preset",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                            )
+                            val qualityChoices = listOf(
+                                Triple("Original", VideoResolutionPreset.ORIGINAL, CompressorQuality.HIGH),
+                                Triple("High (1080p)", VideoResolutionPreset.RES_1080P, CompressorQuality.HIGH),
+                                Triple("Medium (720p)", VideoResolutionPreset.RES_720P, CompressorQuality.MEDIUM),
+                                Triple("Low (480p)", VideoResolutionPreset.RES_480P, CompressorQuality.LOW)
+                            )
+                            qualityChoices.chunked(2).forEach { qRow ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    Text(
-                                        text = "FLAC",
-                                        fontWeight = if (selectedFormat == "FLAC") FontWeight.Black else FontWeight.Normal,
-                                        color = if (selectedFormat == "FLAC") MaterialTheme.colorScheme.onTertiaryContainer else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-
-                                OutlinedButton(
-                                    onClick = { selectedFormat = "M4A" },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(48.dp)
-                                        .testTag("btn_format_m4a")
-                                        .semantics {
-                                            contentDescription = "Format M4A AAC. ${if (selectedFormat == "M4A") "Selected" else "Not selected"}"
-                                        },
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = if (selectedFormat == "M4A") MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
-                                    ),
-                                    border = BorderStroke(
-                                        if (selectedFormat == "M4A") 2.dp else 1.dp,
-                                        if (selectedFormat == "M4A") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                                    )
-                                ) {
-                                    Text(
-                                        text = "M4A",
-                                        fontWeight = if (selectedFormat == "M4A") FontWeight.Black else FontWeight.Normal,
-                                        color = if (selectedFormat == "M4A") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
-                                    )
+                                    qRow.forEach { (qLabel, resPreset, compQuality) ->
+                                        val isSelected = selectedVideoResolution == resPreset && selectedCompressorQuality == compQuality
+                                        val qTag = when (resPreset) {
+                                            VideoResolutionPreset.ORIGINAL -> "original"
+                                            VideoResolutionPreset.RES_1080P -> "1080p"
+                                            VideoResolutionPreset.RES_720P -> "720p"
+                                            VideoResolutionPreset.RES_480P -> "480p"
+                                            else -> resPreset.name.lowercase()
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                selectedVideoResolution = resPreset
+                                                selectedCompressorQuality = compQuality
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(48.dp)
+                                                .testTag("btn_video_quality_$qTag")
+                                                .semantics {
+                                                    contentDescription = "Video quality $qLabel. ${if (isSelected) "Selected" else "Not selected"}"
+                                                },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                                            ),
+                                            border = BorderStroke(
+                                                if (isSelected) 2.dp else 1.dp,
+                                                if (isSelected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline
+                                            )
+                                        ) {
+                                            Text(
+                                                text = qLabel,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
+                                                maxLines = 1,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -361,7 +419,16 @@ fun AccessibleExportDialog(
                 Button(
                     onClick = {
                         val base = fileName.trim().ifEmpty { defaultFileName }
-                        onConfirmExport(base, selectedFormat)
+                        if (isVideo && onConfirmVideoExport != null) {
+                            onConfirmVideoExport(
+                                base,
+                                selectedVideoFormat,
+                                selectedVideoResolution,
+                                selectedCompressorQuality
+                            )
+                        } else {
+                            onConfirmExport(base, if (isVideo) selectedVideoFormat.extension.uppercase() else selectedFormat)
+                        }
                     },
                     modifier = Modifier
                         .height(48.dp)
@@ -374,7 +441,7 @@ fun AccessibleExportDialog(
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (isVideo) "Save MP4 File" else "Save $selectedFormat File",
+                        text = if (isVideo) "Save ${selectedVideoFormat.extension.uppercase()} File" else "Save $selectedFormat File",
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -549,8 +616,8 @@ fun AccessibilitySettingsSheet(
                         }
                     }
 
-                    val formatsRow1 = listOf("WAV", "MP3")
-                    val formatsRow2 = listOf("FLAC", "M4A")
+                    val formatsRow1 = listOf("WAV", "MP3", "FLAC")
+                    val formatsRow2 = listOf("AAC", "OPUS", "M4A")
                     listOf(formatsRow1, formatsRow2).forEach { rowFormats ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),

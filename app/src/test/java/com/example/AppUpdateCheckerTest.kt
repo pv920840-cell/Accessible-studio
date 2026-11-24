@@ -670,7 +670,11 @@ class AppUpdateCheckerTest {
 
         val chooserIntent = AppUpdateChecker.createShareApkLinkIntent(directUrl, "1.3.0")
         assertEquals(Intent.ACTION_CHOOSER, chooserIntent.action)
-        val innerIntent = chooserIntent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
+        val innerIntent = androidx.core.content.IntentCompat.getParcelableExtra(
+            chooserIntent,
+            Intent.EXTRA_INTENT,
+            Intent::class.java
+        )
         assertNotNull(innerIntent)
         assertEquals(Intent.ACTION_SEND, innerIntent?.action)
         assertEquals("text/plain", innerIntent?.type)

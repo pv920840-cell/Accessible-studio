@@ -594,7 +594,7 @@ class VideoRenderEngine(private val context: Context) {
             while (true) {
                 val size = vExt.readSampleData(buf, 0)
                 if (size < 0) break
-                info.set(0, size, vExt.sampleTime, vExt.sampleFlags)
+                info.set(0, size, vExt.sampleTime, mapExtractorFlagsToBufferFlags(vExt.sampleFlags))
                 muxer.writeSampleData(vDst, buf, info)
                 vExt.advance()
             }
@@ -604,7 +604,7 @@ class VideoRenderEngine(private val context: Context) {
                 while (true) {
                     val size = aExt.readSampleData(buf, 0)
                     if (size < 0) break
-                    info.set(0, size, aExt.sampleTime, aExt.sampleFlags)
+                    info.set(0, size, aExt.sampleTime, mapExtractorFlagsToBufferFlags(aExt.sampleFlags))
                     muxer.writeSampleData(aDst, buf, info)
                     aExt.advance()
                 }

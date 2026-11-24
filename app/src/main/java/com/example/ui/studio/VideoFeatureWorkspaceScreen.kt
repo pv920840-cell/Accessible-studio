@@ -60,6 +60,9 @@ import com.example.accessibility.VibrationType
 import com.example.audio.AudioRecorderManager
 import com.example.data.MediaRepository
 import com.example.ui.components.AccessibleTimeReadout
+import com.example.ui.components.ActiveEffectChipData
+import com.example.ui.components.ActiveEffectsLongPressBar
+import com.example.ui.components.StudioFeatureGuideDialog
 import com.example.ui.components.VideoAudioMusicPanel
 import com.example.ui.components.VideoConvertAndMetaPanel
 import com.example.ui.components.VideoMetadataBanner
@@ -79,10 +82,13 @@ import com.example.video.VideoAudioMixer
 import com.example.video.VideoAudioOption
 import com.example.video.VideoCutMath
 import com.example.video.VideoCutSegment
+import com.example.video.VideoFilter
 import com.example.video.VideoPlayerManager
 import com.example.video.VideoRenderEngine
+import com.example.video.VideoRotation
 import com.example.video.VideoStudioFeatureButton
 import com.example.video.VideoToolkitProcessor
+import com.example.video.VideoVfx
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -136,6 +142,7 @@ fun VideoFeatureWorkspaceScreen(
     var taskProgress by remember { mutableFloatStateOf(0f) }
     var narrationStartMs by remember { mutableLongStateOf(0L) }
     var baseSpeechBins by remember(draft.sourceUri) { mutableStateOf(BooleanArray(0)) }
+    var showFeatureGuide by remember { mutableStateOf(false) }
 
     val isPlaying by videoPlayer.isPlaying.collectAsState()
     val durationMs by videoPlayer.durationMs.collectAsState()
@@ -214,10 +221,11 @@ fun VideoFeatureWorkspaceScreen(
     }
 
     fun buildRenderRequest(
-        keepRanges: List<Pair<Long, Long>> = VideoCutMath.computeKeepRangesMs(
-            trimStartMs = draft.trimStartMs,
-            trimEndMs = draft.trimEndMs,
-            cutSegments = draft.cutSegments
+        keepRanges: List<Pair<Long, Long>> = VideoCutMath.computeMultiTrimKeepRanges(
+            multiTrimClips = draft.multiTrimClips,
+            cutSegments = draft.cutSegments,
+            fallbackStartMs = draft.trimStartMs,
+            fallbackEndMs = draft.trimEndMs
         )
     ): FullRenderRequest {
         val uri = draft.sourceUri ?: throw IllegalStateException("Select or create a video clip first.")
@@ -307,7 +315,8 @@ fun VideoFeatureWorkspaceScreen(
                     activeMusicPreview.stopSoloPreview()
                     activeMusicPreview.pauseTimelineTracks()
                     onSaveAndReturn(draft.copy(hasUnsavedChanges = true))
-                }
+                },
+                onHelp = { showFeatureGuide = true }
             )
             VideoStudioScreen(
                 mediaRepository = mediaRepository,
@@ -350,7 +359,8 @@ fun VideoFeatureWorkspaceScreen(
                 activeMusicPreview.stopSoloPreview()
                 activeMusicPreview.pauseTimelineTracks()
                 onSaveAndReturn(draft.copy(durationMs = effectiveDuration, hasUnsavedChanges = true))
-            }
+            },
+            onHelp = { showFeatureGuide = true }
         )
 
         Column(
@@ -445,6 +455,59 @@ fun VideoFeatureWorkspaceScreen(
                 positionFlow = videoPlayer.currentPositionMs
             )
 
+            val activeVideoEffects = buildList {
+                if (draft.selectedFilter != VideoFilter.NORMAL) {
+                    add(ActiveEffectChipData("vfilter", "Filter: ${draft.selectedFilter.displayName}"))
+                }
+                if (draft.selectedVfx != VideoVfx.NONE) {
+                    add(ActiveEffectChipData("vvfx", "VFX: ${draft.selectedVfx.displayName}"))
+                }
+                if (draft.blurConfig.enabled) {
+                    add(ActiveEffectChipData("vblur", if (draft.blurConfig.isMosaic) "Mosaic Blur" else "Gaussian Blur"))
+                }
+                if (draft.textOverlay.isNotBlank()) {
+                    add(ActiveEffectChipData("vtext", "Text Overlay"))
+                }
+                if (draft.imageOverlay.uri != null) {
+                    add(ActiveEffectChipData("vimage", "Image Overlay"))
+                }
+                if (draft.subtitleCues.isNotEmpty()) {
+                    add(ActiveEffectChipData("vsubs", "Subtitles (${draft.subtitleCues.size})"))
+                }
+                if (draft.selectedSpeed != 1.0f) {
+                    add(ActiveEffectChipData("vspeed", "Speed ${draft.selectedSpeed}x"))
+                }
+                if (draft.reverseVideo) {
+                    add(ActiveEffectChipData("vreverse", "Reverse Video"))
+                }
+                if (draft.rotation != VideoRotation.DEG_0 || draft.flipH || draft.flipV) {
+                    add(ActiveEffectChipData("vtransform", "Rotate / Flip"))
+                }
+                if (draft.noiseReduceEnabled) {
+                    add(ActiveEffectChipData("vdenoise", "Audio De-Noise"))
+                }
+            }
+
+            ActiveEffectsLongPressBar(
+                effects = activeVideoEffects,
+                onRemoveEffect = { chip ->
+                    draft = when (chip.id) {
+                        "vfilter" -> draft.copy(selectedFilter = VideoFilter.NORMAL, hasUnsavedChanges = true)
+                        "vvfx" -> draft.copy(selectedVfx = VideoVfx.NONE, hasUnsavedChanges = true)
+                        "vblur" -> draft.copy(blurConfig = draft.blurConfig.copy(enabled = false), hasUnsavedChanges = true)
+                        "vtext" -> draft.copy(textOverlay = "", hasUnsavedChanges = true)
+                        "vimage" -> draft.copy(imageOverlay = draft.imageOverlay.copy(uri = null), hasUnsavedChanges = true)
+                        "vsubs" -> draft.copy(subtitleCues = emptyList(), hasUnsavedChanges = true)
+                        "vspeed" -> draft.copy(selectedSpeed = 1.0f, hasUnsavedChanges = true)
+                        "vreverse" -> draft.copy(reverseVideo = false, hasUnsavedChanges = true)
+                        "vtransform" -> draft.copy(rotation = VideoRotation.DEG_0, flipH = false, flipV = false, hasUnsavedChanges = true)
+                        "vdenoise" -> draft.copy(noiseReduceEnabled = false, hasUnsavedChanges = true)
+                        else -> draft
+                    }
+                    AccessibilityHelper.announceForAccessibility(context, "Removed ${chip.label}")
+                }
+            )
+
             when (tool) {
                 VideoFeatureTool.TRIM_TIMELINE -> VideoTimelineToolsPanel(
                     currentPositionMs = 0L,
@@ -536,7 +599,30 @@ fun VideoFeatureWorkspaceScreen(
                             toolkit.exportStreamCopyRanges(uri, ranges, "Highlights_$timestamp", draft.outputFormat, onProgress = prog)
                         }
                     },
-                    initialFocusedFeature = initialFeature
+                    initialFocusedFeature = initialFeature,
+                    multiTrimClips = draft.multiTrimClips,
+                    onUpdateMultiTrimClips = { draft = draft.copy(multiTrimClips = it, hasUnsavedChanges = true) },
+                    onUpdateCutSegments = { draft = draft.copy(cutSegments = it, hasUnsavedChanges = true) },
+                    splitPointsMs = draft.splitPointsMs,
+                    onUpdateSplitPoints = { draft = draft.copy(splitPointsMs = it, hasUnsavedChanges = true) },
+                    autoSplitMode = draft.autoSplitMode,
+                    autoSplitIntervalMs = draft.autoSplitIntervalMs,
+                    autoSplitFileCount = draft.autoSplitFileCount,
+                    autoSplitTargetSizeMb = draft.autoSplitTargetSizeMb,
+                    onUpdateAutoSplitConfig = { mode, intervalMs, count, sizeMb ->
+                        draft = draft.copy(
+                            autoSplitMode = mode,
+                            autoSplitIntervalMs = intervalMs,
+                            autoSplitFileCount = count,
+                            autoSplitTargetSizeMb = sizeMb,
+                            hasUnsavedChanges = true
+                        )
+                    },
+                    onPlayRange = { startMs, endMs ->
+                        videoPlayer.seekTo(startMs)
+                        videoPlayer.play(startMs = startMs, endLimitMs = endMs)
+                    },
+                    onOpenFeatureGuide = { showFeatureGuide = true }
                 )
 
                 VideoFeatureTool.AUDIO_MUSIC -> VideoAudioMusicPanel(
@@ -787,5 +873,9 @@ fun VideoFeatureWorkspaceScreen(
                 VideoFeatureTool.FULL_VIDEO_STUDIO -> Unit
             }
         }
+    }
+
+    if (showFeatureGuide) {
+        StudioFeatureGuideDialog(onDismiss = { showFeatureGuide = false })
     }
 }

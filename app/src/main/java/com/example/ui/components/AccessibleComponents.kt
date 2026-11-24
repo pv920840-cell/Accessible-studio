@@ -62,6 +62,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -1282,4 +1284,85 @@ fun AccessibleEffectSlider(
         }
     }
 }
+
+/**
+ * Responsive Preview Playback Slider with real-time position readout and accurate seeking.
+ */
+@Composable
+fun AccessiblePreviewPlaybackSlider(
+    currentPositionMs: Long,
+    durationMs: Long,
+    onSeekTo: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    label: String = "Preview Playback",
+    testTag: String = "slider_preview_playback"
+) {
+    val isHighContrast = LocalHighContrast.current
+    val safeDuration = durationMs.coerceAtLeast(1000L)
+    var isDragging by remember { mutableStateOf(false) }
+    var dragPosMs by remember { mutableLongStateOf(currentPositionMs.coerceIn(0L, safeDuration)) }
+    val displayPosMs = if (isDragging) dragPosMs else currentPositionMs.coerceIn(0L, safeDuration)
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isHighContrast) Color(0xFF101010) else MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        border = BorderStroke(
+            if (isHighContrast) 2.dp else 1.dp,
+            if (isHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "${AccessibilityHelper.formatTimeVisual(displayPosMs)} / ${AccessibilityHelper.formatTimeVisual(durationMs.coerceAtLeast(0L))}",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.testTag("${testTag}_readout")
+                )
+            }
+
+            Slider(
+                value = displayPosMs.toFloat(),
+                onValueChange = { raw ->
+                    val target = raw.toLong().coerceIn(0L, safeDuration)
+                    isDragging = true
+                    dragPosMs = target
+                    onSeekTo(target)
+                },
+                onValueChangeFinished = {
+                    val committed = dragPosMs.coerceIn(0L, safeDuration)
+                    isDragging = false
+                    onSeekTo(committed)
+                },
+                valueRange = 0f..safeDuration.toFloat(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(testTag)
+                    .semantics {
+                        contentDescription = "$label slider. Position ${AccessibilityHelper.formatTimeSpoken(displayPosMs)} of ${AccessibilityHelper.formatTimeSpoken(durationMs.coerceAtLeast(0L))}"
+                    }
+            )
+        }
+    }
+}
+
 

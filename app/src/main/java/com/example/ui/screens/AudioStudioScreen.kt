@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FolderOpen
@@ -84,9 +85,11 @@ import com.example.audio.AudioPlayerManager
 import com.example.audio.AudioRecorderManager
 import com.example.audio.CuePoint
 import com.example.audio.EqPreset
+import com.example.audio.MusicRebalanceProcessor
 import com.example.audio.ScrubDirection
 import com.example.audio.SpectralDenoiseParams
 import com.example.audio.SpectralNoiseProfile
+import com.example.audio.StemSeparationMode
 import com.example.audio.StudioAudioProcessor
 import com.example.audio.StudioFxSettings
 import com.example.audio.WavAudioProcessor
@@ -96,20 +99,25 @@ import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibleAudioWaveform
 import com.example.ui.components.AccessibleEffectSlider
 import com.example.ui.components.AccessibleExportDialog
+import com.example.ui.components.AccessiblePreviewPlaybackSlider
 import com.example.ui.components.AccessibleProSuiteSection
 import com.example.ui.components.AccessibleTransportControls
 import com.example.ui.components.AccessibleTrimSection
+import com.example.ui.components.ActiveEffectChipData
+import com.example.ui.components.ActiveEffectsLongPressBar
 import com.example.ui.components.AudioControlDeckCard
 import com.example.ui.components.AudioOpenDialog
 import com.example.ui.components.AudioProjectTab
 import com.example.ui.components.AudioStudioCommand
 import com.example.ui.components.AudioVisualMode
+import com.example.ui.components.MusicRebalancePanel
 import com.example.ui.components.OpenProjectsTabBar
 import com.example.ui.components.StudioAudioPropertiesDialog
 import com.example.ui.components.StudioAudioStatsDialog
 import com.example.ui.components.StudioBlankProjectDialog
 import com.example.ui.components.StudioCuePointsDialog
 import com.example.ui.components.StudioEffectsRackDialog
+import com.example.ui.components.StudioFeatureGuideDialog
 import com.example.ui.components.StudioGainDialog
 import com.example.ui.components.StudioInsertSilenceDialog
 import com.example.ui.components.StudioMixAudioDialog
@@ -360,6 +368,8 @@ fun AudioStudioScreen(
     var showProSuiteDialog by remember { mutableIntStateOf(0) }.let { mutableStateOf(false) }
     var proSuiteCategoryIndex by remember { mutableIntStateOf(0) }
     var isApplyingProFx by remember { mutableStateOf(false) }
+    var showMusicRebalanceDialog by remember { mutableStateOf(false) }
+    var showFeatureGuideDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(
         showEffectsRackDialog,
@@ -1358,6 +1368,8 @@ fun AudioStudioScreen(
                 proSuiteCategoryIndex = cmd.tabIndex.coerceIn(0, 3)
                 showProSuiteDialog = true
             }
+            AudioStudioCommand.OpenMusicRebalance -> showMusicRebalanceDialog = true
+            AudioStudioCommand.OpenFeatureGuide -> showFeatureGuideDialog = true
 
             // Transport
             AudioStudioCommand.Play1Selection -> safePlaySelection(loopSegment = false)
@@ -1457,6 +1469,13 @@ fun AudioStudioScreen(
                     }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        IconButton(
+                            onClick = { showFeatureGuideDialog = true },
+                            modifier = Modifier.size(48.dp).testTag("btn_header_audio_guide")
+                                .semantics { contentDescription = "Open Feature Guide and Studio Quality Help" }
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
                         IconButton(
                             onClick = { showOpenAudioDialog = true },
                             modifier = Modifier.size(48.dp).testTag("btn_header_open_audio")
@@ -1599,6 +1618,88 @@ fun AudioStudioScreen(
             }
         )
 
+        val activeAudioEffects = buildList {
+            if (selectedEq != EqPreset.NORMAL) {
+                add(ActiveEffectChipData("eq", "EQ: ${selectedEq.name}"))
+            }
+            if (noiseReductionEnabled) {
+                add(ActiveEffectChipData("denoise", "De-Noise", "${denoiseParams.reductionDb.toInt()} dB"))
+            }
+            if (noiseGateEnabled) {
+                add(ActiveEffectChipData("noisegate", "Noise Gate"))
+            }
+            if (echoEnabled || echoMix > 0.05f) {
+                add(ActiveEffectChipData("echo", "Echo", "${echoDelayMs}ms"))
+            }
+            if (reverbEnabled || reverbMix > 0.05f) {
+                add(ActiveEffectChipData("reverb", "Reverb", "${(reverbMix * 100).toInt()}%"))
+            }
+            if (bassBoost > 0.05f) {
+                add(ActiveEffectChipData("bass", "Bass Boost"))
+            }
+            if (trebleBoost > 0.05f) {
+                add(ActiveEffectChipData("treble", "Treble Boost"))
+            }
+            if (isReversed) {
+                add(ActiveEffectChipData("reverse", "Reversed"))
+            }
+            if (studioFxSettings.compressorEnabled) {
+                add(ActiveEffectChipData("compressor", "Compressor"))
+            }
+            if (studioFxSettings.peakLimiterEnabled) {
+                add(ActiveEffectChipData("peak_limiter", "Peak Limiter"))
+            }
+            if (studioFxSettings.flangerEnabled) {
+                add(ActiveEffectChipData("flanger", "Flanger"))
+            }
+            if (studioFxSettings.chorusEnabled) {
+                add(ActiveEffectChipData("chorus", "Chorus"))
+            }
+            if (studioFxSettings.distortionEnabled) {
+                add(ActiveEffectChipData("distortion", "Overdrive"))
+            }
+            if (studioFxSettings.eq7BandEnabled) {
+                add(ActiveEffectChipData("eq7band", "7-Band EQ"))
+            }
+            if (studioFxSettings.pitchShiftSemitones != 0 || studioFxSettings.invertPhase) {
+                add(ActiveEffectChipData("pitch_polarity", "Pitch/Polarity"))
+            }
+        }
+
+        ActiveEffectsLongPressBar(
+            effects = activeAudioEffects,
+            onRemoveEffect = { chip ->
+                when (chip.id) {
+                    "eq" -> selectedEq = EqPreset.NORMAL
+                    "denoise" -> {
+                        noiseReductionEnabled = false
+                        liveDenoiseArmed = false
+                        playerManager.setRealtimeDenoiseEnabled(false)
+                    }
+                    "noisegate" -> noiseGateEnabled = false
+                    "echo" -> {
+                        echoEnabled = false
+                        echoMix = 0f
+                    }
+                    "reverb" -> {
+                        reverbEnabled = false
+                        reverbMix = 0f
+                    }
+                    "bass" -> bassBoost = 0f
+                    "treble" -> trebleBoost = 0f
+                    "reverse" -> isReversed = false
+                    "compressor" -> studioFxSettings = studioFxSettings.copy(compressorEnabled = false)
+                    "peak_limiter" -> studioFxSettings = studioFxSettings.copy(peakLimiterEnabled = false)
+                    "flanger" -> studioFxSettings = studioFxSettings.copy(flangerEnabled = false)
+                    "chorus" -> studioFxSettings = studioFxSettings.copy(chorusEnabled = false)
+                    "distortion" -> studioFxSettings = studioFxSettings.copy(distortionEnabled = false)
+                    "eq7band" -> studioFxSettings = studioFxSettings.copy(eq7BandEnabled = false)
+                    "pitch_polarity" -> studioFxSettings = studioFxSettings.copy(pitchShiftSemitones = 0, invertPhase = false)
+                }
+                AccessibilityHelper.announceForAccessibility(context, "Removed ${chip.label}")
+            }
+        )
+
         // 3. BOTTOM DOCK: TRANSPORT, SPEED/VOLUME & COMPACT MIC RECORDING PANEL
         Card(
             modifier = Modifier
@@ -1619,6 +1720,13 @@ fun AudioStudioScreen(
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                val livePosForSlider by playerManager.currentPositionMs.collectAsState()
+                AccessiblePreviewPlaybackSlider(
+                    currentPositionMs = livePosForSlider,
+                    durationMs = durationMs,
+                    onSeekTo = { playerManager.seekTo(it) },
+                    testTag = "slider_audio_studio_preview"
+                )
                 AccessibleTransportControls(
                     isPlaying = isPlaying,
                     onPlayPause = {
@@ -2587,6 +2695,181 @@ fun AudioStudioScreen(
             },
             onDismiss = { showSpecifyViewDialog = false }
         )
+    }
+
+    if (showMusicRebalanceDialog) {
+        var selectedStemMode by remember { mutableStateOf(StemSeparationMode.FOUR_STEMS) }
+        var stemMap by remember { mutableStateOf<Map<String, ShortArray>>(emptyMap()) }
+        var stemProgress by remember { mutableFloatStateOf(0f) }
+        var isStemBusy by remember { mutableStateOf(false) }
+
+        Dialog(
+            onDismissRequest = { if (!isStemBusy) showMusicRebalanceDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            BackHandler { if (!isStemBusy) showMusicRebalanceDialog = false }
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .heightIn(max = 660.dp)
+                    .testTag("dialog_music_rebalance"),
+                shape = RoundedCornerShape(20.dp),
+                color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.background,
+                border = if (isHighContrast) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                tonalElevation = 8.dp
+            ) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Music Rebalance",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Black,
+                            color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onBackground
+                        )
+                        IconButton(
+                            onClick = { if (!isStemBusy) showMusicRebalanceDialog = false },
+                            modifier = Modifier.size(48.dp).testTag("btn_close_music_rebalance")
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close Music Rebalance")
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .verticalScroll(rememberScrollState())
+                            .padding(horizontal = 12.dp)
+                    ) {
+                        MusicRebalancePanel(
+                            hasAudioLoaded = rawOriginalPcm != null && rawOriginalPcm!!.isNotEmpty(),
+                            isProcessing = isStemBusy || isApplyingProFx,
+                            progress = stemProgress,
+                            selectedStemMode = selectedStemMode,
+                            onSelectStemMode = { selectedStemMode = it },
+                            separatedStemNames = stemMap.keys.toList(),
+                            onPreviewRebalance = { vGain, bGain, pGain, oGain ->
+                                val basePcm = rawOriginalPcm
+                                if (basePcm != null && basePcm.isNotEmpty() && !isStemBusy) {
+                                    isStemBusy = true
+                                    stemProgress = 0.05f
+                                    scope.launch {
+                                        try {
+                                            playerManager.stop()
+                                            val preview = withContext(Dispatchers.Default) {
+                                                MusicRebalanceProcessor.rebalanceMix(
+                                                    basePcm,
+                                                    workingSampleRate,
+                                                    vGain,
+                                                    bGain,
+                                                    pGain,
+                                                    oGain
+                                                ) { stemProgress = it }
+                                            }
+                                            playerManager.loadPcmData(preview, workingSampleRate)
+                                            playerManager.play()
+                                        } finally {
+                                            isStemBusy = false
+                                        }
+                                    }
+                                }
+                            },
+                            onApplyRebalance = { vGain, bGain, pGain, oGain ->
+                                showMusicRebalanceDialog = false
+                                applyTransform("Applied Music Rebalance mix") { pcm ->
+                                    MusicRebalanceProcessor.rebalanceMix(pcm, workingSampleRate, vGain, bGain, pGain, oGain)
+                                }
+                            },
+                            onSeparateStems = { mode ->
+                                val basePcm = rawOriginalPcm
+                                if (basePcm != null && basePcm.isNotEmpty() && !isStemBusy) {
+                                    isStemBusy = true
+                                    stemProgress = 0.05f
+                                    scope.launch {
+                                        try {
+                                            val stems = withContext(Dispatchers.Default) {
+                                                MusicRebalanceProcessor.separateStems(basePcm, workingSampleRate, mode) {
+                                                    stemProgress = it
+                                                }
+                                            }
+                                            stemMap = stems
+                                            AccessibilityHelper.announceForAccessibility(context, "Separated ${stems.size} stems")
+                                            Toast.makeText(context, "Separated ${stems.size} stems ready to audition or save", Toast.LENGTH_SHORT).show()
+                                        } finally {
+                                            isStemBusy = false
+                                        }
+                                    }
+                                }
+                            },
+                            onAuditionStem = { stemName ->
+                                val stemPcm = stemMap[stemName]
+                                if (stemPcm != null && stemPcm.isNotEmpty()) {
+                                    playerManager.stop()
+                                    playerManager.loadPcmData(stemPcm, workingSampleRate)
+                                    playerManager.play()
+                                    AccessibilityHelper.announceForAccessibility(context, "Playing $stemName stem")
+                                }
+                            },
+                            onExportStems = { mode ->
+                                if (stemMap.isNotEmpty() && !isStemBusy) {
+                                    isStemBusy = true
+                                    stemProgress = 0.05f
+                                    scope.launch {
+                                        try {
+                                            val base = openedFileBaseName?.takeIf { it.isNotBlank() } ?: "Stems"
+                                            var idx = 0
+                                            stemMap.forEach { (stemName, stemPcm) ->
+                                                idx++
+                                                val safeStem = stemName.replace(" ", "_")
+                                                audioProcessor.exportSingleAudioFile(
+                                                    mainPcm = stemPcm,
+                                                    bgTrackConfig = null,
+                                                    bgPcm = null,
+                                                    settings = AudioEditSettings(),
+                                                    outputFileName = "${base}_${safeStem}_${mode.stemCount}stems",
+                                                    format = defaultExportFormat,
+                                                    onProgress = {}
+                                                )
+                                                stemProgress = idx.toFloat() / stemMap.size.coerceAtLeast(1)
+                                            }
+                                            mediaRepository.refreshExports()
+                                            Toast.makeText(context, "Saved ${stemMap.size} separated stem files", Toast.LENGTH_LONG).show()
+                                        } catch (t: Throwable) {
+                                            if (t is kotlinx.coroutines.CancellationException) throw t
+                                            Toast.makeText(context, "Stem export error: ${t.localizedMessage ?: "Failed"}", Toast.LENGTH_LONG).show()
+                                        } finally {
+                                            isStemBusy = false
+                                        }
+                                    }
+                                }
+                            },
+                            onOpenGuide = { showFeatureGuideDialog = true }
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(
+                            enabled = !isStemBusy,
+                            onClick = { showMusicRebalanceDialog = false },
+                            modifier = Modifier.height(48.dp).testTag("btn_done_music_rebalance")
+                        ) {
+                            Text("Done", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showFeatureGuideDialog) {
+        StudioFeatureGuideDialog(onDismiss = { showFeatureGuideDialog = false })
     }
 }
 

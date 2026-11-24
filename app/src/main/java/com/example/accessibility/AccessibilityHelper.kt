@@ -76,6 +76,23 @@ object AccessibilityHelper {
     }
 
     /**
+     * Formats milliseconds into millisecond-accurate time string: "MM:SS.mmm" or "H:MM:SS.mmm"
+     */
+    fun formatTimePrecise(millis: Long): String {
+        val safeMillis = millis.coerceAtLeast(0L)
+        val totalSecs = safeMillis / 1000L
+        val hours = totalSecs / 3600L
+        val minutes = (totalSecs % 3600L) / 60L
+        val seconds = totalSecs % 60L
+        val ms = safeMillis % 1000L
+        return if (hours > 0L) {
+            String.format(Locale.US, "%d:%02d:%02d.%03d", hours, minutes, seconds, ms)
+        } else {
+            String.format(Locale.US, "%02d:%02d.%03d", minutes, seconds, ms)
+        }
+    }
+
+    /**
      * Formats milliseconds into standard "MM:SS" (e.g. 01:23)
      */
     fun formatTimeMMSS(millis: Long): String {

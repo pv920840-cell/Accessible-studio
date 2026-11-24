@@ -171,7 +171,9 @@ fun VideoTimelineScrubber(
 ) {
     val livePosMs = if (positionFlow != null) positionFlow.collectAsState().value else currentPositionMs
     val safeDuration = durationMs.coerceAtLeast(1000L)
-    val clampedPos = livePosMs.coerceIn(0L, safeDuration)
+    var isDragging by remember { mutableStateOf(false) }
+    var dragPosMs by remember { mutableStateOf(livePosMs.coerceIn(0L, safeDuration)) }
+    val clampedPos = if (isDragging) dragPosMs.coerceIn(0L, safeDuration) else livePosMs.coerceIn(0L, safeDuration)
     val isHighContrast = LocalHighContrast.current
 
     Card(
@@ -195,7 +197,7 @@ fun VideoTimelineScrubber(
                 modifier = Modifier
                     .fillMaxWidth()
                     .then(
-                        if (isPlaying) {
+                        if (isPlaying && !isDragging) {
                             Modifier.clearAndSetSemantics {
                                 contentDescription = "Timeline Scrubber, playing, total ${AccessibilityHelper.formatTimeSpoken(safeDuration)}"
                             }
@@ -221,13 +223,23 @@ fun VideoTimelineScrubber(
 
             Slider(
                 value = clampedPos.toFloat(),
-                onValueChange = { onSeekTo(it.toLong().coerceIn(0L, safeDuration)) },
+                onValueChange = { raw ->
+                    val target = raw.toLong().coerceIn(0L, safeDuration)
+                    isDragging = true
+                    dragPosMs = target
+                    onSeekTo(target)
+                },
+                onValueChangeFinished = {
+                    val committed = dragPosMs.coerceIn(0L, safeDuration)
+                    isDragging = false
+                    onSeekTo(committed)
+                },
                 valueRange = 0f..safeDuration.toFloat(),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("slider_video_timeline_scrubber")
                     .then(
-                        if (isPlaying) {
+                        if (isPlaying && !isDragging) {
                             Modifier.clearAndSetSemantics {
                                 contentDescription = "Video timeline scrubber, playing. Pause video to adjust position."
                             }

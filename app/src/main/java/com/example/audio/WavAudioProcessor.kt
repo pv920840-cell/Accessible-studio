@@ -1513,6 +1513,8 @@ class WavAudioProcessor(private val context: Context? = null) {
             "FLAC" -> "flac"
             "M4A" -> "m4a"
             "AAC" -> "aac"
+            "OPUS" -> "opus"
+            "OGG" -> "ogg"
             else -> "wav"
         }
         val cleanBase = com.example.data.StudioPreferences.extractBaseFileName(outputFileName)

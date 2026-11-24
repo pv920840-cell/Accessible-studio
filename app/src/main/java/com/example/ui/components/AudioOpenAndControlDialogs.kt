@@ -136,6 +136,8 @@ sealed class AudioStudioCommand {
     object OpenVoiceOverDialog : AudioStudioCommand()
     object OpenToneGenerator : AudioStudioCommand()
     object OpenStatsDialog : AudioStudioCommand()
+    object OpenMusicRebalance : AudioStudioCommand()
+    object OpenFeatureGuide : AudioStudioCommand()
     data class OpenEffectsTab(val tabIndex: Int) : AudioStudioCommand()
     data class OpenSingleEffect(val effectKey: StudioSingleEffectKey) : AudioStudioCommand()
     data class OpenProSuiteTab(val tabIndex: Int) : AudioStudioCommand()

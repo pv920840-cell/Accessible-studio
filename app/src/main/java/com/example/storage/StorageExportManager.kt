@@ -147,6 +147,7 @@ object StorageExportManager {
             lower.endsWith(".flac") || lower == "flac" -> "audio/flac"
             lower.endsWith(".m4a") || lower == "m4a" -> "audio/mp4"
             lower.endsWith(".aac") || lower == "aac" -> "audio/aac"
+            lower.endsWith(".opus") || lower == "opus" -> "audio/opus"
             lower.endsWith(".ogg") || lower == "ogg" -> "audio/ogg"
             else -> "audio/wav"
         }

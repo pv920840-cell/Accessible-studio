@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Check
@@ -106,9 +107,11 @@ import com.example.ui.components.PeakLimiterEffectCard
 import com.example.ui.components.PitchPolarityEffectCard
 import com.example.ui.components.ReverbParams
 import com.example.audio.EqPreset
+import com.example.audio.MusicRebalanceProcessor
 import com.example.audio.ScrubDirection
 import com.example.audio.SpectralDenoiseParams
 import com.example.audio.SpectralNoiseProfile
+import com.example.audio.StemSeparationMode
 import com.example.audio.StudioAudioProcessor
 import com.example.audio.StudioFxSettings
 import com.example.audio.WavAudioProcessor
@@ -117,10 +120,15 @@ import com.example.data.StudioPreferences
 import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibleAudioWaveform
 import com.example.ui.components.AccessibleEffectSlider
+import com.example.ui.components.AccessiblePreviewPlaybackSlider
 import com.example.ui.components.AccessibleTimeReadout
 import com.example.ui.components.AccessibleTrimSection
+import com.example.ui.components.ActiveEffectChipData
+import com.example.ui.components.ActiveEffectsLongPressBar
 import com.example.ui.components.AudioStudioCommand
+import com.example.ui.components.MusicRebalancePanel
 import com.example.ui.components.StudioDawTopBar
+import com.example.ui.components.StudioFeatureGuideDialog
 import com.example.ui.screens.AudioStudioScreen
 import com.example.ui.theme.LocalHighContrast
 import kotlinx.coroutines.CancellationException
@@ -174,9 +182,11 @@ fun AudioFeatureWorkspaceScreen(
 
     val undoHistory = remember(session.projectId, tool) { mutableStateListOf<ShortArray>() }
     var isApplyingTransform by remember(session.projectId, tool) { mutableStateOf(false) }
+    var showFeatureGuide by remember { mutableStateOf(false) }
 
     val isPlaying by playerManager.isPlaying.collectAsState()
     val durationMs by playerManager.durationMs.collectAsState()
+    val currentPositionMs by playerManager.currentPositionMs.collectAsState()
     val activeScrubDirection by playerManager.scrubDirection.collectAsState()
     var scrubSpeed by remember(recordingSettings?.audioScrubSpeed) {
         mutableFloatStateOf(
@@ -389,7 +399,8 @@ fun AudioFeatureWorkspaceScreen(
                 playerManager.stop()
                 onCancelBack()
             },
-            onSave = { commitAndSave() }
+            onSave = { commitAndSave() },
+            onHelp = { showFeatureGuide = true }
         )
 
         Column(
@@ -442,6 +453,13 @@ fun AudioFeatureWorkspaceScreen(
                     Text("Stop", fontWeight = FontWeight.Bold)
                 }
             }
+
+            AccessiblePreviewPlaybackSlider(
+                currentPositionMs = currentPositionMs,
+                durationMs = durationMs,
+                onSeekTo = { playerManager.seekTo(it) },
+                testTag = "slider_audio_workspace_preview"
+            )
 
             // Rewind / Fast-Forward & Scrub Speed Controls for Audio Editing
             Card(
@@ -1434,6 +1452,73 @@ fun AudioFeatureWorkspaceScreen(
                         )
                     }
 
+                    val activeAudioEffects = buildList {
+                        if (selectedEq != EqPreset.NORMAL) {
+                            add(ActiveEffectChipData("eq", "EQ: ${selectedEq.name}"))
+                        }
+                        if (denoiseParams.reductionDb >= 0.5f && liveDenoiseArmed) {
+                            add(ActiveEffectChipData("denoise", "De-Noise", "${denoiseParams.reductionDb.toInt()} dB"))
+                        }
+                        if (echoEnabled || echoMix > 0.05f) {
+                            add(ActiveEffectChipData("echo", "Echo", "${echoDelayMs}ms"))
+                        }
+                        if (reverbEnabled || reverbMix > 0.05f) {
+                            add(ActiveEffectChipData("reverb", "Reverb", "${(reverbMix * 100).toInt()}%"))
+                        }
+                        if (studioFxSettings.compressorEnabled) {
+                            add(ActiveEffectChipData("compressor", "Compressor"))
+                        }
+                        if (studioFxSettings.peakLimiterEnabled) {
+                            add(ActiveEffectChipData("peak_limiter", "Peak Limiter"))
+                        }
+                        if (studioFxSettings.flangerEnabled) {
+                            add(ActiveEffectChipData("flanger", "Flanger"))
+                        }
+                        if (studioFxSettings.chorusEnabled) {
+                            add(ActiveEffectChipData("chorus", "Chorus"))
+                        }
+                        if (studioFxSettings.distortionEnabled) {
+                            add(ActiveEffectChipData("distortion", "Overdrive"))
+                        }
+                        if (studioFxSettings.eq7BandEnabled) {
+                            add(ActiveEffectChipData("eq7band", "7-Band EQ"))
+                        }
+                        if (studioFxSettings.pitchShiftSemitones != 0 || studioFxSettings.invertPhase) {
+                            add(ActiveEffectChipData("pitch_polarity", "Pitch/Polarity"))
+                        }
+                    }
+
+                    ActiveEffectsLongPressBar(
+                        effects = activeAudioEffects,
+                        onRemoveEffect = { chip ->
+                            when (chip.id) {
+                                "eq" -> selectedEq = EqPreset.NORMAL
+                                "denoise" -> {
+                                    liveDenoiseArmed = false
+                                    playerManager.setRealtimeDenoiseEnabled(false)
+                                    denoiseParams = denoiseParams.copy(reductionDb = 0f, bypass = true)
+                                }
+                                "echo" -> {
+                                    echoEnabled = false
+                                    echoMix = 0f
+                                }
+                                "reverb" -> {
+                                    reverbEnabled = false
+                                    reverbMix = 0f
+                                }
+                                "compressor" -> studioFxSettings = studioFxSettings.copy(compressorEnabled = false)
+                                "peak_limiter" -> studioFxSettings = studioFxSettings.copy(peakLimiterEnabled = false)
+                                "flanger" -> studioFxSettings = studioFxSettings.copy(flangerEnabled = false)
+                                "chorus" -> studioFxSettings = studioFxSettings.copy(chorusEnabled = false)
+                                "distortion" -> studioFxSettings = studioFxSettings.copy(distortionEnabled = false)
+                                "eq7band" -> studioFxSettings = studioFxSettings.copy(eq7BandEnabled = false)
+                                "pitch_polarity" -> studioFxSettings = studioFxSettings.copy(pitchShiftSemitones = 0, invertPhase = false)
+                            }
+                            localModified = true
+                            AccessibilityHelper.announceForAccessibility(context, "Removed ${chip.label}")
+                        }
+                    )
+
                     // Audition Preview (non-destructive audition using current settings)
                     OutlinedButton(
                         onClick = {
@@ -1613,9 +1698,116 @@ fun AudioFeatureWorkspaceScreen(
                     }
                 }
 
+                AudioFeatureTool.MUSIC_REBALANCE -> {
+                    var selectedStemMode by remember(session.projectId) { mutableStateOf(StemSeparationMode.FOUR_STEMS) }
+                    var stemMap by remember(session.projectId) { mutableStateOf<Map<String, ShortArray>>(emptyMap()) }
+                    var stemProgress by remember { mutableFloatStateOf(0f) }
+
+                    MusicRebalancePanel(
+                        hasAudioLoaded = workingPcm.isNotEmpty(),
+                        isProcessing = isApplyingTransform,
+                        progress = stemProgress,
+                        selectedStemMode = selectedStemMode,
+                        onSelectStemMode = { selectedStemMode = it },
+                        separatedStemNames = stemMap.keys.toList(),
+                        onPreviewRebalance = { vGain, bGain, pGain, oGain ->
+                            if (workingPcm.isNotEmpty() && !isApplyingTransform) {
+                                isApplyingTransform = true
+                                stemProgress = 0.05f
+                                scope.launch {
+                                    try {
+                                        playerManager.stop()
+                                        val preview = withContext(Dispatchers.Default) {
+                                            MusicRebalanceProcessor.rebalanceMix(workingPcm, sampleRate, vGain, bGain, pGain, oGain) {
+                                                stemProgress = it
+                                            }
+                                        }
+                                        playerManager.loadPcmData(preview, sampleRate)
+                                        playerManager.play()
+                                    } finally {
+                                        isApplyingTransform = false
+                                    }
+                                }
+                            }
+                        },
+                        onApplyRebalance = { vGain, bGain, pGain, oGain ->
+                            pushUndoAndApply("Applied Music Rebalance mix") { pcm ->
+                                MusicRebalanceProcessor.rebalanceMix(pcm, sampleRate, vGain, bGain, pGain, oGain)
+                            }
+                        },
+                        onSeparateStems = { mode ->
+                            if (workingPcm.isNotEmpty() && !isApplyingTransform) {
+                                isApplyingTransform = true
+                                stemProgress = 0.05f
+                                scope.launch {
+                                    try {
+                                        val stems = withContext(Dispatchers.Default) {
+                                            MusicRebalanceProcessor.separateStems(workingPcm, sampleRate, mode) {
+                                                stemProgress = it
+                                            }
+                                        }
+                                        stemMap = stems
+                                        AccessibilityHelper.announceForAccessibility(context, "Separated ${stems.size} stems")
+                                        Toast.makeText(context, "Separated ${stems.size} stems ready to play or save", Toast.LENGTH_SHORT).show()
+                                    } finally {
+                                        isApplyingTransform = false
+                                    }
+                                }
+                            }
+                        },
+                        onAuditionStem = { stemName ->
+                            val stemPcm = stemMap[stemName]
+                            if (stemPcm != null && stemPcm.isNotEmpty()) {
+                                playerManager.stop()
+                                playerManager.loadPcmData(stemPcm, sampleRate)
+                                playerManager.play()
+                                AccessibilityHelper.announceForAccessibility(context, "Playing $stemName stem")
+                            }
+                        },
+                        onExportStems = { mode ->
+                            if (stemMap.isNotEmpty() && !isApplyingTransform) {
+                                isApplyingTransform = true
+                                stemProgress = 0.05f
+                                scope.launch {
+                                    try {
+                                        val base = workingBaseName?.takeIf { it.isNotBlank() } ?: "Stems"
+                                        var idx = 0
+                                        stemMap.forEach { (stemName, stemPcm) ->
+                                            idx++
+                                            val safeStem = stemName.replace(" ", "_")
+                                            audioProcessor.exportSingleAudioFile(
+                                                mainPcm = stemPcm,
+                                                bgTrackConfig = null,
+                                                bgPcm = null,
+                                                settings = AudioEditSettings(),
+                                                outputFileName = "${base}_${safeStem}_${mode.stemCount}stems",
+                                                format = defaultExportFormat,
+                                                onProgress = {}
+                                            )
+                                            stemProgress = idx.toFloat() / stemMap.size.coerceAtLeast(1)
+                                        }
+                                        mediaRepository.refreshExports()
+                                        Toast.makeText(context, "Saved ${stemMap.size} separated stem files", Toast.LENGTH_LONG).show()
+                                    } catch (t: Throwable) {
+                                        if (t is CancellationException) throw t
+                                        Toast.makeText(context, "Stem export error: ${t.localizedMessage ?: "Failed"}", Toast.LENGTH_LONG).show()
+                                    } finally {
+                                        isApplyingTransform = false
+                                    }
+                                }
+                            }
+                        },
+                        onOpenGuide = { showFeatureGuide = true }
+                    )
+                }
+
                 AudioFeatureTool.FULL_DAW_STUDIO -> Unit
             }
         }
+    }
+
+    if (showFeatureGuide) {
+        StudioFeatureGuideDialog(onDismiss = { showFeatureGuide = false })
     }
 }
 
@@ -1626,7 +1818,8 @@ fun WorkspaceHeaderBar(
     canUndo: Boolean,
     onUndo: () -> Unit,
     onBack: () -> Unit,
-    onSave: () -> Unit
+    onSave: () -> Unit,
+    onHelp: (() -> Unit)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
     Surface(
@@ -1672,6 +1865,18 @@ fun WorkspaceHeaderBar(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (onHelp != null) {
+                IconButton(
+                    onClick = onHelp,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("btn_workspace_guide")
+                        .semantics { contentDescription = "Open Feature Guide and Studio Quality Help" }
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null)
+                }
             }
 
             if (canUndo) {

@@ -63,6 +63,7 @@ import com.example.data.StudioSettingsState
 import com.example.ui.components.AccessibleExportDialog
 import com.example.ui.screens.ExportedFilesScreen
 import com.example.ui.theme.LocalHighContrast
+import com.example.video.CompressorQuality
 import com.example.video.FullRenderRequest
 import com.example.video.MultiMusicPreviewController
 import com.example.video.VideoAspectRatio
@@ -71,6 +72,7 @@ import com.example.video.VideoAudioOption
 import com.example.video.VideoCutMath
 import com.example.video.VideoEditSettings
 import com.example.video.VideoFilter
+import com.example.video.VideoFormatOption
 import com.example.video.VideoPlayerManager
 import com.example.video.VideoProcessor
 import com.example.video.VideoRenderEngine
@@ -836,7 +838,118 @@ fun StudioRootCoordinator(
             exportProgress = hubExportProgress,
             exportedFile = hubExportedFile,
             initialFormat = defaultExportFormat,
+            initialVideoFormat = activeVideoSession?.outputFormat ?: VideoFormatOption.MP4,
+            initialVideoQualityPreset = activeVideoSession?.resolutionPreset ?: VideoResolutionPreset.ORIGINAL,
+            initialCompressorQuality = activeVideoSession?.compressorQuality ?: CompressorQuality.HIGH,
             onDismiss = { showHubExportDialog = false; isHubExporting = false },
+            onConfirmVideoExport = { chosenName, vidFmt, vidRes, vidQual ->
+                val vs = activeVideoSession
+                if (vs == null) {
+                    Toast.makeText(context, "No active video project to export.", Toast.LENGTH_LONG).show()
+                    return@AccessibleExportDialog
+                }
+                val updatedVs = vs.copy(
+                    outputFormat = vidFmt,
+                    resolutionPreset = vidRes,
+                    compressorQuality = vidQual
+                )
+                activeVideoSession = updatedVs
+                isHubExporting = true
+                hubExportProgress = 0.05f
+                scope.launch {
+                    try {
+                        val sourceUri = updatedVs.sourceUri ?: throw IllegalStateException("Please select or create a video clip before exporting.")
+                        val keepRanges = VideoCutMath.computeMultiTrimKeepRanges(
+                            multiTrimClips = updatedVs.multiTrimClips,
+                            cutSegments = updatedVs.cutSegments,
+                            fallbackStartMs = updatedVs.trimStartMs,
+                            fallbackEndMs = updatedVs.trimEndMs
+                        )
+                        val canUseStreamCopy = updatedVs.streamCopyTrim &&
+                            updatedVs.selectedSpeed == 1.0f &&
+                            !updatedVs.reverseVideo &&
+                            updatedVs.selectedFilter == VideoFilter.NORMAL &&
+                            updatedVs.selectedVfx == VideoVfx.NONE &&
+                            updatedVs.aspectRatio == VideoAspectRatio.ORIGINAL &&
+                            updatedVs.resolutionPreset == VideoResolutionPreset.ORIGINAL &&
+                            updatedVs.rotation == VideoRotation.DEG_0 &&
+                            !updatedVs.flipH &&
+                            !updatedVs.flipV &&
+                            updatedVs.textOverlay.isBlank() &&
+                            !updatedVs.blurConfig.enabled &&
+                            updatedVs.imageOverlay.uri == null &&
+                            updatedVs.subtitleCues.isEmpty() &&
+                            updatedVs.soundEffects.isEmpty() &&
+                            updatedVs.narrations.isEmpty() &&
+                            updatedVs.musicTracks.isEmpty() &&
+                            updatedVs.audioOption == VideoAudioOption.ORIGINAL_AUDIO &&
+                            updatedVs.audioVolume == 1.0f &&
+                            !updatedVs.noiseReduceEnabled
+
+                        val outFile = if (canUseStreamCopy) {
+                            videoToolkit.exportStreamCopyRanges(
+                                sourceUri = sourceUri,
+                                keepRangesMs = keepRanges,
+                                outputFileName = chosenName,
+                                formatOption = updatedVs.outputFormat,
+                                onProgress = { hubExportProgress = it }
+                            )
+                        } else {
+                            val req = FullRenderRequest(
+                                sourceUri = sourceUri,
+                                keepRangesMs = keepRanges,
+                                speed = updatedVs.selectedSpeed,
+                                pitchCorrect = updatedVs.pitchCorrect,
+                                reverseVideo = updatedVs.reverseVideo,
+                                filter = updatedVs.selectedFilter,
+                                vfx = updatedVs.selectedVfx,
+                                aspectRatio = updatedVs.aspectRatio,
+                                aspectFitMode = updatedVs.aspectFitMode,
+                                resolutionPreset = updatedVs.resolutionPreset,
+                                customWidth = updatedVs.customWidth,
+                                customHeight = updatedVs.customHeight,
+                                rotation = updatedVs.rotation,
+                                flipHorizontal = updatedVs.flipH,
+                                flipVertical = updatedVs.flipV,
+                                compressorQuality = updatedVs.compressorQuality,
+                                customBitrateBps = (updatedVs.customBitrateMbps * 1_000_000f).toInt(),
+                                textOverlay = updatedVs.textOverlay,
+                                textPosition = updatedVs.textPosition,
+                                textAnimStyle = updatedVs.textAnimStyle,
+                                blurConfig = updatedVs.blurConfig,
+                                imageOverlay = updatedVs.imageOverlay,
+                                subtitleCues = updatedVs.subtitleCues,
+                                soundEffects = updatedVs.soundEffects,
+                                narrations = updatedVs.narrations,
+                                musicTracks = updatedVs.musicTracks,
+                                smartDucking = updatedVs.smartDucking,
+                                audioOption = updatedVs.audioOption,
+                                replacedAudioUri = updatedVs.replacedAudioUri,
+                                audioVolume = updatedVs.audioVolume,
+                                noiseReductionEnabled = updatedVs.noiseReduceEnabled,
+                                noiseReductionStrength = updatedVs.noiseReduceStrength,
+                                outputFormat = updatedVs.outputFormat,
+                                metadataTitle = updatedVs.metadata.title,
+                                metadataArtist = updatedVs.metadata.artist,
+                                metadataAlbum = updatedVs.metadata.album
+                            )
+                            videoRenderEngine.renderVideo(req, chosenName) { hubExportProgress = it }
+                        }
+                        hubExportedFile = outFile
+                        isHubExporting = false
+                        mediaRepository.refreshExports()
+                        activeProject?.let { cur ->
+                            upsertSessionProject(cur.copy(title = outFile.name, filePath = outFile.absolutePath, statusBadge = "Exported"))
+                        }
+                        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                        AccessibilityHelper.announceForAccessibility(context, "Export finished. Saved ${outFile.name}")
+                    } catch (t: Throwable) {
+                        if (t is CancellationException) throw t
+                        isHubExporting = false
+                        Toast.makeText(context, "Export error: ${t.localizedMessage ?: "Storage or encoding error"}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
             onConfirmExport = { chosenName, format ->
                 isHubExporting = true
                 hubExportProgress = 0.05f
@@ -845,10 +958,11 @@ fun StudioRootCoordinator(
                         val outFile = if (isVideo) {
                             val vs = activeVideoSession ?: throw IllegalStateException("No active video project to export.")
                             val sourceUri = vs.sourceUri ?: throw IllegalStateException("Please select or create a video clip before exporting.")
-                            val keepRanges = VideoCutMath.computeKeepRangesMs(
-                                trimStartMs = vs.trimStartMs,
-                                trimEndMs = vs.trimEndMs,
-                                cutSegments = vs.cutSegments
+                            val keepRanges = VideoCutMath.computeMultiTrimKeepRanges(
+                                multiTrimClips = vs.multiTrimClips,
+                                cutSegments = vs.cutSegments,
+                                fallbackStartMs = vs.trimStartMs,
+                                fallbackEndMs = vs.trimEndMs
                             )
                             val canUseStreamCopy = vs.streamCopyTrim &&
                                 vs.selectedSpeed == 1.0f &&

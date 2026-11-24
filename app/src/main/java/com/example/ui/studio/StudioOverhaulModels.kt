@@ -6,6 +6,7 @@ import com.example.audio.EqPreset
 import com.example.audio.StudioAudioProcessor
 import com.example.audio.StudioFxSettings
 import com.example.video.AspectRatioFitMode
+import com.example.video.AutoSplitMode
 import com.example.video.BlurRegionConfig
 import com.example.video.CompressorQuality
 import com.example.video.ImageOverlayConfig
@@ -60,6 +61,11 @@ enum class AudioFeatureTool(
         title = "Effects & Cleaning",
         subtitle = "Normalize, de-hum, noise reduction, compressor, echo & reverb",
         tag = "hub_feature_audio_effects"
+    ),
+    MUSIC_REBALANCE(
+        title = "Music Rebalance & Stems",
+        subtitle = "Balance vocals, bass, percussion & instruments or separate 2–6 stems",
+        tag = "hub_feature_audio_music_rebalance"
     ),
     RECORD_VOICE(
         title = "Voice Recorder",
@@ -149,6 +155,7 @@ data class AudioProjectSessionState(
     val editSettings: AudioEditSettings = AudioEditSettings(),
     val fxSettings: StudioFxSettings = StudioFxSettings(),
     val selectedEq: EqPreset = EqPreset.NORMAL,
+    val appliedQuickEffects: List<String> = emptyList(),
     val hasUnsavedChanges: Boolean = false
 )
 
@@ -163,6 +170,12 @@ data class VideoProjectSessionState(
     val trimEndMs: Long = 6000L,
     val streamCopyTrim: Boolean = false,
     val cutSegments: List<VideoCutSegment> = emptyList(),
+    val multiTrimClips: List<VideoCutSegment> = emptyList(),
+    val splitPointsMs: List<Long> = emptyList(),
+    val autoSplitMode: AutoSplitMode = AutoSplitMode.BY_LENGTH,
+    val autoSplitIntervalMs: Long = 30_000L,
+    val autoSplitFileCount: Int = 2,
+    val autoSplitTargetSizeMb: Float = 25f,
     val mergeClipUris: List<Uri> = emptyList(),
     val slideshowImages: List<Uri> = emptyList(),
     val slideshowSecPerSlide: Int = 3,

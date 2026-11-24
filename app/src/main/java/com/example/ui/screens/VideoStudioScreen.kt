@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Lock
@@ -40,6 +41,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -79,9 +81,13 @@ import com.example.audio.AudioRecorderManager
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
 import com.example.ui.components.AccessibleExportDialog
+import com.example.ui.components.AccessiblePreviewPlaybackSlider
 import com.example.ui.components.AccessibleTimeReadout
 import com.example.ui.components.AccessibleTransportControls
 import com.example.ui.components.AccessibleTrimSection
+import com.example.ui.components.ActiveEffectChipData
+import com.example.ui.components.ActiveEffectsLongPressBar
+import com.example.ui.components.StudioFeatureGuideDialog
 import com.example.ui.components.VideoAudioMusicPanel
 import com.example.ui.components.VideoConvertAndMetaPanel
 import com.example.ui.components.VideoOverlaysVfxPanel
@@ -89,6 +95,7 @@ import com.example.ui.components.VideoTimelineToolsPanel
 import com.example.ui.components.VideoTransformPanel
 import com.example.ui.theme.LocalHighContrast
 import com.example.video.AspectRatioFitMode
+import com.example.video.AutoSplitMode
 import com.example.video.BlurRegionConfig
 import com.example.video.CompressorQuality
 import com.example.video.FullRenderRequest
@@ -192,6 +199,13 @@ fun VideoStudioScreen(
     var trimEndMs by remember { mutableLongStateOf(6000L) }
     var streamCopyTrim by remember { mutableStateOf(false) }
     var cutSegments by remember { mutableStateOf<List<VideoCutSegment>>(emptyList()) }
+    var multiTrimClips by remember { mutableStateOf<List<VideoCutSegment>>(emptyList()) }
+    var splitPointsMs by remember { mutableStateOf<List<Long>>(emptyList()) }
+    var autoSplitMode by remember { mutableStateOf(AutoSplitMode.BY_LENGTH) }
+    var autoSplitIntervalMs by remember { mutableLongStateOf(30_000L) }
+    var autoSplitFileCount by remember { mutableIntStateOf(2) }
+    var autoSplitTargetSizeMb by remember { mutableFloatStateOf(25f) }
+    var showFeatureGuide by remember { mutableStateOf(false) }
     var mergeClipUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var slideshowImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var slideshowSecPerSlide by remember { mutableIntStateOf(3) }
@@ -308,7 +322,12 @@ fun VideoStudioScreen(
     }
 
     fun buildRenderRequest(
-        keepRanges: List<Pair<Long, Long>> = VideoCutMath.computeKeepRangesMs(trimStartMs, trimEndMs, cutSegments)
+        keepRanges: List<Pair<Long, Long>> = VideoCutMath.computeMultiTrimKeepRanges(
+            multiTrimClips = multiTrimClips,
+            cutSegments = cutSegments,
+            fallbackStartMs = trimStartMs,
+            fallbackEndMs = trimEndMs
+        )
     ): FullRenderRequest {
         val uri = currentVideoUri ?: throw IllegalStateException("Select or create a video clip first.")
         return FullRenderRequest(
@@ -496,13 +515,22 @@ fun VideoStudioScreen(
                         }
                     }
 
-                    Button(
-                        onClick = { exportedFileResult = null; showExportDialog = true },
-                        modifier = Modifier.height(48.dp).testTag("btn_video_export_single_file")
-                    ) {
-                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Export", fontWeight = FontWeight.Bold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { showFeatureGuide = true },
+                            modifier = Modifier.size(48.dp).testTag("btn_video_studio_guide")
+                                .semantics { contentDescription = "Open Feature Guide and Studio Quality Help" }
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null)
+                        }
+                        Button(
+                            onClick = { exportedFileResult = null; showExportDialog = true },
+                            modifier = Modifier.height(48.dp).testTag("btn_video_export_single_file")
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Export", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 
@@ -596,6 +624,13 @@ fun VideoStudioScreen(
         }
 
         // Playhead & Transport + Trimmer Handles
+        val livePosForSlider by videoPlayer.currentPositionMs.collectAsState()
+        AccessiblePreviewPlaybackSlider(
+            currentPositionMs = livePosForSlider,
+            durationMs = durationMs,
+            onSeekTo = { videoPlayer.seekTo(it) },
+            testTag = "slider_video_studio_preview"
+        )
         AccessibleTimeReadout(
             currentMs = 0L,
             durationMs = durationMs,
@@ -661,6 +696,58 @@ fun VideoStudioScreen(
                     videoPlayer.seekTo(start)
                     videoPlayer.play(startMs = start, endLimitMs = end)
                 }
+            }
+        )
+
+        val activeVideoEffects = buildList {
+            if (selectedFilter != VideoFilter.NORMAL) {
+                add(ActiveEffectChipData("vfilter", "Filter: ${selectedFilter.displayName}"))
+            }
+            if (selectedVfx != VideoVfx.NONE) {
+                add(ActiveEffectChipData("vvfx", "VFX: ${selectedVfx.displayName}"))
+            }
+            if (blurConfig.enabled) {
+                add(ActiveEffectChipData("vblur", if (blurConfig.isMosaic) "Mosaic Blur" else "Gaussian Blur"))
+            }
+            if (textOverlay.isNotBlank()) {
+                add(ActiveEffectChipData("vtext", "Text Overlay"))
+            }
+            if (imageOverlay.uri != null) {
+                add(ActiveEffectChipData("vimage", "Image Overlay"))
+            }
+            if (subtitleCues.isNotEmpty()) {
+                add(ActiveEffectChipData("vsubs", "Subtitles (${subtitleCues.size})"))
+            }
+            if (selectedSpeed != 1.0f) {
+                add(ActiveEffectChipData("vspeed", "Speed ${selectedSpeed}x"))
+            }
+            if (reverseVideo) {
+                add(ActiveEffectChipData("vreverse", "Reverse Video"))
+            }
+            if (rotation != VideoRotation.DEG_0 || flipH || flipV) {
+                add(ActiveEffectChipData("vtransform", "Rotate / Flip"))
+            }
+            if (noiseReduceEnabled) {
+                add(ActiveEffectChipData("vdenoise", "Audio De-Noise"))
+            }
+        }
+
+        ActiveEffectsLongPressBar(
+            effects = activeVideoEffects,
+            onRemoveEffect = { chip ->
+                when (chip.id) {
+                    "vfilter" -> selectedFilter = VideoFilter.NORMAL
+                    "vvfx" -> selectedVfx = VideoVfx.NONE
+                    "vblur" -> blurConfig = blurConfig.copy(enabled = false)
+                    "vtext" -> textOverlay = ""
+                    "vimage" -> imageOverlay = imageOverlay.copy(uri = null)
+                    "vsubs" -> subtitleCues = emptyList()
+                    "vspeed" -> selectedSpeed = 1.0f
+                    "vreverse" -> reverseVideo = false
+                    "vtransform" -> { rotation = VideoRotation.DEG_0; flipH = false; flipV = false }
+                    "vdenoise" -> noiseReduceEnabled = false
+                }
+                AccessibilityHelper.announceForAccessibility(context, "Removed ${chip.label}")
             }
         )
 
@@ -852,7 +939,31 @@ fun VideoStudioScreen(
                     }
                 },
                 initialFocusedFeature = focusedFeature,
-                onFocusedFeatureChange = { focusedFeature = it }
+                onFocusedFeatureChange = { focusedFeature = it },
+                multiTrimClips = multiTrimClips,
+                onUpdateMultiTrimClips = { multiTrimClips = it },
+                onUpdateCutSegments = { cutSegments = it },
+                splitPointsMs = splitPointsMs,
+                onUpdateSplitPoints = { splitPointsMs = it },
+                autoSplitMode = autoSplitMode,
+                autoSplitIntervalMs = autoSplitIntervalMs,
+                autoSplitFileCount = autoSplitFileCount,
+                autoSplitTargetSizeMb = autoSplitTargetSizeMb,
+                onUpdateAutoSplitConfig = { mode, intervalMs, count, sizeMb ->
+                    autoSplitMode = mode
+                    autoSplitIntervalMs = intervalMs
+                    autoSplitFileCount = count
+                    autoSplitTargetSizeMb = sizeMb
+                },
+                onPlayRange = { s, e ->
+                    if (durationMs > 0L) {
+                        val safeStart = s.coerceIn(0L, durationMs)
+                        val safeEnd = e.coerceIn(safeStart, durationMs).let { if (it <= safeStart) durationMs else it }
+                        videoPlayer.seekTo(safeStart)
+                        videoPlayer.play(startMs = safeStart, endLimitMs = safeEnd)
+                    }
+                },
+                onOpenFeatureGuide = { showFeatureGuide = true }
             )
 
             VideoToolSection.AUDIO_MUSIC -> VideoAudioMusicPanel(
@@ -1106,6 +1217,9 @@ fun VideoStudioScreen(
             isExporting = isExporting,
             exportProgress = exportProgress,
             exportedFile = exportedFileResult,
+            initialVideoFormat = outputFormat,
+            initialVideoQualityPreset = resolutionPreset,
+            initialCompressorQuality = compressorQuality,
             onDismiss = { showExportDialog = false; isExporting = false },
             onConfirmExport = { chosenName, _ ->
                 if (currentVideoUri == null) return@AccessibleExportDialog
@@ -1115,6 +1229,37 @@ fun VideoStudioScreen(
                     try {
                         val file = renderEngine.renderVideo(
                             req = buildRenderRequest(),
+                            outputFileName = chosenName,
+                            onProgress = { exportProgress = it }
+                        )
+                        exportedFileResult = file
+                        openedVideoBaseName = StudioPreferences.extractBaseFileName(file.name).takeIf { it.isNotBlank() }
+                        isExporting = false
+                        mediaRepository.refreshExports()
+                        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                    } catch (t: Throwable) {
+                        if (t is kotlinx.coroutines.CancellationException) throw t
+                        isExporting = false
+                        Toast.makeText(context, "Export error: ${t.localizedMessage ?: "Encoding or storage error"}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            onConfirmVideoExport = { chosenName, chosenFmt, chosenRes, chosenQuality ->
+                if (currentVideoUri == null) return@AccessibleExportDialog
+                outputFormat = chosenFmt
+                resolutionPreset = chosenRes
+                compressorQuality = chosenQuality
+                isExporting = true
+                exportProgress = 0.05f
+                scope.launch {
+                    try {
+                        val req = buildRenderRequest().copy(
+                            outputFormat = chosenFmt,
+                            resolutionPreset = chosenRes,
+                            compressorQuality = chosenQuality
+                        )
+                        val file = renderEngine.renderVideo(
+                            req = req,
                             outputFileName = chosenName,
                             onProgress = { exportProgress = it }
                         )
@@ -1159,6 +1304,10 @@ fun VideoStudioScreen(
                 }
             }
         )
+    }
+
+    if (showFeatureGuide) {
+        StudioFeatureGuideDialog(onDismiss = { showFeatureGuide = false })
     }
 }
 

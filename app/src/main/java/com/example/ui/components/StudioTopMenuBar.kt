@@ -635,6 +635,14 @@ fun StudioDawTopBar(
                             openMenu = TopDropdownMenuKey.NONE
                             onAudioCommand(AudioStudioCommand.OpenEffectsTab(4))
                         }
+                        StudioMenuItem("Music Rebalance & Stem Separation", Icons.Default.GraphicEq, "menu_tools_music_rebalance") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenMusicRebalance)
+                        }
+                        StudioMenuItem("Feature Guide & Studio Quality Tips", Icons.AutoMirrored.Filled.Help, "menu_tools_feature_guide") {
+                            openMenu = TopDropdownMenuKey.NONE
+                            onAudioCommand(AudioStudioCommand.OpenFeatureGuide)
+                        }
                         HorizontalDivider()
                         StudioMenuItem("File Statistics & Peak/RMS", Icons.Default.Analytics, "menu_tools_stats") {
                             openMenu = TopDropdownMenuKey.NONE

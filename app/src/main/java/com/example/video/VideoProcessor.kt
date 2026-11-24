@@ -198,7 +198,7 @@ class VideoProcessor(private val context: Context) {
                 bufferInfo.offset = 0
                 bufferInfo.size = sampleSize
                 bufferInfo.presentationTimeUs = scaledOffset.coerceAtLeast(0L)
-                bufferInfo.flags = videoExtractor.sampleFlags
+                bufferInfo.flags = mapExtractorFlagsToBufferFlags(videoExtractor.sampleFlags)
 
                 muxer.writeSampleData(muxerVideoTrack, buffer, bufferInfo)
 
@@ -233,7 +233,7 @@ class VideoProcessor(private val context: Context) {
                     bufferInfo.offset = 0
                     bufferInfo.size = sampleSize
                     bufferInfo.presentationTimeUs = scaledOffset.coerceAtLeast(0L)
-                    bufferInfo.flags = videoExtractor.sampleFlags
+                    bufferInfo.flags = mapExtractorFlagsToBufferFlags(videoExtractor.sampleFlags)
 
                     muxer.writeSampleData(muxerAudioTrack, buffer, bufferInfo)
                 }
@@ -511,3 +511,14 @@ data class VideoMetadata(
     val height: Int,
     val hasAudio: Boolean
 )
+
+internal fun mapExtractorFlagsToBufferFlags(sampleFlags: Int): Int {
+    var flags = 0
+    if ((sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
+        flags = flags or MediaCodec.BUFFER_FLAG_KEY_FRAME
+    }
+    if ((sampleFlags and MediaExtractor.SAMPLE_FLAG_PARTIAL_FRAME) != 0) {
+        flags = flags or MediaCodec.BUFFER_FLAG_PARTIAL_FRAME
+    }
+    return flags
+}

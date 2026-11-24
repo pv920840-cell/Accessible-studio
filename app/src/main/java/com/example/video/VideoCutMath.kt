@@ -167,4 +167,189 @@ object VideoCutMath {
         }
         return newStart to newEnd
     }
+
+    // ── Standardized Step Slider (Milliseconds <-> Seconds <-> Minutes) ──
+
+    enum class StepUnitCategory(val label: String) {
+        MILLISECONDS("Milliseconds"),
+        SECONDS("Seconds"),
+        MINUTES("Minutes")
+    }
+
+    data class StandardizedStepOption(
+        val stepMs: Long,
+        val shortLabel: String,
+        val spokenLabel: String,
+        val unitCategory: StepUnitCategory
+    )
+
+    val STANDARDIZED_STEP_OPTIONS: List<StandardizedStepOption> = listOf(
+        StandardizedStepOption(10L, "10 ms", "10 milliseconds", StepUnitCategory.MILLISECONDS),
+        StandardizedStepOption(50L, "50 ms", "50 milliseconds", StepUnitCategory.MILLISECONDS),
+        StandardizedStepOption(100L, "100 ms", "100 milliseconds", StepUnitCategory.MILLISECONDS),
+        StandardizedStepOption(250L, "250 ms", "250 milliseconds", StepUnitCategory.MILLISECONDS),
+        StandardizedStepOption(500L, "500 ms", "500 milliseconds", StepUnitCategory.MILLISECONDS),
+        StandardizedStepOption(1_000L, "1 s", "1 second", StepUnitCategory.SECONDS),
+        StandardizedStepOption(2_000L, "2 s", "2 seconds", StepUnitCategory.SECONDS),
+        StandardizedStepOption(5_000L, "5 s", "5 seconds", StepUnitCategory.SECONDS),
+        StandardizedStepOption(10_000L, "10 s", "10 seconds", StepUnitCategory.SECONDS),
+        StandardizedStepOption(30_000L, "30 s", "30 seconds", StepUnitCategory.SECONDS),
+        StandardizedStepOption(60_000L, "1 min", "1 minute", StepUnitCategory.MINUTES),
+        StandardizedStepOption(120_000L, "2 min", "2 minutes", StepUnitCategory.MINUTES),
+        StandardizedStepOption(300_000L, "5 min", "5 minutes", StepUnitCategory.MINUTES)
+    )
+
+    fun standardizedStepIndexFor(stepMs: Long): Int {
+        val exact = STANDARDIZED_STEP_OPTIONS.indexOfFirst { it.stepMs == stepMs }
+        if (exact >= 0) return exact
+        return STANDARDIZED_STEP_OPTIONS.indices.minByOrNull { idx ->
+            kotlin.math.abs(STANDARDIZED_STEP_OPTIONS[idx].stepMs - stepMs)
+        } ?: 5 // default 1 s
+    }
+
+    fun standardizedStepAt(index: Int): StandardizedStepOption {
+        val clamped = index.coerceIn(0, STANDARDIZED_STEP_OPTIONS.lastIndex)
+        return STANDARDIZED_STEP_OPTIONS[clamped]
+    }
+
+    /**
+     * Swipe UP action: increases step size toward seconds and then minutes.
+     */
+    fun stepUp(currentStepMs: Long): StandardizedStepOption {
+        val idx = standardizedStepIndexFor(currentStepMs)
+        return standardizedStepAt((idx + 1).coerceAtMost(STANDARDIZED_STEP_OPTIONS.lastIndex))
+    }
+
+    /**
+     * Swipe DOWN action: decreases step size toward fine millisecond precision.
+     */
+    fun stepDown(currentStepMs: Long): StandardizedStepOption {
+        val idx = standardizedStepIndexFor(currentStepMs)
+        return standardizedStepAt((idx - 1).coerceAtLeast(0))
+    }
+
+    fun nudgeTimestamp(
+        currentMs: Long,
+        deltaSteps: Int,
+        stepMs: Long,
+        minMs: Long,
+        maxMs: Long
+    ): Long {
+        val safeMin = minMs.coerceAtLeast(0L)
+        val safeMax = maxMs.coerceAtLeast(safeMin)
+        return (currentMs + deltaSteps * stepMs).coerceIn(safeMin, safeMax)
+    }
+
+    // ── Splitter, Auto-Splitter & Multi-Trim Range Derivation ──
+
+    fun splitPointsToRanges(
+        trimStartMs: Long,
+        trimEndMs: Long,
+        splitPointsMs: List<Long>
+    ): List<Pair<Long, Long>> {
+        val safeStart = trimStartMs.coerceAtLeast(0L)
+        val safeEnd = trimEndMs.coerceAtLeast(safeStart)
+        if (safeEnd <= safeStart) return emptyList()
+        val interiorPoints = splitPointsMs
+            .map { it.coerceIn(safeStart, safeEnd) }
+            .filter { it > safeStart && it < safeEnd }
+            .distinct()
+            .sorted()
+        if (interiorPoints.isEmpty()) return listOf(safeStart to safeEnd)
+        val result = mutableListOf<Pair<Long, Long>>()
+        var cursor = safeStart
+        for (pt in interiorPoints) {
+            if (pt - cursor >= 50L) {
+                result.add(cursor to pt)
+            }
+            cursor = pt
+        }
+        if (safeEnd - cursor >= 50L) {
+            result.add(cursor to safeEnd)
+        }
+        return result
+    }
+
+    fun autoSplitRangesByLength(
+        trimStartMs: Long,
+        trimEndMs: Long,
+        intervalMs: Long
+    ): List<Pair<Long, Long>> {
+        val safeStart = trimStartMs.coerceAtLeast(0L)
+        val safeEnd = trimEndMs.coerceAtLeast(safeStart)
+        if (safeEnd <= safeStart) return emptyList()
+        val safeInterval = intervalMs.coerceAtLeast(500L)
+        val ranges = mutableListOf<Pair<Long, Long>>()
+        var cursor = safeStart
+        while (cursor < safeEnd) {
+            val nextEnd = (cursor + safeInterval).coerceAtMost(safeEnd)
+            if (nextEnd - cursor >= 50L) {
+                ranges.add(cursor to nextEnd)
+            }
+            cursor = nextEnd
+        }
+        return ranges
+    }
+
+    fun autoSplitRangesByCount(
+        trimStartMs: Long,
+        trimEndMs: Long,
+        fileCount: Int
+    ): List<Pair<Long, Long>> {
+        val safeStart = trimStartMs.coerceAtLeast(0L)
+        val safeEnd = trimEndMs.coerceAtLeast(safeStart)
+        if (safeEnd <= safeStart) return emptyList()
+        val safeCount = fileCount.coerceIn(1, 200)
+        val span = safeEnd - safeStart
+        val chunk = (span / safeCount).coerceAtLeast(50L)
+        val ranges = mutableListOf<Pair<Long, Long>>()
+        var cursor = safeStart
+        for (i in 0 until safeCount) {
+            val nextEnd = if (i == safeCount - 1) safeEnd else (cursor + chunk).coerceAtMost(safeEnd)
+            if (nextEnd > cursor) {
+                ranges.add(cursor to nextEnd)
+            }
+            cursor = nextEnd
+            if (cursor >= safeEnd) break
+        }
+        return ranges
+    }
+
+    fun autoSplitRangesByTargetSize(
+        trimStartMs: Long,
+        trimEndMs: Long,
+        targetSizeMb: Float,
+        totalDurationMs: Long,
+        estimatedTotalBytes: Long
+    ): List<Pair<Long, Long>> {
+        val safeStart = trimStartMs.coerceAtLeast(0L)
+        val safeEnd = trimEndMs.coerceAtLeast(safeStart)
+        if (safeEnd <= safeStart) return emptyList()
+        val safeTargetBytes = (targetSizeMb.coerceAtLeast(0.5f) * 1024f * 1024f).toDouble()
+        val bytesPerMs = if (totalDurationMs > 0L && estimatedTotalBytes > 0L) {
+            estimatedTotalBytes.toDouble() / totalDurationMs.toDouble()
+        } else {
+            // Reasonable default fallback (~2.5 Mbps -> ~312.5 bytes/ms)
+            312.5
+        }
+        val intervalMs = (safeTargetBytes / bytesPerMs).toLong().coerceAtLeast(1_000L)
+        return autoSplitRangesByLength(safeStart, safeEnd, intervalMs)
+    }
+
+    fun computeMultiTrimKeepRanges(
+        multiTrimClips: List<VideoCutSegment>,
+        cutSegments: List<VideoCutSegment>,
+        fallbackStartMs: Long,
+        fallbackEndMs: Long
+    ): List<Pair<Long, Long>> {
+        if (multiTrimClips.isEmpty()) {
+            return computeKeepRangesMs(fallbackStartMs, fallbackEndMs, cutSegments)
+        }
+        val mergedClips = mergeCutSegments(multiTrimClips, 0L, Long.MAX_VALUE)
+        val result = mutableListOf<Pair<Long, Long>>()
+        for ((clipStart, clipEnd) in mergedClips) {
+            result.addAll(computeKeepRangesMs(clipStart, clipEnd, cutSegments))
+        }
+        return result
+    }
 }

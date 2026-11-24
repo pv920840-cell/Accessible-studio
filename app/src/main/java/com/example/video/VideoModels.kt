@@ -17,6 +17,11 @@ enum class VideoStudioFeatureButton(
     val tag: String
 ) {
     TRIMMER(VideoToolSection.TIMELINE, "Video Trimmer", "trimmer"),
+    MULTI_TRIM(VideoToolSection.TIMELINE, "Video Multi trim", "multi_trim"),
+    DELETE_PART(VideoToolSection.TIMELINE, "Video Delete part", "delete_part"),
+    MULTI_DELETE(VideoToolSection.TIMELINE, "Video Multi delete", "multi_delete"),
+    SPLITTER(VideoToolSection.TIMELINE, "Video Splitter", "splitter"),
+    AUTO_SPLITTER(VideoToolSection.TIMELINE, "Video Auto splitter", "auto_splitter"),
     CUTTER(VideoToolSection.TIMELINE, "Non-Destructive Cutter", "cutter"),
     SNAPSHOT_GLIMPSE(VideoToolSection.TIMELINE, "Snapshot & Glimpse", "snapshot_glimpse"),
     MERGER(VideoToolSection.TIMELINE, "Video Merger", "merger"),
@@ -190,3 +195,9 @@ data class VideoMetadataDetails(
     val album: String = "Accessible Studio",
     val genre: String = "Video"
 )
+
+enum class AutoSplitMode(val label: String) {
+    BY_LENGTH("Split by length"),
+    BY_FILE_COUNT("Split into number of files"),
+    BY_FILE_SIZE("Split by file size (MB)")
+}

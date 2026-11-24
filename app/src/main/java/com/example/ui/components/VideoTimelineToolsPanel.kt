@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -63,6 +64,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.accessibility.AccessibilityHelper
 import com.example.ui.theme.LocalHighContrast
+import com.example.video.AutoSplitMode
 import com.example.video.SnapshotGlimpseItem
 import com.example.video.VideoCutSegment
 import com.example.video.VideoMetadataDetails
@@ -113,10 +115,23 @@ fun VideoTimelineToolsPanel(
     positionFlow: StateFlow<Long>? = null,
     currentPositionMsProvider: (() -> Long)? = null,
     initialFocusedFeature: VideoStudioFeatureButton? = null,
-    onFocusedFeatureChange: ((VideoStudioFeatureButton?) -> Unit)? = null
+    onFocusedFeatureChange: ((VideoStudioFeatureButton?) -> Unit)? = null,
+    multiTrimClips: List<VideoCutSegment> = emptyList(),
+    onUpdateMultiTrimClips: (List<VideoCutSegment>) -> Unit = {},
+    onUpdateCutSegments: (List<VideoCutSegment>) -> Unit = {},
+    splitPointsMs: List<Long> = emptyList(),
+    onUpdateSplitPoints: (List<Long>) -> Unit = {},
+    autoSplitMode: AutoSplitMode = AutoSplitMode.BY_LENGTH,
+    autoSplitIntervalMs: Long = 30_000L,
+    autoSplitFileCount: Int = 2,
+    autoSplitTargetSizeMb: Float = 25f,
+    onUpdateAutoSplitConfig: (AutoSplitMode, Long, Int, Float) -> Unit = { _, _, _, _ -> },
+    onPlayRange: (Long, Long) -> Unit = { s, _ -> onSeekTo(s) },
+    onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
+    var showLocalGuide by remember { mutableStateOf(false) }
     val selectFeature: (VideoStudioFeatureButton?) -> Unit = { next ->
         focusedFeature = next
         onFocusedFeatureChange?.invoke(next)
@@ -216,6 +231,16 @@ fun VideoTimelineToolsPanel(
                             )
                         }
                         IconButton(
+                            onClick = {
+                                if (onOpenFeatureGuide != null) onOpenFeatureGuide() else showLocalGuide = true
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .testTag("btn_timeline_feature_guide")
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "Open Feature Guide")
+                        }
+                        IconButton(
                             onClick = { selectFeature(null) },
                             modifier = Modifier
                                 .size(48.dp)
@@ -238,61 +263,21 @@ fun VideoTimelineToolsPanel(
                             VideoStudioFeatureButton.TRIMMER -> {
                                 SectionToolCard(
                                     title = "Video Trimmer",
-                                    subtitle = "Direct time entry or markers • Re-encode or Fast Stream Copy",
+                                    subtitle = "Set Start and Finish around the part to keep",
                                     isHighContrast = isHighContrast,
                                     modifier = Modifier.testTag("section_video_trimmer")
                                 ) {
-                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        OutlinedTextField(
-                                            value = trimStartSecText,
-                                            onValueChange = { v ->
-                                                trimStartSecText = v.filter { it.isDigit() }
-                                                val s = (trimStartSecText.toLongOrNull() ?: 0L) * 1000L
-                                                onUpdateTrimRange(s.coerceIn(0L, (trimEndMs - 500L).coerceAtLeast(0L)), trimEndMs)
-                                            },
-                                            label = { Text("Start (sec)") },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1f).testTag("input_trim_start_sec")
-                                        )
-                                        OutlinedTextField(
-                                            value = trimEndSecText,
-                                            onValueChange = { v ->
-                                                trimEndSecText = v.filter { it.isDigit() }
-                                                val e = (trimEndSecText.toLongOrNull() ?: 1L) * 1000L
-                                                onUpdateTrimRange(trimStartMs, e.coerceIn(trimStartMs + 500L, durationMs.coerceAtLeast(1000L)))
-                                            },
-                                            label = { Text("End (sec)") },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                            singleLine = true,
-                                            modifier = Modifier.weight(1f).testTag("input_trim_end_sec")
-                                        )
-                                    }
-
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(if (streamCopyTrim) "Mode: Stream Copy (Instant)" else "Mode: Re-encode (With Effects)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
-                                            Text("Stream copy skips re-encoding for lossless speed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                        Switch(
-                                            checked = streamCopyTrim,
-                                            onCheckedChange = onToggleStreamCopyTrim,
-                                            modifier = Modifier.testTag("switch_trim_stream_copy").semantics {
-                                                contentDescription = "Toggle Stream Copy trim mode. Currently ${if (streamCopyTrim) "Stream Copy" else "Re-encode"}"
-                                            }
-                                        )
-                                    }
-
-                                    Text(
-                                        text = "Active Trim Range: ${AccessibilityHelper.formatTimeVisual(trimStartMs)} - ${AccessibilityHelper.formatTimeVisual(trimEndMs)}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.testTag("txt_active_trim_summary")
+                                    VideoTrimmerPrecisionPanel(
+                                        durationMs = durationMs,
+                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        trimStartMs = trimStartMs,
+                                        trimEndMs = trimEndMs,
+                                        streamCopyTrim = streamCopyTrim,
+                                        onUpdateTrim = { s, e, sc ->
+                                            onUpdateTrimRange(s, e)
+                                            if (sc != streamCopyTrim) onToggleStreamCopyTrim(sc)
+                                        },
+                                        onPlaySelection = onPlayRange
                                     )
 
                                     if (showTrimmerExportButton && onExportTrimmed != null) {
@@ -305,6 +290,100 @@ fun VideoTimelineToolsPanel(
                                             Text("Export Trimmed Clip (${AccessibilityHelper.formatTimeVisual(trimStartMs)} - ${AccessibilityHelper.formatTimeVisual(trimEndMs)})", fontWeight = FontWeight.Bold)
                                         }
                                     }
+                                }
+                            }
+
+                            VideoStudioFeatureButton.MULTI_TRIM -> {
+                                SectionToolCard(
+                                    title = "Video Multi trim",
+                                    subtitle = "Set Start and Finish for each clip and press Add clip",
+                                    isHighContrast = isHighContrast,
+                                    modifier = Modifier.testTag("section_video_multi_trim")
+                                ) {
+                                    VideoMultiTrimPanel(
+                                        durationMs = durationMs,
+                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        multiTrimClips = multiTrimClips,
+                                        onUpdateMultiTrimClips = onUpdateMultiTrimClips,
+                                        onPlaySelection = onPlayRange
+                                    )
+                                }
+                            }
+
+                            VideoStudioFeatureButton.DELETE_PART -> {
+                                SectionToolCard(
+                                    title = "Video Delete part",
+                                    subtitle = "Set Start and Finish around the part to remove",
+                                    isHighContrast = isHighContrast,
+                                    modifier = Modifier.testTag("section_video_delete_part")
+                                ) {
+                                    VideoDeletePartPanel(
+                                        durationMs = durationMs,
+                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        cutSegments = cutSegments,
+                                        onUpdateCutSegments = onUpdateCutSegments,
+                                        onPlaySelection = onPlayRange
+                                    )
+                                }
+                            }
+
+                            VideoStudioFeatureButton.MULTI_DELETE -> {
+                                SectionToolCard(
+                                    title = "Video Multi delete",
+                                    subtitle = "Set Start and Finish around each part to remove and press Add part",
+                                    isHighContrast = isHighContrast,
+                                    modifier = Modifier.testTag("section_video_multi_delete")
+                                ) {
+                                    VideoMultiDeletePanel(
+                                        durationMs = durationMs,
+                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        cutSegments = cutSegments,
+                                        onUpdateCutSegments = onUpdateCutSegments,
+                                        onPlaySelection = onPlayRange
+                                    )
+                                }
+                            }
+
+                            VideoStudioFeatureButton.SPLITTER -> {
+                                SectionToolCard(
+                                    title = "Video Splitter",
+                                    subtitle = "Move Point to split positions and press Add split point",
+                                    isHighContrast = isHighContrast,
+                                    modifier = Modifier.testTag("section_video_splitter")
+                                ) {
+                                    VideoSplitterPanel(
+                                        durationMs = durationMs,
+                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        trimStartMs = trimStartMs,
+                                        trimEndMs = trimEndMs,
+                                        splitPointsMs = splitPointsMs,
+                                        onUpdateSplitPoints = onUpdateSplitPoints,
+                                        onPlayFrom = { pt -> onPlayRange(pt, trimEndMs.coerceAtLeast(pt + 1000L)) }
+                                    )
+                                }
+                            }
+
+                            VideoStudioFeatureButton.AUTO_SPLITTER -> {
+                                SectionToolCard(
+                                    title = "Video Auto splitter",
+                                    subtitle = "Split into equal length, count, or size parts",
+                                    isHighContrast = isHighContrast,
+                                    modifier = Modifier.testTag("section_video_auto_splitter")
+                                ) {
+                                    VideoAutoSplitterPanel(
+                                        durationMs = durationMs,
+                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        trimStartMs = trimStartMs,
+                                        trimEndMs = trimEndMs,
+                                        autoSplitMode = autoSplitMode,
+                                        autoSplitIntervalMs = autoSplitIntervalMs,
+                                        autoSplitFileCount = autoSplitFileCount,
+                                        autoSplitTargetSizeMb = autoSplitTargetSizeMb,
+                                        estimatedTotalBytes = videoMetadata.fileSizeBytes,
+                                        onUpdateBounds = onUpdateTrimRange,
+                                        onUpdateAutoSplitConfig = onUpdateAutoSplitConfig,
+                                        onPlaySelection = onPlayRange
+                                    )
                                 }
                             }
 
@@ -492,6 +571,10 @@ fun VideoTimelineToolsPanel(
                 }
             }
         }
+    }
+
+    if (showLocalGuide) {
+        StudioFeatureGuideDialog(onDismiss = { showLocalGuide = false })
     }
 }
 

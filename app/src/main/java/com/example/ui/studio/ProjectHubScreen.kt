@@ -462,6 +462,7 @@ private fun audioToolIcon(tool: AudioFeatureTool): ImageVector = when (tool) {
     AudioFeatureTool.TRIM_CUT -> Icons.Default.ContentCut
     AudioFeatureTool.MIX_TRACKS -> Icons.Default.Layers
     AudioFeatureTool.EFFECTS_CLEANING -> Icons.Default.GraphicEq
+    AudioFeatureTool.MUSIC_REBALANCE -> Icons.Default.Tune
     AudioFeatureTool.RECORD_VOICE -> Icons.Default.Mic
     AudioFeatureTool.FULL_DAW_STUDIO -> Icons.Default.Audiotrack
 }

@@ -550,7 +550,7 @@ class VideoToolkitProcessor(private val context: Context) {
                         if (sampleTime < 0 || sampleTime > endUs) break
                         val size = extractor.readSampleData(buf, 0)
                         if (size < 0) break
-                        info.set(0, size, ptsBaseOffsetUs + (sampleTime - startUs).coerceAtLeast(0L), extractor.sampleFlags)
+                        info.set(0, size, ptsBaseOffsetUs + (sampleTime - startUs).coerceAtLeast(0L), mapExtractorFlagsToBufferFlags(extractor.sampleFlags))
                         activeMuxer.writeSampleData(muxV, buf, info)
                         extractor.advance()
                     }
@@ -565,7 +565,7 @@ class VideoToolkitProcessor(private val context: Context) {
                         if (sampleTime < 0 || sampleTime > endUs) break
                         val size = extractor.readSampleData(buf, 0)
                         if (size < 0) break
-                        info.set(0, size, ptsBaseOffsetUs + (sampleTime - startUs).coerceAtLeast(0L), extractor.sampleFlags)
+                        info.set(0, size, ptsBaseOffsetUs + (sampleTime - startUs).coerceAtLeast(0L), mapExtractorFlagsToBufferFlags(extractor.sampleFlags))
                         activeMuxer.writeSampleData(muxA, buf, info)
                         extractor.advance()
                     }
@@ -731,7 +731,7 @@ class VideoToolkitProcessor(private val context: Context) {
                 while (true) {
                     val sz = vExt.readSampleData(buf, 0)
                     if (sz < 0) break
-                    info.set(0, sz, vExt.sampleTime, vExt.sampleFlags)
+                    info.set(0, sz, vExt.sampleTime, mapExtractorFlagsToBufferFlags(vExt.sampleFlags))
                     muxer.writeSampleData(vDst, buf, info)
                     vExt.advance()
                 }
@@ -741,7 +741,7 @@ class VideoToolkitProcessor(private val context: Context) {
                 while (true) {
                     val sz = aExt.readSampleData(buf, 0)
                     if (sz < 0) break
-                    info.set(0, sz, aExt.sampleTime, aExt.sampleFlags)
+                    info.set(0, sz, aExt.sampleTime, mapExtractorFlagsToBufferFlags(aExt.sampleFlags))
                     muxer.writeSampleData(aDst, buf, info)
                     aExt.advance()
                 }

@@ -66,6 +66,7 @@ fun AppUpdateAvailableDialog(
     onInstallDownloadedApk: (File) -> Unit,
     onLater: () -> Unit,
     onUninstallCurrentApp: () -> Unit = {},
+    onSaveApkToDownloads: (File) -> Unit = {},
     onShareApkLink: () -> Unit = {}
 ) {
     val isHighContrast = LocalHighContrast.current
@@ -254,6 +255,23 @@ fun AppUpdateAvailableDialog(
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     modifier = Modifier.testTag("txt_update_package_conflict")
                                 )
+                                if (flowState.apkFile != null) {
+                                    OutlinedButton(
+                                        onClick = { onSaveApkToDownloads(flowState.apkFile) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 48.dp)
+                                            .testTag("btn_dialog_save_apk_downloads")
+                                            .semantics {
+                                                contentDescription = "Save update APK to Downloads folder before uninstalling the old build"
+                                            },
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Save APK to Downloads", fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
                         }
                     }

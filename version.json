@@ -4,7 +4,7 @@
   "versionName": "1.4.0",
   "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.4.0/AccessibleStudio_V1.4.0.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 21869993,
+  "apkSizeBytes": 21871849,
   "changelog": "Upgraded Video Trimmer, Multi Trim, Delete Part, Multi Delete, Splitter & Auto Splitter with swipe-up/down Playback Slider preview, double-tap Play/Pause & marker shortcuts, ms/s/min Step Slider (1s default), double-tap Min/Sec/ms Time Edit dialogs, Auto Splitter slider, Accessible Video Picker, RX-12-style Music Rebalance & crash-free streaming stem separation, and automated GitHub Releases v1.4.0 auto-updates.",
   "releaseNotes": "Upgraded Video Trimmer, Multi Trim, Delete Part, Multi Delete, Splitter & Auto Splitter with swipe-up/down Playback Slider preview, double-tap Play/Pause & marker shortcuts, ms/s/min Step Slider (1s default), double-tap Min/Sec/ms Time Edit dialogs, Auto Splitter slider, Accessible Video Picker, RX-12-style Music Rebalance & crash-free streaming stem separation, and automated GitHub Releases v1.4.0 auto-updates."
 }

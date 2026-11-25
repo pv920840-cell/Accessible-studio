@@ -49,18 +49,22 @@ jobs:
                       f.write("\n")
           '
 
-      - name: Restore debug.keystore for debug signing
+      - name: Restore fixed debug.keystore from debug.keystore.base64
         run: |
-          if [ ! -f debug.keystore ]; then
-            if [ -f debug.keystore.base64 ]; then
-              python3 -c 'import base64; open("debug.keystore", "wb").write(base64.b64decode(open("debug.keystore.base64").read().strip()))'
-            else
-              keytool -genkeypair -v -keystore debug.keystore \
-                -storepass android -alias androiddebugkey -keypass android \
-                -keyalg RSA -keysize 2048 -validity 10000 \
-                -dname "CN=Android Debug,O=Android,C=US"
-            fi
+          if [ ! -f debug.keystore.base64 ]; then
+            echo "ERROR: debug.keystore.base64 is missing! Refusing to generate a random signing key that would break in-place APK upgrades."
+            exit 1
           fi
+          python3 -c 'import base64; open("debug.keystore", "wb").write(base64.b64decode(open("debug.keystore.base64").read().strip()))'
+          keytool -list -v -keystore debug.keystore -storepass android | grep -E "SHA1:|SHA256:"
+          python3 -c '
+          import subprocess
+          out = subprocess.check_output(["keytool", "-list", "-v", "-keystore", "debug.keystore", "-storepass", "android"], text=True)
+          expected = "3B:7A:B2:2F:B3:38:53:0D:C3:2C:59:8E:FB:E9:EA:02:F2:F0:DA:1F:24:C1:67:3B:2B:32:13:17:BA:38:A1:FB"
+          if expected not in out:
+              raise SystemExit(f"ERROR: Restored debug.keystore SHA256 mismatch! Expected {expected}")
+          print("Verified consistent signing key SHA256:", expected)
+          '
           ls -lh debug.keystore
 
       - name: Run unit tests and build Debug APK

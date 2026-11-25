@@ -1,11 +1,14 @@
 package com.example.update
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import androidx.core.content.pm.PackageInfoCompat
@@ -661,10 +664,15 @@ object AppUpdateChecker {
         if (pkgInfo == null) return emptySet()
         val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             val signingInfo = pkgInfo.signingInfo
-            when {
-                signingInfo == null -> emptyArray()
-                signingInfo.hasMultipleSigners() -> signingInfo.apkContentsSigners
-                else -> signingInfo.signingCertificateHistory
+            if (signingInfo == null) {
+                emptyArray()
+            } else {
+                val combined = LinkedHashSet<android.content.pm.Signature>()
+                signingInfo.apkContentsSigners?.let { combined.addAll(it) }
+                if (!signingInfo.hasMultipleSigners()) {
+                    signingInfo.signingCertificateHistory?.let { combined.addAll(it) }
+                }
+                combined.toTypedArray()
             }
         } else {
             @Suppress("DEPRECATION")
@@ -710,8 +718,10 @@ object AppUpdateChecker {
             downloadedCertSha256Set.isNotEmpty() &&
             installedCertSha256Set.intersect(downloadedCertSha256Set).isEmpty()
         ) {
+            val installedShort = installedCertSha256Set.first().take(8)
+            val downloadedShort = downloadedCertSha256Set.first().take(8)
             return ApkInstallCompatibility.SignatureConflict(
-                message = "Package conflicts with the existing installation because the installed app and this update APK were signed with different keys. Uninstall the existing build first, then open or install the new APK.",
+                message = "Package conflicts with the existing installation because the installed app (key $installedShort…) and this update APK (key $downloadedShort…) were signed with different keys. Android requires a one-time uninstall of the old build before installing this APK; future updates using the same signing key will overwrite in place automatically.",
                 installedSha256 = installedCertSha256Set.first(),
                 downloadedSha256 = downloadedCertSha256Set.first()
             )
@@ -762,6 +772,47 @@ object AppUpdateChecker {
     fun createUninstallCurrentAppIntent(context: Context): Intent {
         return Intent(Intent.ACTION_DELETE, Uri.parse("package:${context.packageName}")).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+    }
+
+    fun saveApkToDownloads(context: Context, apkFile: File): String? {
+        if (!apkFile.exists() || apkFile.length() <= 0L) return null
+        val displayName = apkFile.name.ifBlank { "AccessibleStudio_Update.apk" }
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, displayName)
+                    put(MediaStore.Downloads.MIME_TYPE, "application/vnd.android.package-archive")
+                    put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: return null
+                try {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        apkFile.inputStream().use { input -> input.copyTo(out) }
+                    } ?: return null
+                    values.clear()
+                    values.put(MediaStore.Downloads.IS_PENDING, 0)
+                    resolver.update(uri, values, null, null)
+                    "Downloads/$displayName"
+                } catch (_: Exception) {
+                    runCatching { resolver.delete(uri, null, null) }
+                    null
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (!downloadsDir.exists()) downloadsDir.mkdirs()
+                val outFile = File(downloadsDir, displayName)
+                apkFile.inputStream().use { input ->
+                    FileOutputStream(outFile).use { out -> input.copyTo(out) }
+                }
+                outFile.absolutePath
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 

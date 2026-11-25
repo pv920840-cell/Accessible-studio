@@ -701,7 +701,11 @@ class AppUpdateCheckerTest {
             sourceLabel = "GitHub (main)",
             apkUrl = "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.2.9/AccessibleStudio_V1.2.9.apk"
         )
+        val tempConflictApk = File(ApplicationProvider.getApplicationContext<android.content.Context>().cacheDir, "conflict_update.apk").apply {
+            writeText("apk-bytes")
+        }
         var uninstallClicks = 0
+        var saveApkClicks = 0
         var dialogShareClicks = 0
         var settingsShareClicks = 0
         var showDialog by mutableStateOf(true)
@@ -711,13 +715,15 @@ class AppUpdateCheckerTest {
                 AppUpdateAvailableDialog(
                     update = sampleUpdate,
                     flowState = InAppUpdateFlowState.PackageConflict(
-                        message = "Installed build uses a different signing key."
+                        message = "Installed build uses a different signing key.",
+                        apkFile = tempConflictApk
                     ),
                     onUpdateNow = {},
                     onOpenInstallPermissionSettings = {},
                     onInstallDownloadedApk = {},
                     onLater = { showDialog = false },
                     onUninstallCurrentApp = { uninstallClicks++ },
+                    onSaveApkToDownloads = { saveApkClicks++ },
                     onShareApkLink = { dialogShareClicks++ }
                 )
             } else {
@@ -736,9 +742,11 @@ class AppUpdateCheckerTest {
         composeRule.onNodeWithTag("card_update_package_conflict").assertExists()
         composeRule.onNodeWithTag("txt_update_package_conflict")
             .assertTextContains("different signing key", substring = true)
+        composeRule.onNodeWithTag("btn_dialog_save_apk_downloads").performScrollTo().assertExists().performClick()
         composeRule.onNodeWithTag("btn_dialog_uninstall_existing").assertExists().performClick()
-        composeRule.onNodeWithTag("btn_dialog_share_apk_link").assertExists().performClick()
+        composeRule.onNodeWithTag("btn_dialog_share_apk_link").performScrollTo().assertExists().performClick()
         composeRule.waitForIdle()
+        assertEquals(1, saveApkClicks)
         assertEquals(1, uninstallClicks)
         assertEquals(1, dialogShareClicks)
 

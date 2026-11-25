@@ -585,8 +585,26 @@ class MainActivity : ComponentActivity() {
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
                             launchApkInstallWithPermissionCheck(apkFile)
                         },
+                        onSaveApkToDownloads = { apkFile ->
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            val savedPath = AppUpdateChecker.saveApkToDownloads(applicationContext, apkFile)
+                            val msg = if (savedPath != null) {
+                                "Saved update APK to $savedPath. You can install it after uninstalling the old build."
+                            } else {
+                                "Could not save APK to Downloads. Use Share APK & App Article to open the link."
+                            }
+                            android.widget.Toast.makeText(activityContext, msg, android.widget.Toast.LENGTH_LONG).show()
+                            AccessibilityHelper.announceForAccessibility(activityContext, msg)
+                        },
                         onUninstallCurrentApp = {
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            val conflictApk = (updateFlowState as? InAppUpdateFlowState.PackageConflict)?.apkFile
+                            val savedPath = conflictApk?.let { AppUpdateChecker.saveApkToDownloads(applicationContext, it) }
+                            if (savedPath != null) {
+                                val msg = "Saved update APK to $savedPath before uninstalling."
+                                android.widget.Toast.makeText(activityContext, msg, android.widget.Toast.LENGTH_LONG).show()
+                                AccessibilityHelper.announceForAccessibility(activityContext, msg)
+                            }
                             if (!AppUpdateChecker.uninstallCurrentApp(activityContext)) {
                                 android.widget.Toast.makeText(
                                     activityContext,

@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.accessiblestudio.qmztxp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 23
-    versionName = "1.3.0"
+    versionCode = 24
+    versionName = "1.4.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -195,7 +195,7 @@ abstract class SyncVersionedApkTask : DefaultTask() {
 val versionedApkFileName = "AccessibleStudio_V${android.defaultConfig.versionName}.apk"
 val syncVersionedDebugApk = tasks.register<SyncVersionedApkTask>("syncVersionedDebugApk") {
   sourceApk.set(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
-  destApk.set(rootProject.layout.projectDirectory.file(versionedApkFileName))
+  destApk.set(rootProject.layout.projectDirectory.file(".build-outputs/$versionedApkFileName"))
   appVersionCode.set(android.defaultConfig.versionCode ?: 1)
   appVersionName.set(android.defaultConfig.versionName ?: "1.0")
   versionJsonFile.set(rootProject.layout.projectDirectory.file("version.json"))

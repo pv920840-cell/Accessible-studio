@@ -161,11 +161,6 @@ fun VideoTimelineToolsPanel(
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
         if (showHeaderMetadataAndScrubber) {
-            VideoMetadataBanner(
-                fileName = videoFileName,
-                durationMs = durationMs,
-                metadata = videoMetadata
-            )
             VideoTimelineScrubber(
                 currentPositionMs = currentPositionMs,
                 durationMs = durationMs,

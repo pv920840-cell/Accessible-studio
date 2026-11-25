@@ -175,9 +175,8 @@ class VideoCutterTimelineTest {
 
         composeRule.waitForIdle()
 
-        // Metadata banner and top scrubber are preserved outside the dialog; lower stack is hidden until clicked
-        composeRule.onNodeWithTag("video_metadata_banner").performScrollTo().assertIsDisplayed()
-        composeRule.onNodeWithText("SampleTutorial.mp4").assertIsDisplayed()
+        // File-info metadata banner is intentionally omitted; scrubber is preserved outside the dialog and lower stack is hidden until clicked
+        composeRule.onNodeWithTag("video_metadata_banner").assertDoesNotExist()
         composeRule.onNodeWithTag("slider_video_timeline_scrubber").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("section_video_trimmer").assertDoesNotExist()
         composeRule.onNodeWithTag("section_video_cutter").assertDoesNotExist()
@@ -317,8 +316,8 @@ class VideoCutterTimelineTest {
         }
         composeRule.waitForIdle()
 
-        // Metadata and timeline scrubber are displayed; open Trimmer dialog to enable Stream Copy
-        composeRule.onNodeWithTag("video_metadata_banner").performScrollTo().assertIsDisplayed()
+        // File-info metadata banner is omitted; timeline scrubber is displayed; open Trimmer dialog to enable Stream Copy
+        composeRule.onNodeWithTag("video_metadata_banner").assertDoesNotExist()
         composeRule.onNodeWithTag("slider_video_timeline_scrubber").performScrollTo().assertIsDisplayed()
         composeRule.onNodeWithTag("btn_video_feature_trimmer").performScrollTo().performClick()
         composeRule.waitForIdle()

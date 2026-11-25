@@ -118,6 +118,7 @@ import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
 import com.example.data.StudioSettingsState
+import com.example.ui.components.AccessibleAudioPickerDialog
 import com.example.ui.components.AccessibleAudioWaveform
 import com.example.ui.components.AccessibleEffectSlider
 import com.example.ui.components.AccessiblePreviewPlaybackSlider
@@ -130,11 +131,14 @@ import com.example.ui.components.MusicRebalancePanel
 import com.example.ui.components.StudioDawTopBar
 import com.example.ui.components.StudioFeatureGuideDialog
 import com.example.ui.screens.AudioStudioScreen
+import com.example.storage.StorageExportManager
 import com.example.ui.theme.LocalHighContrast
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -458,6 +462,15 @@ fun AudioFeatureWorkspaceScreen(
                 currentPositionMs = currentPositionMs,
                 durationMs = durationMs,
                 onSeekTo = { playerManager.seekTo(it) },
+                isPlaying = isPlaying,
+                onTogglePlayPause = {
+                    if (isPlaying) {
+                        playerManager.pause()
+                    } else if (workingPcm.isNotEmpty()) {
+                        playerManager.play()
+                    }
+                },
+                onScrubPreviewPulse = { playerManager.scrubPreviewAt(it) },
                 testTag = "slider_audio_workspace_preview"
             )
 
@@ -699,28 +712,42 @@ fun AudioFeatureWorkspaceScreen(
                     var limiterOn by remember { mutableStateOf(true) }
                     var mixPreviewActive by remember { mutableStateOf(false) }
 
-                    val mixPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-                        if (uri != null) {
-                            scope.launch {
-                                try {
-                                    val decodedRaw = audioProcessor.decodeUriToPcm(uri)
-                                    val decoded = if (decodedRaw.isNotEmpty() && sampleRate != 44100) {
-                                        StudioAudioProcessor.resamplePcmLinear(decodedRaw, 44100, sampleRate)
-                                    } else {
-                                        decodedRaw
-                                    }
-                                    if (decoded.isNotEmpty()) {
-                                        mixOverlayPcm = decoded
-                                        mixOverlayTitle = audioProcessor.queryAudioDisplayName(uri) ?: "Overlay Track"
-                                    } else {
-                                        Toast.makeText(context, "Could not decode selected mix file.", Toast.LENGTH_SHORT).show()
-                                    }
-                                } catch (t: Throwable) {
-                                    if (t is CancellationException) throw t
-                                    Toast.makeText(context, "Mix load error: ${t.localizedMessage ?: "Unsupported file"}", Toast.LENGTH_LONG).show()
+                    var showMixAudioPickerDialog by remember { mutableStateOf(false) }
+                    val workspaceExportedFiles by mediaRepository.exportedFiles.collectAsState()
+
+                    fun loadMixAudioFromUri(uri: Uri, explicitTitle: String? = null) {
+                        scope.launch {
+                            try {
+                                val decodedRaw = audioProcessor.decodeUriToPcm(uri)
+                                val decoded = if (decodedRaw.isNotEmpty() && sampleRate != 44100) {
+                                    StudioAudioProcessor.resamplePcmLinear(decodedRaw, 44100, sampleRate)
+                                } else {
+                                    decodedRaw
                                 }
+                                if (decoded.isNotEmpty()) {
+                                    mixOverlayPcm = decoded
+                                    mixOverlayTitle = explicitTitle?.takeIf { it.isNotBlank() }
+                                        ?: audioProcessor.queryAudioDisplayName(uri)
+                                        ?: "Overlay Track"
+                                } else {
+                                    Toast.makeText(context, "Could not decode selected mix file.", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (t: Throwable) {
+                                if (t is CancellationException) throw t
+                                Toast.makeText(context, "Mix load error: ${t.localizedMessage ?: "Unsupported file"}", Toast.LENGTH_LONG).show()
                             }
                         }
+                    }
+
+                    if (showMixAudioPickerDialog) {
+                        AccessibleAudioPickerDialog(
+                            exportedAudios = workspaceExportedFiles,
+                            onSelectAudio = { uri, title ->
+                                showMixAudioPickerDialog = false
+                                loadMixAudioFromUri(uri, title)
+                            },
+                            onDismiss = { showMixAudioPickerDialog = false }
+                        )
                     }
 
                     Card(
@@ -730,7 +757,7 @@ fun AudioFeatureWorkspaceScreen(
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Mix Second Audio File", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
                             OutlinedButton(
-                                onClick = { mixPicker.launch(arrayOf("audio/*")) },
+                                onClick = { showMixAudioPickerDialog = true },
                                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_mix_browse_file")
                             ) {
                                 Icon(Icons.Default.FolderOpen, contentDescription = null)
@@ -1700,7 +1727,7 @@ fun AudioFeatureWorkspaceScreen(
 
                 AudioFeatureTool.MUSIC_REBALANCE -> {
                     var selectedStemMode by remember(session.projectId) { mutableStateOf(StemSeparationMode.FOUR_STEMS) }
-                    var stemMap by remember(session.projectId) { mutableStateOf<Map<String, ShortArray>>(emptyMap()) }
+                    var stemFiles by remember(session.projectId) { mutableStateOf<Map<String, File>>(emptyMap()) }
                     var stemProgress by remember { mutableFloatStateOf(0f) }
 
                     MusicRebalancePanel(
@@ -1709,7 +1736,7 @@ fun AudioFeatureWorkspaceScreen(
                         progress = stemProgress,
                         selectedStemMode = selectedStemMode,
                         onSelectStemMode = { selectedStemMode = it },
-                        separatedStemNames = stemMap.keys.toList(),
+                        separatedStemNames = stemFiles.keys.toList(),
                         onPreviewRebalance = { vGain, bGain, pGain, oGain ->
                             if (workingPcm.isNotEmpty() && !isApplyingTransform) {
                                 isApplyingTransform = true
@@ -1718,12 +1745,21 @@ fun AudioFeatureWorkspaceScreen(
                                     try {
                                         playerManager.stop()
                                         val preview = withContext(Dispatchers.Default) {
-                                            MusicRebalanceProcessor.rebalanceMix(workingPcm, sampleRate, vGain, bGain, pGain, oGain) {
-                                                stemProgress = it
-                                            }
+                                            MusicRebalanceProcessor.rebalanceMix(
+                                                samples = workingPcm,
+                                                sampleRate = sampleRate,
+                                                vocalsGain = vGain,
+                                                bassGain = bGain,
+                                                percussionGain = pGain,
+                                                otherGain = oGain,
+                                                isCancelled = { !isActive }
+                                            ) { stemProgress = it }
                                         }
                                         playerManager.loadPcmData(preview, sampleRate)
                                         playerManager.play()
+                                    } catch (t: Throwable) {
+                                        if (t is CancellationException) throw t
+                                        Toast.makeText(context, "Rebalance preview failed: ${t.localizedMessage ?: "Error"}", Toast.LENGTH_LONG).show()
                                     } finally {
                                         isApplyingTransform = false
                                     }
@@ -1738,17 +1774,28 @@ fun AudioFeatureWorkspaceScreen(
                         onSeparateStems = { mode ->
                             if (workingPcm.isNotEmpty() && !isApplyingTransform) {
                                 isApplyingTransform = true
-                                stemProgress = 0.05f
+                                stemProgress = 0.02f
                                 scope.launch {
                                     try {
+                                        val stemsDir = File(context.cacheDir, "stems/${session.projectId}")
+                                        val base = workingBaseName?.takeIf { it.isNotBlank() } ?: "Track"
                                         val stems = withContext(Dispatchers.Default) {
-                                            MusicRebalanceProcessor.separateStems(workingPcm, sampleRate, mode) {
-                                                stemProgress = it
-                                            }
+                                            stemsDir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
+                                            MusicRebalanceProcessor.separateStemsStreamingToFiles(
+                                                samples = workingPcm,
+                                                sampleRate = sampleRate,
+                                                mode = mode,
+                                                outputDir = stemsDir,
+                                                baseName = base,
+                                                isCancelled = { !isActive }
+                                            ) { stemProgress = it }
                                         }
-                                        stemMap = stems
+                                        stemFiles = stems
                                         AccessibilityHelper.announceForAccessibility(context, "Separated ${stems.size} stems")
                                         Toast.makeText(context, "Separated ${stems.size} stems ready to play or save", Toast.LENGTH_SHORT).show()
+                                    } catch (t: Throwable) {
+                                        if (t is CancellationException) throw t
+                                        Toast.makeText(context, "Stem separation failed: ${t.localizedMessage ?: "Error"}", Toast.LENGTH_LONG).show()
                                     } finally {
                                         isApplyingTransform = false
                                     }
@@ -1756,38 +1803,38 @@ fun AudioFeatureWorkspaceScreen(
                             }
                         },
                         onAuditionStem = { stemName ->
-                            val stemPcm = stemMap[stemName]
-                            if (stemPcm != null && stemPcm.isNotEmpty()) {
+                            val stemFile = stemFiles[stemName]
+                            if (stemFile != null && stemFile.exists()) {
                                 playerManager.stop()
-                                playerManager.loadPcmData(stemPcm, sampleRate)
+                                playerManager.loadUri(Uri.fromFile(stemFile))
                                 playerManager.play()
                                 AccessibilityHelper.announceForAccessibility(context, "Playing $stemName stem")
                             }
                         },
                         onExportStems = { mode ->
-                            if (stemMap.isNotEmpty() && !isApplyingTransform) {
+                            if (stemFiles.isNotEmpty() && !isApplyingTransform) {
                                 isApplyingTransform = true
                                 stemProgress = 0.05f
                                 scope.launch {
                                     try {
                                         val base = workingBaseName?.takeIf { it.isNotBlank() } ?: "Stems"
-                                        var idx = 0
-                                        stemMap.forEach { (stemName, stemPcm) ->
-                                            idx++
-                                            val safeStem = stemName.replace(" ", "_")
-                                            audioProcessor.exportSingleAudioFile(
-                                                mainPcm = stemPcm,
-                                                bgTrackConfig = null,
-                                                bgPcm = null,
-                                                settings = AudioEditSettings(),
-                                                outputFileName = "${base}_${safeStem}_${mode.stemCount}stems",
-                                                format = defaultExportFormat,
-                                                onProgress = {}
-                                            )
-                                            stemProgress = idx.toFloat() / stemMap.size.coerceAtLeast(1)
+                                        withContext(Dispatchers.IO) {
+                                            var idx = 0
+                                            stemFiles.forEach { (stemName, stemFile) ->
+                                                idx++
+                                                val safeStem = stemName.replace(" ", "_")
+                                                val targetName = "${base}_${safeStem}_${mode.stemCount}stems.wav"
+                                                StorageExportManager.saveAudioFile(
+                                                    context = context,
+                                                    sourceFile = stemFile,
+                                                    targetFileName = targetName,
+                                                    mimeType = "audio/wav"
+                                                )
+                                                stemProgress = idx.toFloat() / stemFiles.size.coerceAtLeast(1)
+                                            }
                                         }
                                         mediaRepository.refreshExports()
-                                        Toast.makeText(context, "Saved ${stemMap.size} separated stem files", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "Saved ${stemFiles.size} separated stem files", Toast.LENGTH_LONG).show()
                                     } catch (t: Throwable) {
                                         if (t is CancellationException) throw t
                                         Toast.makeText(context, "Stem export error: ${t.localizedMessage ?: "Failed"}", Toast.LENGTH_LONG).show()

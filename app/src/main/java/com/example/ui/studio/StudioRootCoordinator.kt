@@ -4,7 +4,6 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,7 +59,9 @@ import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
 import com.example.data.StudioProjectStorage
 import com.example.data.StudioSettingsState
+import com.example.ui.components.AccessibleAudioPickerDialog
 import com.example.ui.components.AccessibleExportDialog
+import com.example.ui.components.AccessibleVideoPickerDialog
 import com.example.ui.screens.ExportedFilesScreen
 import com.example.ui.theme.LocalHighContrast
 import com.example.video.CompressorQuality
@@ -175,6 +176,8 @@ fun StudioRootCoordinator(
     var createNameDraft by remember { mutableStateOf("") }
     var isCreateLoading by remember { mutableStateOf(false) }
     var createLoadingMsg by remember { mutableStateOf("") }
+    var showCreateAudioPickerDialog by remember { mutableStateOf(false) }
+    var showCreateVideoPickerDialog by remember { mutableStateOf(false) }
 
     // Hub Export Modal State
     var showHubExportDialog by remember { mutableStateOf(false) }
@@ -306,82 +309,56 @@ fun StudioRootCoordinator(
         }
     }
 
-    val createAudioPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
+    fun handleSelectedCreateAudioUri(uri: Uri, explicitTitle: String? = null) {
+        try {
+            context.contentResolver.takePersistableUriPermission(
+                uri,
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: Throwable) {}
+        scope.launch {
             try {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (_: Throwable) {}
-            scope.launch {
-                try {
-                    isCreateLoading = true
-                    val displayName = audioProcessor.queryAudioDisplayName(uri) ?: "Imported Audio"
-                    createLoadingMsg = "Decoding $displayName..."
-                    val pcm = audioProcessor.decodeUriToPcm(uri)
-                    isCreateLoading = false
-                    createLoadingMsg = ""
-                    if (pcm.isNotEmpty()) {
-                        val chosenTitle = createNameDraft.trim().ifBlank { displayName }
-                        val durMs = ((pcm.size.toDouble() / StudioAudioProcessor.SAMPLE_RATE) * 1000.0).toLong()
-                        val summary = StudioProjectSummary(
-                            id = "audio_${UUID.randomUUID()}",
-                            title = chosenTitle,
-                            mediaType = ProjectMediaType.AUDIO,
-                            sourceUri = uri,
-                            filePath = null,
-                            durationMillis = durMs,
-                            fileSizeBytes = pcm.size * 2L,
-                            lastModifiedMillis = System.currentTimeMillis(),
-                            statusBadge = "Active"
-                        )
-                        createNameDraft = ""
-                        openAudioProjectIntoHub(summary, preloadedPcm = pcm)
-                    } else {
-                        Toast.makeText(context, "Could not decode selected audio file.", Toast.LENGTH_LONG).show()
-                    }
-                } catch (t: Throwable) {
-                    if (t is CancellationException) throw t
-                    isCreateLoading = false
-                    createLoadingMsg = ""
-                    Toast.makeText(
-                        context,
-                        "Could not import audio: ${t.localizedMessage ?: "Out of memory or unsupported format"}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                isCreateLoading = true
+                val displayName = explicitTitle?.takeIf { it.isNotBlank() }
+                    ?: audioProcessor.queryAudioDisplayName(uri)
+                    ?: "Imported Audio"
+                createLoadingMsg = "Decoding $displayName..."
+                val pcm = audioProcessor.decodeUriToPcm(uri)
+                isCreateLoading = false
+                createLoadingMsg = ""
+                if (pcm.isNotEmpty()) {
+                    val chosenTitle = createNameDraft.trim().ifBlank { displayName }
+                    val durMs = ((pcm.size.toDouble() / StudioAudioProcessor.SAMPLE_RATE) * 1000.0).toLong()
+                    val summary = StudioProjectSummary(
+                        id = "audio_${UUID.randomUUID()}",
+                        title = chosenTitle,
+                        mediaType = ProjectMediaType.AUDIO,
+                        sourceUri = uri,
+                        filePath = null,
+                        durationMillis = durMs,
+                        fileSizeBytes = pcm.size * 2L,
+                        lastModifiedMillis = System.currentTimeMillis(),
+                        statusBadge = "Active"
+                    )
+                    createNameDraft = ""
+                    openAudioProjectIntoHub(summary, preloadedPcm = pcm)
+                } else {
+                    Toast.makeText(context, "Could not decode selected audio file.", Toast.LENGTH_LONG).show()
                 }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                isCreateLoading = false
+                createLoadingMsg = ""
+                Toast.makeText(
+                    context,
+                    "Could not import audio: ${t.localizedMessage ?: "Out of memory or unsupported format"}",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
 
-    val createVideoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri: Uri? ->
-        if (uri != null) {
-            var displayName: String? = null
-            try {
-                context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                    if (c.moveToFirst()) {
-                        val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (idx >= 0) displayName = c.getString(idx)
-                    }
-                }
-            } catch (_: Exception) {}
-            val chosenTitle = createNameDraft.trim().ifBlank { displayName ?: "Video Project" }
-            val summary = StudioProjectSummary(
-                id = "video_${UUID.randomUUID()}",
-                title = chosenTitle,
-                mediaType = ProjectMediaType.VIDEO,
-                sourceUri = uri,
-                filePath = null,
-                durationMillis = 0L,
-                fileSizeBytes = 0L,
-                lastModifiedMillis = System.currentTimeMillis(),
-                statusBadge = "Active"
-            )
-            createNameDraft = ""
-            openVideoProjectIntoHub(summary)
-        }
-    }
+    // Audio & Video pickers are presented cleanly via AccessibleAudioPickerDialog & AccessibleVideoPickerDialog (no Navigate up button, zero permissions)
 
     // Top-Level Back Navigation
     if (destination != StudioRootDestination.HOME && destination != StudioRootDestination.FEATURE_WORKSPACE) {
@@ -480,8 +457,8 @@ fun StudioRootCoordinator(
                         onProjectNameChange = { createNameDraft = it },
                         onBrowseAndSelectFile = {
                             when (createSelectedType) {
-                                ProjectMediaType.AUDIO -> createAudioPicker.launch(arrayOf("audio/*", "application/ogg"))
-                                ProjectMediaType.VIDEO -> createVideoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly))
+                                ProjectMediaType.AUDIO -> showCreateAudioPickerDialog = true
+                                ProjectMediaType.VIDEO -> showCreateVideoPickerDialog = true
                                 null -> Unit
                             }
                         },
@@ -1099,6 +1076,41 @@ fun StudioRootCoordinator(
                     Toast.makeText(context, "Could not share file: ${t.localizedMessage ?: "File location restricted"}", Toast.LENGTH_LONG).show()
                 }
             }
+        )
+    }
+
+    if (showCreateAudioPickerDialog) {
+        AccessibleAudioPickerDialog(
+            exportedAudios = exportedMedia,
+            onSelectAudio = { uri, displayName ->
+                showCreateAudioPickerDialog = false
+                handleSelectedCreateAudioUri(uri, displayName)
+            },
+            onDismiss = { showCreateAudioPickerDialog = false }
+        )
+    }
+
+    if (showCreateVideoPickerDialog) {
+        AccessibleVideoPickerDialog(
+            exportedVideos = exportedMedia,
+            onSelectVideo = { uri, displayName ->
+                showCreateVideoPickerDialog = false
+                val chosenTitle = createNameDraft.trim().ifBlank { displayName.ifBlank { "Video Project" } }
+                val summary = StudioProjectSummary(
+                    id = "video_${UUID.randomUUID()}",
+                    title = chosenTitle,
+                    mediaType = ProjectMediaType.VIDEO,
+                    sourceUri = uri,
+                    filePath = null,
+                    durationMillis = 0L,
+                    fileSizeBytes = 0L,
+                    lastModifiedMillis = System.currentTimeMillis(),
+                    statusBadge = "Active"
+                )
+                createNameDraft = ""
+                openVideoProjectIntoHub(summary)
+            },
+            onDismiss = { showCreateVideoPickerDialog = false }
         )
     }
 }

@@ -184,19 +184,12 @@ object VideoCutMath {
     )
 
     val STANDARDIZED_STEP_OPTIONS: List<StandardizedStepOption> = listOf(
+        StandardizedStepOption(1L, "1 ms", "1 millisecond", StepUnitCategory.MILLISECONDS),
         StandardizedStepOption(10L, "10 ms", "10 milliseconds", StepUnitCategory.MILLISECONDS),
-        StandardizedStepOption(50L, "50 ms", "50 milliseconds", StepUnitCategory.MILLISECONDS),
         StandardizedStepOption(100L, "100 ms", "100 milliseconds", StepUnitCategory.MILLISECONDS),
-        StandardizedStepOption(250L, "250 ms", "250 milliseconds", StepUnitCategory.MILLISECONDS),
-        StandardizedStepOption(500L, "500 ms", "500 milliseconds", StepUnitCategory.MILLISECONDS),
         StandardizedStepOption(1_000L, "1 s", "1 second", StepUnitCategory.SECONDS),
-        StandardizedStepOption(2_000L, "2 s", "2 seconds", StepUnitCategory.SECONDS),
-        StandardizedStepOption(5_000L, "5 s", "5 seconds", StepUnitCategory.SECONDS),
         StandardizedStepOption(10_000L, "10 s", "10 seconds", StepUnitCategory.SECONDS),
-        StandardizedStepOption(30_000L, "30 s", "30 seconds", StepUnitCategory.SECONDS),
-        StandardizedStepOption(60_000L, "1 min", "1 minute", StepUnitCategory.MINUTES),
-        StandardizedStepOption(120_000L, "2 min", "2 minutes", StepUnitCategory.MINUTES),
-        StandardizedStepOption(300_000L, "5 min", "5 minutes", StepUnitCategory.MINUTES)
+        StandardizedStepOption(60_000L, "1 min", "1 minute", StepUnitCategory.MINUTES)
     )
 
     fun standardizedStepIndexFor(stepMs: Long): Int {
@@ -204,7 +197,7 @@ object VideoCutMath {
         if (exact >= 0) return exact
         return STANDARDIZED_STEP_OPTIONS.indices.minByOrNull { idx ->
             kotlin.math.abs(STANDARDIZED_STEP_OPTIONS[idx].stepMs - stepMs)
-        } ?: 5 // default 1 s
+        } ?: 3 // default 1 s
     }
 
     fun standardizedStepAt(index: Int): StandardizedStepOption {
@@ -213,7 +206,7 @@ object VideoCutMath {
     }
 
     /**
-     * Swipe UP action: increases step size toward seconds and then minutes.
+     * Swipe UP action: increases step size from 1 s -> 10 s -> 1 min (and up from ms).
      */
     fun stepUp(currentStepMs: Long): StandardizedStepOption {
         val idx = standardizedStepIndexFor(currentStepMs)
@@ -221,11 +214,77 @@ object VideoCutMath {
     }
 
     /**
-     * Swipe DOWN action: decreases step size toward fine millisecond precision.
+     * Swipe DOWN action: decreases step size 1 min -> 10 s -> 1 s -> 100 ms -> 10 ms -> 1 ms.
      */
     fun stepDown(currentStepMs: Long): StandardizedStepOption {
         val idx = standardizedStepIndexFor(currentStepMs)
         return standardizedStepAt((idx - 1).coerceAtLeast(0))
+    }
+
+    // ── Auto Splitter Slider Presets (Intervals -> Split File Counts) ──
+
+    data class AutoSplitSliderOption(
+        val mode: AutoSplitMode,
+        val intervalMs: Long,
+        val fileCount: Int,
+        val label: String,
+        val spokenLabel: String
+    )
+
+    val AUTO_SPLIT_SLIDER_OPTIONS: List<AutoSplitSliderOption> = listOf(
+        AutoSplitSliderOption(AutoSplitMode.BY_LENGTH, 5_000L, 2, "5s interval", "Every 5 seconds"),
+        AutoSplitSliderOption(AutoSplitMode.BY_LENGTH, 10_000L, 2, "10s interval", "Every 10 seconds"),
+        AutoSplitSliderOption(AutoSplitMode.BY_LENGTH, 15_000L, 2, "15s interval", "Every 15 seconds"),
+        AutoSplitSliderOption(AutoSplitMode.BY_LENGTH, 30_000L, 2, "30s interval", "Every 30 seconds"),
+        AutoSplitSliderOption(AutoSplitMode.BY_LENGTH, 60_000L, 2, "1 min interval", "Every 1 minute"),
+        AutoSplitSliderOption(AutoSplitMode.BY_LENGTH, 120_000L, 2, "2 min interval", "Every 2 minutes"),
+        AutoSplitSliderOption(AutoSplitMode.BY_LENGTH, 300_000L, 2, "5 min interval", "Every 5 minutes"),
+        AutoSplitSliderOption(AutoSplitMode.BY_FILE_COUNT, 30_000L, 2, "2 split files", "2 split files"),
+        AutoSplitSliderOption(AutoSplitMode.BY_FILE_COUNT, 30_000L, 3, "3 split files", "3 split files"),
+        AutoSplitSliderOption(AutoSplitMode.BY_FILE_COUNT, 30_000L, 4, "4 split files", "4 split files"),
+        AutoSplitSliderOption(AutoSplitMode.BY_FILE_COUNT, 30_000L, 5, "5 split files", "5 split files"),
+        AutoSplitSliderOption(AutoSplitMode.BY_FILE_COUNT, 30_000L, 8, "8 split files", "8 split files"),
+        AutoSplitSliderOption(AutoSplitMode.BY_FILE_COUNT, 30_000L, 10, "10 split files", "10 split files")
+    )
+
+    fun autoSplitOptionIndexFor(
+        mode: AutoSplitMode,
+        intervalMs: Long,
+        fileCount: Int
+    ): Int {
+        return when (mode) {
+            AutoSplitMode.BY_LENGTH -> {
+                val lengthIndices = AUTO_SPLIT_SLIDER_OPTIONS.indices.filter {
+                    AUTO_SPLIT_SLIDER_OPTIONS[it].mode == AutoSplitMode.BY_LENGTH
+                }
+                lengthIndices.minByOrNull { idx ->
+                    kotlin.math.abs(AUTO_SPLIT_SLIDER_OPTIONS[idx].intervalMs - intervalMs)
+                } ?: 3
+            }
+            AutoSplitMode.BY_FILE_COUNT -> {
+                val countIndices = AUTO_SPLIT_SLIDER_OPTIONS.indices.filter {
+                    AUTO_SPLIT_SLIDER_OPTIONS[it].mode == AutoSplitMode.BY_FILE_COUNT
+                }
+                countIndices.minByOrNull { idx ->
+                    kotlin.math.abs(AUTO_SPLIT_SLIDER_OPTIONS[idx].fileCount - fileCount)
+                } ?: 7
+            }
+            AutoSplitMode.BY_FILE_SIZE -> 7
+        }
+    }
+
+    fun autoSplitOptionAt(index: Int): AutoSplitSliderOption {
+        return AUTO_SPLIT_SLIDER_OPTIONS[index.coerceIn(0, AUTO_SPLIT_SLIDER_OPTIONS.lastIndex)]
+    }
+
+    fun autoSplitOptionUp(mode: AutoSplitMode, intervalMs: Long, fileCount: Int): AutoSplitSliderOption {
+        val idx = autoSplitOptionIndexFor(mode, intervalMs, fileCount)
+        return autoSplitOptionAt(idx + 1)
+    }
+
+    fun autoSplitOptionDown(mode: AutoSplitMode, intervalMs: Long, fileCount: Int): AutoSplitSliderOption {
+        val idx = autoSplitOptionIndexFor(mode, intervalMs, fileCount)
+        return autoSplitOptionAt(idx - 1)
     }
 
     fun nudgeTimestamp(

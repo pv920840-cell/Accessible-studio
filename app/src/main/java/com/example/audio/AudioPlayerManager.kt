@@ -34,6 +34,7 @@ class AudioPlayerManager(private val context: Context) {
     @Volatile
     private var customAudioTrack: AudioTrack? = null
     private var playbackJob: Job? = null
+    private var previewPulseJob: Job? = null
     private var pcmData: ShortArray? = null
     private val playbackGeneration = AtomicLong(0L)
     private var activeAudioFocusRequest: AudioFocusRequest? = null
@@ -763,6 +764,31 @@ class AudioPlayerManager(private val context: Context) {
             try {
                 mediaPlayer?.seekTo(safePos.toInt())
             } catch (_: Throwable) {}
+        }
+    }
+
+    /**
+     * Seeks to [positionMs] and plays a brief preview snippet if paused,
+     * keeping continuous playback if already playing.
+     */
+    fun scrubPreviewAt(positionMs: Long, previewDurationMs: Long = 220L) {
+        val safePos = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(0L))
+        if (_isPlaying.value && previewPulseJob?.isActive != true) {
+            seekTo(safePos)
+            return
+        }
+        if (!hasLoadedAudio()) {
+            _currentPositionMs.value = safePos
+            return
+        }
+        previewPulseJob?.cancel()
+        _currentPositionMs.value = safePos
+        val endLimit = (safePos + previewDurationMs).coerceAtMost(_durationMs.value.coerceAtLeast(safePos))
+        play(startFromMs = safePos, endLimitMs = endLimit)
+        previewPulseJob = scope.launch {
+            delay(previewDurationMs)
+            pause()
+            _currentPositionMs.value = safePos
         }
     }
 

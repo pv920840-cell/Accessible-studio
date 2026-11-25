@@ -116,18 +116,20 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.3.0 — Share APK with Feature Article & Streamlined Audio Studio:\n\n" +
-            "1. Share APK with Complete Feature Article:\n" +
-            "• Tapping 'Share APK & App Article' in Settings -> About, the Update Dialog, or the Release Page now sends a clear, informative article explaining what Accessible Studio does and what makes it special (TalkBack-first design, High Contrast OLED, 100% offline Audio & Video editing, Individual Pro Effects, and multi-format export) right alongside the direct APK download link.\n\n" +
-            "2. Vocal Removal Tool Removed:\n" +
-            "• Removed the Vocal & Karaoke Removal tool cleanly from Project Hub, Tools menu, Audio Workspace, and User Guide so the studio stays focused, fast, and reliable."
+        "What's New in Version 1.4.0 — Precision Timeline Tools, Accessible Video Picker & Streaming Music Rebalance:\n\n" +
+            "1. Precision Timeline, Multi-Trim, Multi-Delete, Splitter & Auto Splitter:\n" +
+            "• Swipe UP/DOWN on the playback slider to scrub with live preview or double-tap to Play/Pause; double-tap Move Start/Finish/Point to now playing to snap markers.\n" +
+            "• Standardized Step slider defaults to 1 second and scales UP to 10s / 1min or DOWN to 100ms / 10ms / 1ms; double-tap any time readout to enter exact Minutes, Seconds, and Milliseconds.\n\n" +
+            "2. Accessible Video Picker & Crash-Free RX-Style Music Rebalance:\n" +
+            "• Zero-permission Choose video browser with Search by name, All files, Folders, Sort (Newest first), and Open file manager.\n" +
+            "• Streaming STFT Music Rebalance & 2–6 Stem Separation writes WAV stems directly to disk for crash-free processing on long songs."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.3.0 में नया क्या है — फ़ीचर आर्टिकल के साथ Share APK और साफ़ ऑडियो स्टूडियो:\n\n" +
-            "1. Share APK के साथ पूरा फ़ीचर आर्टिकल:\n" +
-            "• अब Settings -> About, Update डायलॉग या रिलीज़ पेज से 'Share APK & App Article' दबाने पर डायरेक्ट APK डाउनलोड लिंक के साथ एक पूरा आर्टिकल भी शेयर होता है, जिसमें साफ़ लिखा है कि हमारा ऐप क्या काम करता है और इसकी खास बातें क्या हैं (TalkBack सपोर्ट, High Contrast, 100% ऑफ़लाइन ऑडियो व वीडियो एडिटिंग और अलग-अलग प्रो इफ़ेक्ट्स)।\n\n" +
-            "2. Vocal Removal फ़ीचर हटाया गया:\n" +
-            "• Project Hub, Tools मेनू, ऑडियो वर्कस्पेस और गाइड से Vocal Removal फ़ीचर को पूरी तरह हटा दिया गया है।"
+        "Version 1.4.0 में नया क्या है — प्रिसिज़न टाइमलाइन टूल्स, एक्सेसिबल वीडियो पिकर और स्ट्रीमिंग म्यूज़िक रीबैलेंस:\n\n" +
+            "1. प्रिसिज़न वीडियो ट्रिमर, मल्टी ट्रिम, डिलीट पार्ट, स्प्लिटर और ऑटो स्प्लिटर:\n" +
+            "• प्लेबैक स्लाइडर पर ऊपर/नीचे स्वाइप करके प्रीव्यू स्क्रब करें या डबल-टैप से Play/Pause करें; किसी भी टाइम डिस्प्ले पर डबल-टैप करके मिनट, सेकंड और मिलीसेकंड सेट करें।\n\n" +
+            "2. एक्सेसिबल वीडियो पिकर और क्रैश-मुक्त Music Rebalance:\n" +
+            "• बिना अतिरिक्त परमिशन वाला Choose video पिकर (Search by name, All files, Folders, Sort और Open file manager) तथा बड़ी ऑडियो फ़ाइलों के लिए 2 से 6 स्टेम सेपरेशन।"
 }
 
 @Composable

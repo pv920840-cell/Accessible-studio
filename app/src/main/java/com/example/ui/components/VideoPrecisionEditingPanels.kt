@@ -1,22 +1,29 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -24,25 +31,139 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.accessibility.AccessibilityHelper
 import com.example.video.VideoCutMath
 import com.example.video.VideoCutSegment
 
+@Composable
+fun TimeEditDialog(
+    title: String,
+    initialMs: Long,
+    minMs: Long,
+    maxMs: Long,
+    onConfirm: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val safeMin = minMs.coerceAtLeast(0L)
+    val safeMax = maxMs.coerceAtLeast(safeMin)
+    val clampedInitial = initialMs.coerceIn(safeMin, safeMax)
+    val initMinutes = clampedInitial / 60_000L
+    val initSeconds = (clampedInitial % 60_000L) / 1_000L
+    val initMillis = clampedInitial % 1_000L
+
+    var minutesText by remember(clampedInitial) { mutableStateOf(initMinutes.toString()) }
+    var secondsText by remember(clampedInitial) { mutableStateOf(initSeconds.toString()) }
+    var millisText by remember(clampedInitial) { mutableStateOf(initMillis.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("dialog_time_edit"),
+        title = {
+            Text(
+                text = "Set $title",
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Enter Minutes, Seconds, and Milliseconds (range ${AccessibilityHelper.formatTimePrecise(safeMin)} to ${AccessibilityHelper.formatTimePrecise(safeMax)}).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = minutesText,
+                        onValueChange = { minutesText = it.filter { ch -> ch.isDigit() }.take(4) },
+                        label = { Text("Minutes") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("input_time_edit_minutes")
+                    )
+                    OutlinedTextField(
+                        value = secondsText,
+                        onValueChange = { secondsText = it.filter { ch -> ch.isDigit() }.take(3) },
+                        label = { Text("Seconds") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("input_time_edit_seconds")
+                    )
+                    OutlinedTextField(
+                        value = millisText,
+                        onValueChange = { millisText = it.filter { ch -> ch.isDigit() }.take(3) },
+                        label = { Text("Millis") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("input_time_edit_millis")
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val m = (minutesText.toLongOrNull() ?: 0L).coerceAtLeast(0L)
+                    val s = (secondsText.toLongOrNull() ?: 0L).coerceIn(0L, 59_999L)
+                    val ms = (millisText.toLongOrNull() ?: 0L).coerceIn(0L, 999L)
+                    val total = (m * 60_000L + s * 1_000L + ms).coerceIn(safeMin, safeMax)
+                    onConfirm(total)
+                },
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("btn_time_edit_ok")
+            ) {
+                Text("OK", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .testTag("btn_time_edit_cancel")
+            ) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun MovePlayMoveRow(
     onMoveStartNow: () -> Unit,
@@ -55,18 +176,37 @@ internal fun MovePlayMoveRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        OutlinedButton(
-            onClick = onMoveStartNow,
+        Surface(
             modifier = Modifier
                 .weight(1f)
-                .height(48.dp)
+                .heightIn(min = 48.dp)
                 .testTag("btn_${tagPrefix}_move_start_now")
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = onMoveStartNow,
+                    onDoubleClick = onMoveStartNow
+                )
+                .semantics {
+                    contentDescription = "Move Start slider to now playing. Double tap to place Start marker at current playback position."
+                },
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
         ) {
-            Text(
-                text = "Move Start slider to now playing",
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 2
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Move Start slider to now playing",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2
+                )
+            }
         }
         Button(
             onClick = onPlay,
@@ -78,22 +218,42 @@ internal fun MovePlayMoveRow(
             Spacer(Modifier.width(4.dp))
             Text("Play")
         }
-        OutlinedButton(
-            onClick = onMoveFinishNow,
+        Surface(
             modifier = Modifier
                 .weight(1f)
-                .height(48.dp)
+                .heightIn(min = 48.dp)
                 .testTag("btn_${tagPrefix}_move_finish_now")
+                .combinedClickable(
+                    role = Role.Button,
+                    onClick = onMoveFinishNow,
+                    onDoubleClick = onMoveFinishNow
+                )
+                .semantics {
+                    contentDescription = "Move Finish slider to now playing. Double tap to place Finish marker at current playback position."
+                },
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
         ) {
-            Text(
-                text = "Move Finish slider to now playing",
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 2
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "Move Finish slider to now playing",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2
+                )
+            }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun PrecisionMarkerSliderRow(
     label: String,
@@ -108,6 +268,8 @@ internal fun PrecisionMarkerSliderRow(
     val safeMin = minMs.coerceAtLeast(0L)
     val safeMax = maxMs.coerceAtLeast(safeMin + 1L)
     val clamped = valueMs.coerceIn(safeMin, safeMax)
+    var showTimeDialog by remember { mutableStateOf(false) }
+    val latestShowDialog by rememberUpdatedState { showTimeDialog = true }
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -128,7 +290,22 @@ internal fun PrecisionMarkerSliderRow(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.testTag("text_${testTagPrefix}_time")
+                modifier = Modifier
+                    .testTag("text_${testTagPrefix}_time")
+                    .combinedClickable(
+                        onClick = {},
+                        onDoubleClick = { showTimeDialog = true }
+                    )
+                    .semantics {
+                        contentDescription = "$timeLabel is ${AccessibilityHelper.formatTimeSpoken(clamped)}. Double tap to enter exact minutes, seconds, and milliseconds."
+                        customActions = listOf(
+                            CustomAccessibilityAction("Set $timeLabel manually") {
+                                showTimeDialog = true
+                                true
+                            }
+                        )
+                    }
+                    .padding(horizontal = 4.dp, vertical = 4.dp)
             )
         }
         Row(
@@ -147,19 +324,69 @@ internal fun PrecisionMarkerSliderRow(
             ) {
                 Icon(Icons.Default.Remove, contentDescription = null)
             }
-            Slider(
-                value = clamped.toFloat(),
-                onValueChange = { raw ->
-                    onValueChange(raw.toLong().coerceIn(safeMin, safeMax))
-                },
-                valueRange = safeMin.toFloat()..safeMax.toFloat(),
+            Box(
                 modifier = Modifier
                     .weight(1f)
-                    .testTag("slider_${testTagPrefix}")
-                    .semantics {
-                        contentDescription = "$label slider. $timeLabel is ${AccessibilityHelper.formatTimeSpoken(clamped)}"
+                    .pointerInput(Unit) {
+                        val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
+                        val touchSlop = viewConfiguration.touchSlop
+                        var lastTapUpTime = 0L
+                        var lastTapUpPos = Offset.Zero
+                        awaitPointerEventScope {
+                            while (true) {
+                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                val downTime = down.uptimeMillis
+                                val downPos = down.position
+                                var moved = false
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if ((change.position - downPos).getDistance() > touchSlop) {
+                                        moved = true
+                                    }
+                                    if (!change.pressed) {
+                                        val upTime = change.uptimeMillis
+                                        if (!moved && (upTime - downTime) < doubleTapTimeout) {
+                                            val isDoubleTap = lastTapUpTime > 0L &&
+                                                (downTime - lastTapUpTime) <= doubleTapTimeout &&
+                                                (downPos - lastTapUpPos).getDistance() <= (touchSlop * 4f)
+                                            if (isDoubleTap) {
+                                                lastTapUpTime = 0L
+                                                latestShowDialog()
+                                            } else {
+                                                lastTapUpTime = upTime
+                                                lastTapUpPos = change.position
+                                            }
+                                        } else {
+                                            lastTapUpTime = 0L
+                                        }
+                                        break
+                                    }
+                                }
+                            }
+                        }
                     }
-            )
+            ) {
+                Slider(
+                    value = clamped.toFloat(),
+                    onValueChange = { raw ->
+                        onValueChange(raw.toLong().coerceIn(safeMin, safeMax))
+                    },
+                    valueRange = safeMin.toFloat()..safeMax.toFloat(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("slider_${testTagPrefix}")
+                        .semantics {
+                            contentDescription = "$label slider. $timeLabel is ${AccessibilityHelper.formatTimeSpoken(clamped)}. Double tap to set exact time."
+                            customActions = listOf(
+                                CustomAccessibilityAction("Set exact $timeLabel") {
+                                    showTimeDialog = true
+                                    true
+                                }
+                            )
+                        }
+                )
+            }
             IconButton(
                 onClick = {
                     onValueChange(VideoCutMath.nudgeTimestamp(clamped, 1, stepMs, safeMin, safeMax))
@@ -173,15 +400,38 @@ internal fun PrecisionMarkerSliderRow(
             }
         }
     }
+
+    if (showTimeDialog) {
+        TimeEditDialog(
+            title = timeLabel,
+            initialMs = clamped,
+            minMs = safeMin,
+            maxMs = safeMax,
+            onConfirm = { updated ->
+                onValueChange(updated)
+                showTimeDialog = false
+            },
+            onDismiss = { showTimeDialog = false }
+        )
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun PrecisionSummaryRow(
     startMs: Long,
     finishMs: Long,
     clipDurationMs: Long,
-    tagPrefix: String
+    tagPrefix: String,
+    startMinMs: Long = 0L,
+    startMaxMs: Long = finishMs,
+    finishMinMs: Long = startMs,
+    finishMaxMs: Long = Long.MAX_VALUE / 2,
+    onEditStartMs: ((Long) -> Unit)? = null,
+    onEditFinishMs: ((Long) -> Unit)? = null
 ) {
+    var editingTarget by remember { mutableStateOf<String?>(null) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -200,12 +450,50 @@ internal fun PrecisionSummaryRow(
                 Text(
                     text = "Start time: ${AccessibilityHelper.formatTimePrecise(startMs)}",
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.testTag("readout_${tagPrefix}_start_time")
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .testTag("readout_${tagPrefix}_start_time")
+                        .combinedClickable(
+                            onClick = {},
+                            onDoubleClick = { if (onEditStartMs != null) editingTarget = "start" }
+                        )
+                        .semantics {
+                            contentDescription = "Start time ${AccessibilityHelper.formatTimeSpoken(startMs)}. Double tap to edit minutes, seconds, and milliseconds."
+                            if (onEditStartMs != null) {
+                                customActions = listOf(
+                                    CustomAccessibilityAction("Edit Start time") {
+                                        editingTarget = "start"
+                                        true
+                                    }
+                                )
+                            }
+                        }
+                        .padding(vertical = 2.dp)
                 )
                 Text(
                     text = "Finish time: ${AccessibilityHelper.formatTimePrecise(finishMs)}",
                     style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.testTag("readout_${tagPrefix}_finish_time")
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .testTag("readout_${tagPrefix}_finish_time")
+                        .combinedClickable(
+                            onClick = {},
+                            onDoubleClick = { if (onEditFinishMs != null) editingTarget = "finish" }
+                        )
+                        .semantics {
+                            contentDescription = "Finish time ${AccessibilityHelper.formatTimeSpoken(finishMs)}. Double tap to edit minutes, seconds, and milliseconds."
+                            if (onEditFinishMs != null) {
+                                customActions = listOf(
+                                    CustomAccessibilityAction("Edit Finish time") {
+                                        editingTarget = "finish"
+                                        true
+                                    }
+                                )
+                            }
+                        }
+                        .padding(vertical = 2.dp)
                 )
             }
             Text(
@@ -216,6 +504,32 @@ internal fun PrecisionSummaryRow(
                 modifier = Modifier.testTag("readout_${tagPrefix}_clip_duration")
             )
         }
+    }
+
+    if (editingTarget == "start" && onEditStartMs != null) {
+        TimeEditDialog(
+            title = "Start time",
+            initialMs = startMs,
+            minMs = startMinMs,
+            maxMs = startMaxMs,
+            onConfirm = {
+                onEditStartMs(it)
+                editingTarget = null
+            },
+            onDismiss = { editingTarget = null }
+        )
+    } else if (editingTarget == "finish" && onEditFinishMs != null) {
+        TimeEditDialog(
+            title = "Finish time",
+            initialMs = finishMs,
+            minMs = finishMinMs,
+            maxMs = finishMaxMs,
+            onConfirm = {
+                onEditFinishMs(it)
+                editingTarget = null
+            },
+            onDismiss = { editingTarget = null }
+        )
     }
 }
 
@@ -307,7 +621,19 @@ fun VideoTrimmerPrecisionPanel(
             startMs = clampedStart,
             finishMs = clampedEnd,
             clipDurationMs = (clampedEnd - clampedStart).coerceAtLeast(0L),
-            tagPrefix = "trimmer"
+            tagPrefix = "trimmer",
+            startMinMs = 0L,
+            startMaxMs = (clampedEnd - 250L).coerceAtLeast(0L),
+            finishMinMs = (clampedStart + 250L).coerceAtMost(safeDuration),
+            finishMaxMs = safeDuration,
+            onEditStartMs = { newStart ->
+                val (s, e) = VideoCutMath.clampStartCutMarker(newStart, clampedEnd, safeDuration)
+                onUpdateTrim(s, e, streamCopyTrim)
+            },
+            onEditFinishMs = { newEnd ->
+                val (s, e) = VideoCutMath.clampEndCutMarker(clampedStart, newEnd, safeDuration)
+                onUpdateTrim(s, e, streamCopyTrim)
+            }
         )
 
         Row(
@@ -415,7 +741,13 @@ fun VideoMultiTrimPanel(
             startMs = startMs,
             finishMs = finishMs,
             clipDurationMs = (finishMs - startMs).coerceAtLeast(0L),
-            tagPrefix = "multi_trim"
+            tagPrefix = "multi_trim",
+            startMinMs = 0L,
+            startMaxMs = (finishMs - 250L).coerceAtLeast(0L),
+            finishMinMs = (startMs + 250L).coerceAtMost(safeDuration),
+            finishMaxMs = safeDuration,
+            onEditStartMs = { val (s, e) = VideoCutMath.clampStartCutMarker(it, finishMs, safeDuration); startMs = s; finishMs = e },
+            onEditFinishMs = { val (s, e) = VideoCutMath.clampEndCutMarker(startMs, it, safeDuration); startMs = s; finishMs = e }
         )
 
         Button(
@@ -570,7 +902,21 @@ fun VideoDeletePartPanel(
             startMs = startMs,
             finishMs = finishMs,
             clipDurationMs = (finishMs - startMs).coerceAtLeast(0L),
-            tagPrefix = "delete_part"
+            tagPrefix = "delete_part",
+            startMinMs = 0L,
+            startMaxMs = (finishMs - 250L).coerceAtLeast(0L),
+            finishMinMs = (startMs + 250L).coerceAtMost(safeDuration),
+            finishMaxMs = safeDuration,
+            onEditStartMs = {
+                val (s, e) = VideoCutMath.clampStartCutMarker(it, finishMs, safeDuration)
+                startMs = s; finishMs = e
+                onUpdateCutSegments(listOf(VideoCutSegment(startMs = s, endMs = e)))
+            },
+            onEditFinishMs = {
+                val (s, e) = VideoCutMath.clampEndCutMarker(startMs, it, safeDuration)
+                startMs = s; finishMs = e
+                onUpdateCutSegments(listOf(VideoCutSegment(startMs = s, endMs = e)))
+            }
         )
     }
 }
@@ -654,7 +1000,13 @@ fun VideoMultiDeletePanel(
             startMs = startMs,
             finishMs = finishMs,
             clipDurationMs = (finishMs - startMs).coerceAtLeast(0L),
-            tagPrefix = "multi_delete"
+            tagPrefix = "multi_delete",
+            startMinMs = 0L,
+            startMaxMs = (finishMs - 250L).coerceAtLeast(0L),
+            finishMinMs = (startMs + 250L).coerceAtMost(safeDuration),
+            finishMaxMs = safeDuration,
+            onEditStartMs = { val (s, e) = VideoCutMath.clampStartCutMarker(it, finishMs, safeDuration); startMs = s; finishMs = e },
+            onEditFinishMs = { val (s, e) = VideoCutMath.clampEndCutMarker(startMs, it, safeDuration); startMs = s; finishMs = e }
         )
 
         Button(

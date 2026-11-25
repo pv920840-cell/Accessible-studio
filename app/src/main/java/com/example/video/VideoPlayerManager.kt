@@ -19,6 +19,7 @@ class VideoPlayerManager(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Main)
     private var mediaPlayer: MediaPlayer? = null
     private var pollJob: Job? = null
+    private var previewPulseJob: Job? = null
     private var surfaceHolder: SurfaceHolder? = null
 
     private val _isPlaying = MutableStateFlow(false)
@@ -114,6 +115,31 @@ class VideoPlayerManager(private val context: Context) {
         try {
             mediaPlayer?.seekTo(safe.toInt())
         } catch (_: Exception) {}
+    }
+
+    /**
+     * Seeks to [positionMs] and plays a brief preview snippet if paused,
+     * or seeks smoothly if already playing.
+     */
+    fun scrubPreviewAt(positionMs: Long, previewDurationMs: Long = 220L) {
+        val safe = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(0L))
+        if (_isPlaying.value && previewPulseJob?.isActive != true) {
+            seekTo(safe)
+            return
+        }
+        val mp = mediaPlayer
+        if (mp == null) {
+            _currentPositionMs.value = safe
+            return
+        }
+        previewPulseJob?.cancel()
+        val endLimit = (safe + previewDurationMs).coerceAtMost(_durationMs.value.coerceAtLeast(safe))
+        play(startMs = safe, endLimitMs = endLimit)
+        previewPulseJob = scope.launch {
+            delay(previewDurationMs)
+            pause()
+            seekTo(safe)
+        }
     }
 
     fun setMute(muted: Boolean) {

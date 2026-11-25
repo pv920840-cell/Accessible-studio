@@ -5,11 +5,13 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,12 +48,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.accessibility.AccessibilityHelper
 import com.example.ui.theme.LocalHighContrast
@@ -212,6 +216,7 @@ fun StandardizedStepSlider(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoSplitterPanel(
     durationMs: Long,
@@ -252,16 +257,40 @@ fun VideoSplitterPanel(
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            OutlinedButton(
-                onClick = { pointMs = currentPositionMs.coerceIn(0L, safeDuration) },
+            Surface(
                 modifier = Modifier
                     .weight(1f)
-                    .height(48.dp)
+                    .heightIn(min = 48.dp)
                     .testTag("btn_splitter_move_point_now")
+                    .combinedClickable(
+                        role = Role.Button,
+                        onClick = { pointMs = currentPositionMs.coerceIn(0L, safeDuration) },
+                        onDoubleClick = { pointMs = currentPositionMs.coerceIn(0L, safeDuration) }
+                    )
+                    .semantics {
+                        contentDescription = "Move Point slider to now playing. Double tap to place Point at current playback position."
+                    },
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
             ) {
-                Text("Move Point slider to now playing", maxLines = 2)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Move Point slider to now playing",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2
+                    )
+                }
             }
             Button(
                 onClick = { onPlayFrom(pointMs) },
@@ -481,7 +510,33 @@ fun VideoAutoSplitterPanel(
             startMs = clampedStart,
             finishMs = clampedEnd,
             clipDurationMs = clipDurationMs,
-            tagPrefix = "auto_splitter"
+            tagPrefix = "auto_splitter",
+            startMinMs = 0L,
+            startMaxMs = (clampedEnd - 250L).coerceAtLeast(0L),
+            finishMinMs = (clampedStart + 250L).coerceAtMost(safeDuration),
+            finishMaxMs = safeDuration,
+            onEditStartMs = { newStart ->
+                val (s, e) = VideoCutMath.clampStartCutMarker(newStart, clampedEnd, safeDuration)
+                onUpdateBounds(s, e)
+            },
+            onEditFinishMs = { newEnd ->
+                val (s, e) = VideoCutMath.clampEndCutMarker(clampedStart, newEnd, safeDuration)
+                onUpdateBounds(s, e)
+            }
+        )
+
+        AutoSplitterOptionSlider(
+            autoSplitMode = autoSplitMode,
+            autoSplitIntervalMs = autoSplitIntervalMs,
+            autoSplitFileCount = autoSplitFileCount,
+            onSelectOption = { opt ->
+                onUpdateAutoSplitConfig(
+                    opt.mode,
+                    opt.intervalMs,
+                    opt.fileCount,
+                    autoSplitTargetSizeMb
+                )
+            }
         )
 
         // Split every button: tap cycles preset intervals; double-tap opens custom dialog (length / count / size)
@@ -562,6 +617,157 @@ fun VideoAutoSplitterPanel(
                     showCustomDialog = false
                 }
             )
+        }
+    }
+}
+
+@Composable
+private fun AutoSplitterOptionSlider(
+    autoSplitMode: AutoSplitMode,
+    autoSplitIntervalMs: Long,
+    autoSplitFileCount: Int,
+    onSelectOption: (VideoCutMath.AutoSplitSliderOption) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isHighContrast = LocalHighContrast.current
+    val options = VideoCutMath.AUTO_SPLIT_SLIDER_OPTIONS
+    val currentIndex = VideoCutMath.autoSplitOptionIndexFor(
+        mode = autoSplitMode,
+        intervalMs = autoSplitIntervalMs,
+        fileCount = autoSplitFileCount
+    )
+    val currentOption = VideoCutMath.autoSplitOptionAt(currentIndex)
+    var accumulatedDragY by remember { mutableFloatStateOf(0f) }
+
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("auto_splitter_slider_container")
+            .pointerInput(currentIndex) {
+                detectVerticalDragGestures(
+                    onDragEnd = { accumulatedDragY = 0f },
+                    onDragCancel = { accumulatedDragY = 0f }
+                ) { _, dragAmount ->
+                    accumulatedDragY += dragAmount
+                    val thresholdPx = 28f
+                    if (accumulatedDragY <= -thresholdPx) {
+                        val next = VideoCutMath.autoSplitOptionUp(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount)
+                        onSelectOption(next)
+                        accumulatedDragY = 0f
+                    } else if (accumulatedDragY >= thresholdPx) {
+                        val prev = VideoCutMath.autoSplitOptionDown(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount)
+                        onSelectOption(prev)
+                        accumulatedDragY = 0f
+                    }
+                }
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        border = BorderStroke(
+            if (isHighContrast) 2.dp else 1.dp,
+            if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Auto Splitter",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Swipe up: intervals & 2+ split files • Swipe down: decrease",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = currentOption.label,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                            .testTag("txt_auto_splitter_slider_value")
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                IconButton(
+                    onClick = {
+                        onSelectOption(VideoCutMath.autoSplitOptionDown(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount))
+                    },
+                    enabled = currentIndex > 0,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("btn_auto_splitter_slider_down")
+                        .semantics { contentDescription = "Decrease auto splitter split option" }
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = null)
+                }
+
+                Slider(
+                    value = currentIndex.toFloat(),
+                    onValueChange = { raw ->
+                        val idx = raw.roundToInt().coerceIn(0, options.lastIndex)
+                        onSelectOption(options[idx])
+                    },
+                    valueRange = 0f..options.lastIndex.toFloat(),
+                    steps = (options.size - 2).coerceAtLeast(0),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("slider_auto_splitter")
+                        .semantics {
+                            contentDescription = "Auto Splitter slider. Swipe up to advance through split intervals and 2 split files. Swipe down to decrease."
+                            stateDescription = currentOption.spokenLabel
+                            customActions = listOf(
+                                CustomAccessibilityAction("Increase auto splitter option") {
+                                    onSelectOption(VideoCutMath.autoSplitOptionUp(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount))
+                                    true
+                                },
+                                CustomAccessibilityAction("Decrease auto splitter option") {
+                                    onSelectOption(VideoCutMath.autoSplitOptionDown(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount))
+                                    true
+                                }
+                            )
+                        }
+                )
+
+                IconButton(
+                    onClick = {
+                        onSelectOption(VideoCutMath.autoSplitOptionUp(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount))
+                    },
+                    enabled = currentIndex < options.lastIndex,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("btn_auto_splitter_slider_up")
+                        .semantics { contentDescription = "Increase auto splitter split option" }
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                }
+            }
         }
     }
 }

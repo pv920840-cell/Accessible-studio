@@ -59,13 +59,13 @@ import com.example.accessibility.AccessibilityHelper
 import com.example.accessibility.VibrationType
 import com.example.audio.AudioRecorderManager
 import com.example.data.MediaRepository
+import com.example.ui.components.AccessiblePreviewPlaybackSlider
 import com.example.ui.components.AccessibleTimeReadout
 import com.example.ui.components.ActiveEffectChipData
 import com.example.ui.components.ActiveEffectsLongPressBar
 import com.example.ui.components.StudioFeatureGuideDialog
 import com.example.ui.components.VideoAudioMusicPanel
 import com.example.ui.components.VideoConvertAndMetaPanel
-import com.example.ui.components.VideoMetadataBanner
 import com.example.ui.components.VideoOverlaysVfxPanel
 import com.example.ui.components.VideoTimelineScrubber
 import com.example.ui.components.VideoTimelineToolsPanel
@@ -438,10 +438,15 @@ fun VideoFeatureWorkspaceScreen(
                 }
             }
 
-            VideoMetadataBanner(
-                fileName = draft.title,
+            val livePosForSlider by videoPlayer.currentPositionMs.collectAsState()
+            AccessiblePreviewPlaybackSlider(
+                currentPositionMs = livePosForSlider,
                 durationMs = effectiveDuration,
-                metadata = draft.metadata
+                onSeekTo = { videoPlayer.seekTo(it) },
+                isPlaying = isPlaying,
+                onTogglePlayPause = { if (isPlaying) videoPlayer.pause() else videoPlayer.play() },
+                onScrubPreviewPulse = { videoPlayer.scrubPreviewAt(it) },
+                testTag = "slider_video_workspace_preview"
             )
 
             VideoTimelineScrubber(

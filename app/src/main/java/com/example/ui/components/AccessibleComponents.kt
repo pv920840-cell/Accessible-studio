@@ -5,10 +5,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import com.example.audio.ScrubDirection
+import kotlin.math.abs
+import kotlin.math.roundToLong
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1286,7 +1292,8 @@ fun AccessibleEffectSlider(
 }
 
 /**
- * Responsive Preview Playback Slider with real-time position readout and accurate seeking.
+ * Responsive 0% / Preview Playback Slider with real-time position readout, vertical swipe up/down
+ * scrubbing with brief preview pulse, and double-tap Play/Pause toggle.
  */
 @Composable
 fun AccessiblePreviewPlaybackSlider(
@@ -1295,16 +1302,64 @@ fun AccessiblePreviewPlaybackSlider(
     onSeekTo: (Long) -> Unit,
     modifier: Modifier = Modifier,
     label: String = "Preview Playback",
-    testTag: String = "slider_preview_playback"
+    testTag: String = "slider_preview_playback",
+    onTogglePlayPause: (() -> Unit)? = null,
+    onScrubPreviewPulse: ((Long) -> Unit)? = null,
+    isPlaying: Boolean = false
 ) {
     val isHighContrast = LocalHighContrast.current
     val safeDuration = durationMs.coerceAtLeast(1000L)
     var isDragging by remember { mutableStateOf(false) }
     var dragPosMs by remember { mutableLongStateOf(currentPositionMs.coerceIn(0L, safeDuration)) }
     val displayPosMs = if (isDragging) dragPosMs else currentPositionMs.coerceIn(0L, safeDuration)
+    val percent = ((displayPosMs.toFloat() / safeDuration.toFloat()) * 100f).toInt().coerceIn(0, 100)
+
+    val latestPos by rememberUpdatedState(displayPosMs)
+    val latestOnSeekTo by rememberUpdatedState(onSeekTo)
+    val latestOnTogglePlayPause by rememberUpdatedState(onTogglePlayPause)
+    val latestOnScrubPreviewPulse by rememberUpdatedState(onScrubPreviewPulse)
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .testTag("${testTag}_container")
+            .pointerInput(safeDuration) {
+                var accumulatedDragY = 0f
+                val thresholdPx = 22f
+                val stepMs = maxOf(250L, (safeDuration * 0.05f).roundToLong())
+                detectVerticalDragGestures(
+                    onDragStart = {
+                        accumulatedDragY = 0f
+                    },
+                    onDragEnd = {
+                        accumulatedDragY = 0f
+                        isDragging = false
+                    },
+                    onDragCancel = {
+                        accumulatedDragY = 0f
+                        isDragging = false
+                    }
+                ) { _, dragAmount ->
+                    accumulatedDragY += dragAmount
+                    if (accumulatedDragY <= -thresholdPx) {
+                        // Swipe UP -> move forward toward end + brief preview
+                        val next = (latestPos + stepMs).coerceIn(0L, safeDuration)
+                        isDragging = true
+                        dragPosMs = next
+                        latestOnSeekTo(next)
+                        latestOnScrubPreviewPulse?.invoke(next)
+                        accumulatedDragY = 0f
+                    } else if (accumulatedDragY >= thresholdPx) {
+                        // Swipe DOWN -> move backward toward start + brief preview
+                        val next = (latestPos - stepMs).coerceIn(0L, safeDuration)
+                        isDragging = true
+                        dragPosMs = next
+                        latestOnSeekTo(next)
+                        latestOnScrubPreviewPulse?.invoke(next)
+                        accumulatedDragY = 0f
+                    }
+                }
+            },
         colors = CardDefaults.cardColors(
             containerColor = if (isHighContrast) Color(0xFF101010) else MaterialTheme.colorScheme.surfaceContainerLow
         ),
@@ -1321,7 +1376,13 @@ fun AccessiblePreviewPlaybackSlider(
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onDoubleTap = { latestOnTogglePlayPause?.invoke() }
+                        )
+                    },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -1332,7 +1393,7 @@ fun AccessiblePreviewPlaybackSlider(
                     color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "${AccessibilityHelper.formatTimeVisual(displayPosMs)} / ${AccessibilityHelper.formatTimeVisual(durationMs.coerceAtLeast(0L))}",
+                    text = "$percent% • ${AccessibilityHelper.formatTimeVisual(displayPosMs)} / ${AccessibilityHelper.formatTimeVisual(durationMs.coerceAtLeast(0L))}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary,
@@ -1340,27 +1401,100 @@ fun AccessiblePreviewPlaybackSlider(
                 )
             }
 
-            Slider(
-                value = displayPosMs.toFloat(),
-                onValueChange = { raw ->
-                    val target = raw.toLong().coerceIn(0L, safeDuration)
-                    isDragging = true
-                    dragPosMs = target
-                    onSeekTo(target)
-                },
-                onValueChangeFinished = {
-                    val committed = dragPosMs.coerceIn(0L, safeDuration)
-                    isDragging = false
-                    onSeekTo(committed)
-                },
-                valueRange = 0f..safeDuration.toFloat(),
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag(testTag)
-                    .semantics {
-                        contentDescription = "$label slider. Position ${AccessibilityHelper.formatTimeSpoken(displayPosMs)} of ${AccessibilityHelper.formatTimeSpoken(durationMs.coerceAtLeast(0L))}"
+                    .pointerInput(Unit) {
+                        val doubleTapTimeout = viewConfiguration.doubleTapTimeoutMillis
+                        val touchSlop = viewConfiguration.touchSlop
+                        var lastTapUpTime = 0L
+                        var lastTapUpPos = Offset.Zero
+                        awaitPointerEventScope {
+                            while (true) {
+                                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                val downTime = down.uptimeMillis
+                                val downPos = down.position
+                                var moved = false
+                                while (true) {
+                                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if ((change.position - downPos).getDistance() > touchSlop) {
+                                        moved = true
+                                    }
+                                    if (!change.pressed) {
+                                        val upTime = change.uptimeMillis
+                                        if (!moved && (upTime - downTime) < doubleTapTimeout) {
+                                            val isDoubleTap = lastTapUpTime > 0L &&
+                                                (downTime - lastTapUpTime) <= doubleTapTimeout &&
+                                                (downPos - lastTapUpPos).getDistance() <= (touchSlop * 4f)
+                                            if (isDoubleTap) {
+                                                lastTapUpTime = 0L
+                                                latestOnTogglePlayPause?.invoke()
+                                            } else {
+                                                lastTapUpTime = upTime
+                                                lastTapUpPos = change.position
+                                            }
+                                        } else {
+                                            lastTapUpTime = 0L
+                                        }
+                                        break
+                                    }
+                                }
+                            }
+                        }
                     }
-            )
+            ) {
+                val scrubNudgeMs = maxOf(500L, (safeDuration * 0.05f).roundToLong())
+                Slider(
+                    value = displayPosMs.toFloat(),
+                    onValueChange = { raw ->
+                        val target = raw.toLong().coerceIn(0L, safeDuration)
+                        isDragging = true
+                        dragPosMs = target
+                        onSeekTo(target)
+                        onScrubPreviewPulse?.invoke(target)
+                    },
+                    onValueChangeFinished = {
+                        val committed = dragPosMs.coerceIn(0L, safeDuration)
+                        isDragging = false
+                        onSeekTo(committed)
+                    },
+                    valueRange = 0f..safeDuration.toFloat(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(testTag)
+                        .semantics {
+                            val stateText = if (isPlaying) "Playing" else "Paused"
+                            contentDescription = "$label slider, $percent percent, $stateText. Position ${AccessibilityHelper.formatTimeSpoken(displayPosMs)} of ${AccessibilityHelper.formatTimeSpoken(durationMs.coerceAtLeast(0L))}. Swipe up to move toward end with preview, swipe down to move toward start, double tap to play or pause."
+                            customActions = buildList {
+                                if (onTogglePlayPause != null) {
+                                    add(
+                                        CustomAccessibilityAction(if (isPlaying) "Pause preview" else "Play preview") {
+                                            onTogglePlayPause.invoke()
+                                            true
+                                        }
+                                    )
+                                }
+                                add(
+                                    CustomAccessibilityAction("Move forward toward end with preview") {
+                                        val target = (displayPosMs + scrubNudgeMs).coerceIn(0L, safeDuration)
+                                        onSeekTo(target)
+                                        onScrubPreviewPulse?.invoke(target)
+                                        true
+                                    }
+                                )
+                                add(
+                                    CustomAccessibilityAction("Move backward toward start with preview") {
+                                        val target = (displayPosMs - scrubNudgeMs).coerceIn(0L, safeDuration)
+                                        onSeekTo(target)
+                                        onScrubPreviewPulse?.invoke(target)
+                                        true
+                                    }
+                                )
+                            }
+                        }
+                )
+            }
         }
     }
 }

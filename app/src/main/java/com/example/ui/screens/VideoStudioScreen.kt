@@ -85,6 +85,7 @@ import com.example.ui.components.AccessiblePreviewPlaybackSlider
 import com.example.ui.components.AccessibleTimeReadout
 import com.example.ui.components.AccessibleTransportControls
 import com.example.ui.components.AccessibleTrimSection
+import com.example.ui.components.AccessibleVideoPickerDialog
 import com.example.ui.components.ActiveEffectChipData
 import com.example.ui.components.ActiveEffectsLongPressBar
 import com.example.ui.components.StudioFeatureGuideDialog
@@ -206,6 +207,8 @@ fun VideoStudioScreen(
     var autoSplitFileCount by remember { mutableIntStateOf(2) }
     var autoSplitTargetSizeMb by remember { mutableFloatStateOf(25f) }
     var showFeatureGuide by remember { mutableStateOf(false) }
+    var showVideoPickerDialog by remember { mutableStateOf(false) }
+    val exportedMedia by mediaRepository.exportedFiles.collectAsState()
     var mergeClipUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var slideshowImages by remember { mutableStateOf<List<Uri>>(emptyList()) }
     var slideshowSecPerSlide by remember { mutableIntStateOf(3) }
@@ -437,28 +440,6 @@ fun VideoStudioScreen(
         }
     }
 
-    val videoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            var displayName: String? = null
-            try {
-                context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-                    if (c.moveToFirst()) {
-                        val idx = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-                        if (idx >= 0) displayName = c.getString(idx)
-                    }
-                }
-            } catch (_: Exception) {}
-            if (displayName.isNullOrBlank()) {
-                displayName = uri.lastPathSegment?.substringAfterLast('/')?.substringAfterLast(':')
-            }
-            val resolvedTitle = displayName?.takeIf { it.isNotBlank() } ?: "Imported Video Clip"
-            openedVideoBaseName = StudioPreferences.extractBaseFileName(displayName).takeIf { it.isNotBlank() }
-            loadUriIntoStudio(uri, resolvedTitle)
-        }
-    }
-
     val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
 
     Column(
@@ -536,7 +517,7 @@ fun VideoStudioScreen(
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
-                        onClick = { videoPickerLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
+                        onClick = { showVideoPickerDialog = true },
                         modifier = Modifier.weight(1f).height(48.dp).testTag("btn_select_video"),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
                     ) {
@@ -629,6 +610,9 @@ fun VideoStudioScreen(
             currentPositionMs = livePosForSlider,
             durationMs = durationMs,
             onSeekTo = { videoPlayer.seekTo(it) },
+            isPlaying = isPlaying,
+            onTogglePlayPause = { if (isPlaying) videoPlayer.pause() else videoPlayer.play() },
+            onScrubPreviewPulse = { videoPlayer.scrubPreviewAt(it) },
             testTag = "slider_video_studio_preview"
         )
         AccessibleTimeReadout(
@@ -890,7 +874,7 @@ fun VideoStudioScreen(
                 onAddCutSegment = { s, e -> cutSegments = cutSegments + VideoCutSegment(startMs = s, endMs = e) },
                 onRemoveCutSegment = { id -> cutSegments = cutSegments.filterNot { it.id == id } },
                 onClearCutSegments = { cutSegments = emptyList() },
-                showHeaderMetadataAndScrubber = true,
+                showHeaderMetadataAndScrubber = false,
                 showTrimmerExportButton = true,
                 mergeClipUris = mergeClipUris,
                 onAddMergeClips = { uris -> mergeClipUris = mergeClipUris + uris },
@@ -1308,6 +1292,18 @@ fun VideoStudioScreen(
 
     if (showFeatureGuide) {
         StudioFeatureGuideDialog(onDismiss = { showFeatureGuide = false })
+    }
+
+    if (showVideoPickerDialog) {
+        AccessibleVideoPickerDialog(
+            exportedVideos = exportedMedia,
+            onSelectVideo = { uri, selectedTitle ->
+                showVideoPickerDialog = false
+                openedVideoBaseName = StudioPreferences.extractBaseFileName(selectedTitle).takeIf { it.isNotBlank() }
+                loadUriIntoStudio(uri, selectedTitle)
+            },
+            onDismiss = { showVideoPickerDialog = false }
+        )
     }
 }
 

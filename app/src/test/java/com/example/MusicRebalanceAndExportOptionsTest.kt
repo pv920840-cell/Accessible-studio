@@ -285,4 +285,39 @@ class MusicRebalanceAndExportOptionsTest {
         composeRule.onNodeWithTag("chip_active_effect_echo").assertDoesNotExist()
         composeRule.onNodeWithTag("chip_active_effect_reverb").assertIsDisplayed()
     }
+
+    @Test
+    fun musicRebalanceProcessor_streamingToFiles_writesValidWavStemsForLongTrack() {
+        val sampleRate = 22050
+        val pcm = generateTestMusicPcm(sampleRate = sampleRate, durationSec = 15.0f)
+        val outDir = kotlin.io.path.createTempDirectory("stem_stream_test").toFile()
+        try {
+            listOf(
+                StemSeparationMode.TWO_STEMS,
+                StemSeparationMode.FOUR_STEMS,
+                StemSeparationMode.SIX_STEMS
+            ).forEach { mode ->
+                val files = MusicRebalanceProcessor.separateStemsStreamingToFiles(
+                    samples = pcm,
+                    sampleRate = sampleRate,
+                    mode = mode,
+                    outputDir = outDir,
+                    baseName = "LongSongTest"
+                )
+                assertEquals(mode.stemCount, files.size)
+                files.values.forEach { wav ->
+                    assertTrue("Expected WAV file to exist: ${wav.absolutePath}", wav.exists())
+                    val expectedMinBytes = 44L + pcm.size.toLong() * 2L
+                    assertEquals(expectedMinBytes, wav.length())
+                    val header = wav.inputStream().use { ins ->
+                        ByteArray(12).also { buf -> ins.read(buf) }
+                    }
+                    assertEquals("RIFF", String(header, 0, 4, Charsets.US_ASCII))
+                    assertEquals("WAVE", String(header, 8, 4, Charsets.US_ASCII))
+                }
+            }
+        } finally {
+            outDir.deleteRecursively()
+        }
+    }
 }

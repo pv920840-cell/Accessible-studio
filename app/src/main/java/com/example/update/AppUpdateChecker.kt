@@ -483,6 +483,37 @@ object AppUpdateChecker {
         }
     }
 
+    /**
+     * Selects the highest-priority GitHub update check result across `main/version.json`
+     * and GitHub `releases/latest`, ensuring an `UpToDate` response from one source never
+     * hides a newer `UpdateAvailable` published on the other.
+     */
+    fun selectBestGitHubUpdateCandidate(
+        rawState: UpdateCheckState?,
+        releaseState: UpdateCheckState?
+    ): UpdateCheckState? {
+        val rawUpdate = rawState as? UpdateCheckState.UpdateAvailable
+        val releaseUpdate = releaseState as? UpdateCheckState.UpdateAvailable
+        if (rawUpdate != null && releaseUpdate != null) {
+            return if (isRemoteVersionNewer(
+                    currentVersionName = rawUpdate.latestVersion,
+                    currentVersionCode = rawUpdate.latestCode.toLong(),
+                    remoteVersionName = releaseUpdate.latestVersion,
+                    remoteVersionCode = releaseUpdate.latestCode.toLong()
+                )
+            ) {
+                releaseUpdate
+            } else {
+                rawUpdate
+            }
+        }
+        if (releaseUpdate != null) return releaseUpdate
+        if (rawUpdate != null) return rawUpdate
+        if (releaseState is UpdateCheckState.UpToDate) return releaseState
+        if (rawState is UpdateCheckState.UpToDate) return rawState
+        return releaseState ?: rawState
+    }
+
     suspend fun checkForUpdates(
         metadataUrl: String = DEFAULT_METADATA_URL,
         fallbackHtmlUrl: String = DEFAULT_FALLBACK_HTML_URL,
@@ -504,55 +535,67 @@ object AppUpdateChecker {
         }
 
         try {
-            // 1. Check GitHub main branch raw version.json + GitHub Releases when configured
+            // 1. Check both GitHub main branch raw version.json AND GitHub Releases latest
             if (normalizedProvider == StudioPreferences.UPDATE_PROVIDER_GITHUB ||
                 (normalizedProvider == StudioPreferences.UPDATE_PROVIDER_AUTO && hasValidGitHub)
             ) {
                 val rawMainUrl = appendCacheBuster(buildGitHubRawVersionUrl(githubOwner, githubRepo, DEFAULT_GITHUB_BRANCH), now)
                 val rawMainResult = fetchHttpText(rawMainUrl, acceptHeader = "application/json, text/plain")
-                if (rawMainResult.code in 200..299 && !rawMainResult.body.isNullOrBlank()) {
-                    val parsedRaw = parseUpdateResponseJson(
+                val parsedRaw: UpdateCheckState? = if (rawMainResult.code in 200..299 && !rawMainResult.body.isNullOrBlank()) {
+                    parseUpdateResponseJson(
                         jsonBody = rawMainResult.body,
                         currentVersionName = currentVersionName,
                         currentVersionCode = currentVersionCode,
                         checkedAtMs = now,
                         sourceLabel = "GitHub (main)"
                     )
-                    if (parsedRaw !is UpdateCheckState.Error) {
-                        return@withContext parsedRaw
-                    }
+                } else {
+                    null
                 }
 
-                // Fallback to GitHub latest release API if main/version.json is absent or malformed
                 val releaseApiUrl = buildGitHubLatestReleaseUrl(githubOwner, githubRepo)
                 val releaseResult = fetchHttpText(
                     targetUrl = releaseApiUrl,
                     acceptHeader = "application/vnd.github+json"
                 )
-                if (releaseResult.code in 200..299 && releaseResult.body != null) {
+                val parsedRelease: UpdateCheckState? = if (releaseResult.code in 200..299 && releaseResult.body != null) {
                     val assetVersionJsonUrl = extractGitHubVersionJsonAssetUrl(releaseResult.body)
-                    if (assetVersionJsonUrl != null) {
+                    val assetParsed = if (assetVersionJsonUrl != null) {
                         val assetJsonResult = fetchHttpText(appendCacheBuster(assetVersionJsonUrl, now))
                         if (assetJsonResult.code in 200..299 && assetJsonResult.body != null) {
-                            val parsedAsset = parseUpdateResponseJson(
+                            parseUpdateResponseJson(
                                 jsonBody = assetJsonResult.body,
                                 currentVersionName = currentVersionName,
                                 currentVersionCode = currentVersionCode,
                                 checkedAtMs = now,
                                 sourceLabel = "GitHub Releases"
                             )
-                            if (parsedAsset !is UpdateCheckState.Error) {
-                                return@withContext parsedAsset
-                            }
+                        } else {
+                            null
                         }
+                    } else {
+                        null
                     }
-                    return@withContext parseGitHubReleaseJson(
-                        jsonBody = releaseResult.body,
-                        currentVersionName = currentVersionName,
-                        currentVersionCode = currentVersionCode,
-                        checkedAtMs = now
-                    )
-                } else if (normalizedProvider == StudioPreferences.UPDATE_PROVIDER_GITHUB) {
+                    if (assetParsed != null && assetParsed !is UpdateCheckState.Error) {
+                        assetParsed
+                    } else {
+                        parseGitHubReleaseJson(
+                            jsonBody = releaseResult.body,
+                            currentVersionName = currentVersionName,
+                            currentVersionCode = currentVersionCode,
+                            checkedAtMs = now
+                        )
+                    }
+                } else {
+                    null
+                }
+
+                val bestGitHub = selectBestGitHubUpdateCandidate(parsedRaw, parsedRelease)
+                if (bestGitHub != null && bestGitHub !is UpdateCheckState.Error) {
+                    return@withContext bestGitHub
+                }
+
+                if (normalizedProvider == StudioPreferences.UPDATE_PROVIDER_GITHUB) {
                     val code = if (rawMainResult.code in 400..599 && releaseResult.code <= 0) rawMainResult.code else releaseResult.code
                     val errorHint = when (code) {
                         404 -> "No version.json or GitHub releases found for ${githubOwner.trim()}/${githubRepo.trim()}."

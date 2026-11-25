@@ -749,4 +749,36 @@ class AppUpdateCheckerTest {
         composeRule.waitForIdle()
         assertEquals(1, settingsShareClicks)
     }
+
+    @Test
+    fun selectBestGitHubUpdateCandidate_prefersNewerReleaseOverMainUpToDate() {
+        val rawUpToDate = UpdateCheckState.UpToDate(
+            currentVersion = "1.3.0",
+            latestVersion = "1.3.0",
+            checkedAtMs = 1000L,
+            sourceLabel = "GitHub (main)"
+        )
+        val releaseUpdate = UpdateCheckState.UpdateAvailable(
+            currentVersion = "1.3.0",
+            latestVersion = "1.4.0",
+            latestCode = 24,
+            downloadUrl = "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.4.0/AccessibleStudio_V1.4.0.apk",
+            releaseNotes = "v1.4.0 release",
+            checkedAtMs = 1000L,
+            sourceLabel = "GitHub Releases"
+        )
+        val olderRawUpdate = releaseUpdate.copy(
+            latestVersion = "1.3.1",
+            latestCode = 23,
+            sourceLabel = "GitHub (main)"
+        )
+
+        val chosenOverUpToDate = AppUpdateChecker.selectBestGitHubUpdateCandidate(rawUpToDate, releaseUpdate)
+        assertTrue(chosenOverUpToDate is UpdateCheckState.UpdateAvailable)
+        assertEquals("1.4.0", (chosenOverUpToDate as UpdateCheckState.UpdateAvailable).latestVersion)
+
+        val chosenNewerRelease = AppUpdateChecker.selectBestGitHubUpdateCandidate(olderRawUpdate, releaseUpdate)
+        assertTrue(chosenNewerRelease is UpdateCheckState.UpdateAvailable)
+        assertEquals("1.4.0", (chosenNewerRelease as UpdateCheckState.UpdateAvailable).latestVersion)
+    }
 }

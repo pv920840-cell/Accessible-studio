@@ -96,6 +96,7 @@ import com.example.audio.WavAudioProcessor
 import com.example.data.MediaRepository
 import com.example.data.StudioPreferences
 import com.example.data.StudioSettingsState
+import com.example.ui.components.AccessibleAudioPickerDialog
 import com.example.ui.components.AccessibleAudioWaveform
 import com.example.ui.components.AccessibleEffectSlider
 import com.example.ui.components.AccessibleExportDialog
@@ -128,9 +129,12 @@ import com.example.ui.components.StudioVoiceOverDialog
 import com.example.ui.components.VoiceOverSourceChoice
 import com.example.ui.components.WaveformViewportMath
 import com.example.ui.components.WaveformViewportSnapshot
+import com.example.storage.StorageExportManager
 import com.example.ui.theme.LocalHighContrast
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -342,6 +346,8 @@ fun AudioStudioScreen(
 
     // Modal Visibility Flags
     var showOpenAudioDialog by remember { mutableStateOf(false) }
+    var showAccessibleAudioPicker by remember { mutableStateOf(false) }
+    var accessibleAudioPickerPurpose by remember { mutableStateOf("open") }
     var openInNewTab by remember { mutableStateOf(true) }
     var isImportingAudio by remember { mutableStateOf(false) }
     var importingMessage by remember { mutableStateOf("") }
@@ -841,8 +847,50 @@ fun AudioStudioScreen(
         loadImportedAudioUris(listOf(uri), explicitTitle = explicitTitle, forceNewTab = forceNewTab)
     }
 
-    val audioPickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        if (uri != null) loadImportedAudioUri(uri)
+    fun handlePickedMixAudioUri(uri: Uri, explicitTitle: String? = null) {
+        scope.launch {
+            try {
+                val pcm = audioProcessor.decodeUriToPcm(uri)
+                if (pcm.isNotEmpty()) {
+                    val name = explicitTitle?.takeIf { it.isNotBlank() }
+                        ?: audioProcessor.queryAudioDisplayName(uri)
+                        ?: "Second Audio File"
+                    pickedMixTitle = name
+                    pickedMixPcm = pcm
+                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                    AccessibilityHelper.announceForAccessibility(context, "Loaded $name ready to mix")
+                } else {
+                    Toast.makeText(context, "Could not decode selected mix file.", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Throwable) {
+                Toast.makeText(context, "Mix file decode error: ${e.localizedMessage ?: "Cannot read file"}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    fun handlePickedVoiceOverUri(uri: Uri, explicitTitle: String? = null) {
+        isDecodingVoiceOverFile = true
+        scope.launch {
+            try {
+                val pcm = audioProcessor.decodeUriToPcm(uri)
+                if (pcm.isNotEmpty()) {
+                    val name = explicitTitle?.takeIf { it.isNotBlank() }
+                        ?: audioProcessor.queryAudioDisplayName(uri)
+                        ?: "Music Track"
+                    pickedVoiceOverTitle = name
+                    pickedVoiceOverPcm = pcm
+                    pickedVoiceOverDurMs = ((pcm.size.toDouble() / workingSampleRate.coerceAtLeast(8000)) * 1000.0).toLong()
+                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                    AccessibilityHelper.announceForAccessibility(context, "Added $name to Voice Over")
+                } else {
+                    Toast.makeText(context, "Could not decode selected audio file.", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Throwable) {
+                Toast.makeText(context, "Voice Over audio error: ${e.localizedMessage ?: "Cannot read file"}", Toast.LENGTH_LONG).show()
+            } finally {
+                isDecodingVoiceOverFile = false
+            }
+        }
     }
 
     val osDocumentAudioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
@@ -868,52 +916,6 @@ fun AudioStudioScreen(
                 } catch (_: Throwable) {}
             }
             loadImportedAudioUris(uris)
-        }
-    }
-
-    val mixFilePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            scope.launch {
-                try {
-                    val pcm = audioProcessor.decodeUriToPcm(uri)
-                    if (pcm.isNotEmpty()) {
-                        val name = audioProcessor.queryAudioDisplayName(uri) ?: "Second Audio File"
-                        pickedMixTitle = name
-                        pickedMixPcm = pcm
-                        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                        AccessibilityHelper.announceForAccessibility(context, "Loaded $name ready to mix")
-                    } else {
-                        Toast.makeText(context, "Could not decode selected mix file.", Toast.LENGTH_LONG).show()
-                    }
-                } catch (e: Throwable) {
-                    Toast.makeText(context, "Mix file decode error: ${e.localizedMessage ?: "Cannot read file"}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    val voiceOverFilePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-        if (uri != null) {
-            isDecodingVoiceOverFile = true
-            scope.launch {
-                try {
-                    val pcm = audioProcessor.decodeUriToPcm(uri)
-                    if (pcm.isNotEmpty()) {
-                        val name = audioProcessor.queryAudioDisplayName(uri) ?: "Music Track"
-                        pickedVoiceOverTitle = name
-                        pickedVoiceOverPcm = pcm
-                        pickedVoiceOverDurMs = ((pcm.size.toDouble() / workingSampleRate.coerceAtLeast(8000)) * 1000.0).toLong()
-                        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                        AccessibilityHelper.announceForAccessibility(context, "Added $name to Voice Over")
-                    } else {
-                        Toast.makeText(context, "Could not decode selected audio file.", Toast.LENGTH_LONG).show()
-                    }
-                } catch (e: Throwable) {
-                    Toast.makeText(context, "Voice Over audio error: ${e.localizedMessage ?: "Cannot read file"}", Toast.LENGTH_LONG).show()
-                } finally {
-                    isDecodingVoiceOverFile = false
-                }
-            }
         }
     }
 
@@ -1725,6 +1727,15 @@ fun AudioStudioScreen(
                     currentPositionMs = livePosForSlider,
                     durationMs = durationMs,
                     onSeekTo = { playerManager.seekTo(it) },
+                    isPlaying = isPlaying,
+                    onTogglePlayPause = {
+                        if (isPlaying) {
+                            playerManager.pause()
+                        } else if (ensurePcmReadyForPlayback()) {
+                            playerManager.play()
+                        }
+                    },
+                    onScrubPreviewPulse = { playerManager.scrubPreviewAt(it) },
                     testTag = "slider_audio_studio_preview"
                 )
                 AccessibleTransportControls(
@@ -2009,7 +2020,11 @@ fun AudioStudioScreen(
             importingMessage = importingMessage,
             onImportMultipleFiles = { multiAudioPickerLauncher.launch(arrayOf("audio/*")) },
             onImportFromOs = { osDocumentAudioLauncher.launch(arrayOf("audio/*")) },
-            onImportFile = { audioPickerLauncher.launch("audio/*") },
+            onImportFile = {
+                showOpenAudioDialog = false
+                accessibleAudioPickerPurpose = "open"
+                showAccessibleAudioPicker = true
+            },
             onBrowseOsFolder = { osDocumentAudioLauncher.launch(arrayOf("*/*")) },
             onOpenExportedFile = { exported ->
                 loadImportedAudioUri(Uri.fromFile(File(exported.filePath)), explicitTitle = exported.title)
@@ -2248,7 +2263,10 @@ fun AudioStudioScreen(
             onStopPreview = {
                 restoreTrackAfterMixPreview()
             },
-            onPickFileToMix = { mixFilePickerLauncher.launch(arrayOf("audio/*")) },
+            onPickFileToMix = {
+                accessibleAudioPickerPurpose = "mix"
+                showAccessibleAudioPicker = true
+            },
             onConfirmMix = { overlayPcm, sourceName, startMs, mainVol, overlayVol, applyLimiter ->
                 if (mixPreviewActive) {
                     playerManager.stop()
@@ -2316,7 +2334,10 @@ fun AudioStudioScreen(
             pickedAudioTitle = pickedVoiceOverTitle,
             pickedAudioDurationMs = pickedVoiceOverDurMs,
             isDecodingAudio = isDecodingVoiceOverFile,
-            onPickAudioFile = { voiceOverFilePickerLauncher.launch(arrayOf("audio/*")) },
+            onPickAudioFile = {
+                accessibleAudioPickerPurpose = "voiceover"
+                showAccessibleAudioPicker = true
+            },
             onClearPickedAudio = {
                 pickedVoiceOverTitle = null
                 pickedVoiceOverPcm = null
@@ -2388,6 +2409,21 @@ fun AudioStudioScreen(
                 }
             },
             onDismiss = { showVoiceOverDialog = false }
+        )
+    }
+
+    if (showAccessibleAudioPicker) {
+        AccessibleAudioPickerDialog(
+            exportedAudios = savedExports,
+            onSelectAudio = { uri, title ->
+                showAccessibleAudioPicker = false
+                when (accessibleAudioPickerPurpose) {
+                    "mix" -> handlePickedMixAudioUri(uri, title)
+                    "voiceover" -> handlePickedVoiceOverUri(uri, title)
+                    else -> loadImportedAudioUri(uri, explicitTitle = title)
+                }
+            },
+            onDismiss = { showAccessibleAudioPicker = false }
         )
     }
 
@@ -2699,7 +2735,7 @@ fun AudioStudioScreen(
 
     if (showMusicRebalanceDialog) {
         var selectedStemMode by remember { mutableStateOf(StemSeparationMode.FOUR_STEMS) }
-        var stemMap by remember { mutableStateOf<Map<String, ShortArray>>(emptyMap()) }
+        var stemFiles by remember { mutableStateOf<Map<String, File>>(emptyMap()) }
         var stemProgress by remember { mutableFloatStateOf(0f) }
         var isStemBusy by remember { mutableStateOf(false) }
 
@@ -2750,7 +2786,7 @@ fun AudioStudioScreen(
                             progress = stemProgress,
                             selectedStemMode = selectedStemMode,
                             onSelectStemMode = { selectedStemMode = it },
-                            separatedStemNames = stemMap.keys.toList(),
+                            separatedStemNames = stemFiles.keys.toList(),
                             onPreviewRebalance = { vGain, bGain, pGain, oGain ->
                                 val basePcm = rawOriginalPcm
                                 if (basePcm != null && basePcm.isNotEmpty() && !isStemBusy) {
@@ -2761,16 +2797,20 @@ fun AudioStudioScreen(
                                             playerManager.stop()
                                             val preview = withContext(Dispatchers.Default) {
                                                 MusicRebalanceProcessor.rebalanceMix(
-                                                    basePcm,
-                                                    workingSampleRate,
-                                                    vGain,
-                                                    bGain,
-                                                    pGain,
-                                                    oGain
+                                                    samples = basePcm,
+                                                    sampleRate = workingSampleRate,
+                                                    vocalsGain = vGain,
+                                                    bassGain = bGain,
+                                                    percussionGain = pGain,
+                                                    otherGain = oGain,
+                                                    isCancelled = { !isActive }
                                                 ) { stemProgress = it }
                                             }
                                             playerManager.loadPcmData(preview, workingSampleRate)
                                             playerManager.play()
+                                        } catch (t: Throwable) {
+                                            if (t is CancellationException) throw t
+                                            Toast.makeText(context, "Rebalance preview failed: ${t.localizedMessage ?: "Error"}", Toast.LENGTH_LONG).show()
                                         } finally {
                                             isStemBusy = false
                                         }
@@ -2787,17 +2827,28 @@ fun AudioStudioScreen(
                                 val basePcm = rawOriginalPcm
                                 if (basePcm != null && basePcm.isNotEmpty() && !isStemBusy) {
                                     isStemBusy = true
-                                    stemProgress = 0.05f
+                                    stemProgress = 0.02f
                                     scope.launch {
                                         try {
+                                            val stemsDir = File(context.cacheDir, "stems/studio_active")
+                                            val base = openedFileBaseName?.takeIf { it.isNotBlank() } ?: "Track"
                                             val stems = withContext(Dispatchers.Default) {
-                                                MusicRebalanceProcessor.separateStems(basePcm, workingSampleRate, mode) {
-                                                    stemProgress = it
-                                                }
+                                                stemsDir.listFiles()?.forEach { try { it.delete() } catch (_: Throwable) {} }
+                                                MusicRebalanceProcessor.separateStemsStreamingToFiles(
+                                                    samples = basePcm,
+                                                    sampleRate = workingSampleRate,
+                                                    mode = mode,
+                                                    outputDir = stemsDir,
+                                                    baseName = base,
+                                                    isCancelled = { !isActive }
+                                                ) { stemProgress = it }
                                             }
-                                            stemMap = stems
+                                            stemFiles = stems
                                             AccessibilityHelper.announceForAccessibility(context, "Separated ${stems.size} stems")
                                             Toast.makeText(context, "Separated ${stems.size} stems ready to audition or save", Toast.LENGTH_SHORT).show()
+                                        } catch (t: Throwable) {
+                                            if (t is CancellationException) throw t
+                                            Toast.makeText(context, "Stem separation failed: ${t.localizedMessage ?: "Error"}", Toast.LENGTH_LONG).show()
                                         } finally {
                                             isStemBusy = false
                                         }
@@ -2805,40 +2856,40 @@ fun AudioStudioScreen(
                                 }
                             },
                             onAuditionStem = { stemName ->
-                                val stemPcm = stemMap[stemName]
-                                if (stemPcm != null && stemPcm.isNotEmpty()) {
+                                val stemFile = stemFiles[stemName]
+                                if (stemFile != null && stemFile.exists()) {
                                     playerManager.stop()
-                                    playerManager.loadPcmData(stemPcm, workingSampleRate)
+                                    playerManager.loadUri(Uri.fromFile(stemFile))
                                     playerManager.play()
                                     AccessibilityHelper.announceForAccessibility(context, "Playing $stemName stem")
                                 }
                             },
                             onExportStems = { mode ->
-                                if (stemMap.isNotEmpty() && !isStemBusy) {
+                                if (stemFiles.isNotEmpty() && !isStemBusy) {
                                     isStemBusy = true
                                     stemProgress = 0.05f
                                     scope.launch {
                                         try {
                                             val base = openedFileBaseName?.takeIf { it.isNotBlank() } ?: "Stems"
-                                            var idx = 0
-                                            stemMap.forEach { (stemName, stemPcm) ->
-                                                idx++
-                                                val safeStem = stemName.replace(" ", "_")
-                                                audioProcessor.exportSingleAudioFile(
-                                                    mainPcm = stemPcm,
-                                                    bgTrackConfig = null,
-                                                    bgPcm = null,
-                                                    settings = AudioEditSettings(),
-                                                    outputFileName = "${base}_${safeStem}_${mode.stemCount}stems",
-                                                    format = defaultExportFormat,
-                                                    onProgress = {}
-                                                )
-                                                stemProgress = idx.toFloat() / stemMap.size.coerceAtLeast(1)
+                                            withContext(Dispatchers.IO) {
+                                                var idx = 0
+                                                stemFiles.forEach { (stemName, stemFile) ->
+                                                    idx++
+                                                    val safeStem = stemName.replace(" ", "_")
+                                                    val targetName = "${base}_${safeStem}_${mode.stemCount}stems.wav"
+                                                    StorageExportManager.saveAudioFile(
+                                                        context = context,
+                                                        sourceFile = stemFile,
+                                                        targetFileName = targetName,
+                                                        mimeType = "audio/wav"
+                                                    )
+                                                    stemProgress = idx.toFloat() / stemFiles.size.coerceAtLeast(1)
+                                                }
                                             }
                                             mediaRepository.refreshExports()
-                                            Toast.makeText(context, "Saved ${stemMap.size} separated stem files", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Saved ${stemFiles.size} separated stem files", Toast.LENGTH_LONG).show()
                                         } catch (t: Throwable) {
-                                            if (t is kotlinx.coroutines.CancellationException) throw t
+                                            if (t is CancellationException) throw t
                                             Toast.makeText(context, "Stem export error: ${t.localizedMessage ?: "Failed"}", Toast.LENGTH_LONG).show()
                                         } finally {
                                             isStemBusy = false

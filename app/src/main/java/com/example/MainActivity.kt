@@ -616,6 +616,23 @@ class MainActivity : ComponentActivity() {
                         onShareApkLink = {
                             shareDirectApkLinkFor(dialogUpdate)
                         },
+                        onOpenReleasesPage = {
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            val targetPageUrl = when {
+                                dialogUpdate.downloadUrl.startsWith("https://", ignoreCase = true) &&
+                                    !AppUpdateChecker.isDirectApkUrl(dialogUpdate.downloadUrl) -> dialogUpdate.downloadUrl
+                                githubOwner.isNotBlank() && githubRepo.isNotBlank() ->
+                                    "https://github.com/${githubOwner.trim()}/${githubRepo.trim()}/releases"
+                                else -> "https://github.com/pv920840-cell/Accessible-studio/releases"
+                            }
+                            if (!AppUpdateChecker.openUpdateDownload(activityContext, targetPageUrl)) {
+                                android.widget.Toast.makeText(
+                                    activityContext,
+                                    "Could not open releases page in browser.",
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
                         onLater = {
                             dismissedUpdateVersion = dialogUpdate.latestVersion
                             activeUpdateDialog = null

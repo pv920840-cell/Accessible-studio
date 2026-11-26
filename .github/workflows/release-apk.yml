@@ -68,13 +68,14 @@ jobs:
           ls -lh debug.keystore
 
       - name: Run unit tests and build Debug APK
-        run: gradle :app:testDebugUnitTest :app:assembleDebug --stacktrace
+        run: gradle :app:testDebugUnitTest --max-workers=1 :app:assembleDebug --stacktrace
 
       - name: Prepare release assets & version.json
         run: |
           python3 -c '
           import glob, json, os, re, shutil
-          bc = glob.glob("app/build/generated/source/buildConfig/**/BuildConfig.java", recursive=True)[0]
+          bc_list = glob.glob("app/build/generated/source/buildConfig/debug/**/BuildConfig.java", recursive=True) or glob.glob("app/build/generated/source/buildConfig/**/BuildConfig.java", recursive=True)
+          bc = bc_list[0]
           text = open(bc).read()
           vcode = int(re.search(r"VERSION_CODE\s*=\s*(\d+)", text).group(1))
           vname = re.search(r"VERSION_NAME\s*=\s*\"([^\"]+)\"", text).group(1)

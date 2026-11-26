@@ -4,7 +4,7 @@
   "versionName": "1.5.0",
   "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.0/AccessibleStudio_V1.5.0.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 20688569,
+  "apkSizeBytes": 22104252,
   "changelog": "Added dedicated per-feature Feature Guide buttons inside every audio, video, effect, and Music Rebalance tool; wired live playback positions to Move Start/Finish/Point to now playing; removed the 1-minute playback slider cap for 5+ minute videos; and added Saved Projects location details in Settings.",
   "releaseNotes": "Added dedicated per-feature Feature Guide buttons inside every audio, video, effect, and Music Rebalance tool; wired live playback positions to Move Start/Finish/Point to now playing; removed the 1-minute playback slider cap for 5+ minute videos; and added Saved Projects location details in Settings."
 }

@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.InstallMobile
@@ -67,7 +68,8 @@ fun AppUpdateAvailableDialog(
     onLater: () -> Unit,
     onUninstallCurrentApp: () -> Unit = {},
     onSaveApkToDownloads: (File) -> Unit = {},
-    onShareApkLink: () -> Unit = {}
+    onShareApkLink: () -> Unit = {},
+    onOpenReleasesPage: () -> Unit = {}
 ) {
     val isHighContrast = LocalHighContrast.current
     val isDownloading = flowState is InAppUpdateFlowState.Downloading
@@ -282,15 +284,33 @@ fun AppUpdateAvailableDialog(
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text(
-                                text = flowState.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .testTag("txt_update_download_error")
-                            )
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = flowState.message,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    modifier = Modifier.testTag("txt_update_download_error")
+                                )
+                                OutlinedButton(
+                                    onClick = onOpenReleasesPage,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("btn_dialog_open_releases_page")
+                                        .semantics {
+                                            contentDescription = "Open Releases Page in browser to download Accessible Studio APK manually."
+                                        },
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Open Releases Page", fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
 

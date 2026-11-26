@@ -789,4 +789,76 @@ class AppUpdateCheckerTest {
         assertTrue(chosenNewerRelease is UpdateCheckState.UpdateAvailable)
         assertEquals("1.4.0", (chosenNewerRelease as UpdateCheckState.UpdateAvailable).latestVersion)
     }
+
+    @Test
+    fun extractGitHubReleaseApkUrl_andOwnerRepo_parseAssetsAndDownloadUrls() {
+        val releaseJson = """
+            {
+              "tag_name": "v1.5.0",
+              "assets": [
+                {
+                  "name": "checksums.txt",
+                  "browser_download_url": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.0/checksums.txt"
+                },
+                {
+                  "name": "AccessibleStudio_V1.5.0.apk",
+                  "browser_download_url": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.0/AccessibleStudio_V1.5.0.apk"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        assertEquals(
+            "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.0/AccessibleStudio_V1.5.0.apk",
+            AppUpdateChecker.extractGitHubReleaseApkUrl(releaseJson)
+        )
+        assertEquals(null, AppUpdateChecker.extractGitHubReleaseApkUrl("{}"))
+
+        assertEquals(
+            "pv920840-cell" to "Accessible-studio",
+            AppUpdateChecker.extractGitHubOwnerRepoFromUrl(
+                "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.0/AccessibleStudio_V1.5.0.apk"
+            )
+        )
+        assertEquals(null, AppUpdateChecker.extractGitHubOwnerRepoFromUrl("https://example.com/app.apk"))
+    }
+
+    @Test
+    fun appUpdateDialog_errorStateDisplaysReleasesPageButtonAndInvokesCallback() {
+        val sampleUpdate = UpdateCheckState.UpdateAvailable(
+            currentVersion = "1.4.0",
+            latestVersion = "1.5.0",
+            latestCode = 25,
+            downloadUrl = "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.0/AccessibleStudio_V1.5.0.apk",
+            releaseNotes = "Update 1.5.0 notes",
+            checkedAtMs = 7000L,
+            sourceLabel = "GitHub (main)",
+            apkUrl = "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.0/AccessibleStudio_V1.5.0.apk"
+        )
+        var openReleasesClicks = 0
+
+        composeRule.setContent {
+            AppUpdateAvailableDialog(
+                update = sampleUpdate,
+                flowState = InAppUpdateFlowState.Error(
+                    "Download failed (HTTP 404): Release APK was not found on GitHub Releases yet. Wait for the release build to finish or tap Open Releases Page."
+                ),
+                onUpdateNow = {},
+                onOpenInstallPermissionSettings = {},
+                onInstallDownloadedApk = {},
+                onLater = {},
+                onOpenReleasesPage = { openReleasesClicks++ }
+            )
+        }
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("txt_update_download_error")
+            .assertTextContains("HTTP 404", substring = true)
+        composeRule.onNodeWithTag("btn_dialog_open_releases_page")
+            .performScrollTo()
+            .assertExists()
+            .performClick()
+        composeRule.waitForIdle()
+        assertEquals(1, openReleasesClicks)
+    }
 }

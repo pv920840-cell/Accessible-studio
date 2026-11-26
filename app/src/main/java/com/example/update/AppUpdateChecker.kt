@@ -443,6 +443,24 @@ object AppUpdateChecker {
         }
     }
 
+    fun extractGitHubReleaseApkUrl(jsonBody: String): String? {
+        return try {
+            val json = JSONObject(jsonBody)
+            val assets = json.optJSONArray("assets") ?: return null
+            for (i in 0 until assets.length()) {
+                val asset = assets.optJSONObject(i) ?: continue
+                val assetName = asset.optString("name", "")
+                val url = asset.optString("browser_download_url", "").trim()
+                if (url.isNotEmpty() && assetName.endsWith(".apk", ignoreCase = true)) {
+                    return resolveDownloadUrl(url)
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun extractVersionFromGitHubRelease(tagName: String, releaseName: String): String {
         val candidates = listOf(tagName, releaseName)
         for (candidate in candidates) {
@@ -562,6 +580,7 @@ object AppUpdateChecker {
                     acceptHeader = "application/vnd.github+json"
                 )
                 val parsedRelease: UpdateCheckState? = if (releaseResult.code in 200..299 && releaseResult.body != null) {
+                    val attachedApkUrl = extractGitHubReleaseApkUrl(releaseResult.body)
                     val assetVersionJsonUrl = extractGitHubVersionJsonAssetUrl(releaseResult.body)
                     val assetParsed = if (assetVersionJsonUrl != null) {
                         val assetJsonResult = fetchHttpText(appendCacheBuster(assetVersionJsonUrl, now))
@@ -579,10 +598,13 @@ object AppUpdateChecker {
                     } else {
                         null
                     }
-                    if (assetParsed != null && assetParsed !is UpdateCheckState.Error) {
-                        assetParsed
-                    } else {
-                        parseGitHubReleaseJson(
+                    when {
+                        assetParsed is UpdateCheckState.UpdateAvailable -> {
+                            val verifiedApk = attachedApkUrl ?: assetParsed.apkUrl
+                            assetParsed.copy(apkUrl = verifiedApk)
+                        }
+                        assetParsed != null && assetParsed !is UpdateCheckState.Error -> assetParsed
+                        else -> parseGitHubReleaseJson(
                             jsonBody = releaseResult.body,
                             currentVersionName = currentVersionName,
                             currentVersionCode = currentVersionCode,
@@ -594,6 +616,40 @@ object AppUpdateChecker {
                 }
 
                 val bestGitHub = selectBestGitHubUpdateCandidate(parsedRaw, parsedRelease)
+                if (bestGitHub is UpdateCheckState.UpdateAvailable) {
+                    val primaryApk = bestGitHub.apkUrl.ifBlank { bestGitHub.downloadUrl }
+                    val isFromRawMain = bestGitHub.sourceLabel == "GitHub (main)"
+                    if (!isFromRawMain || verifyApkUrlReachable(primaryApk)) {
+                        return@withContext bestGitHub
+                    }
+                    // raw main version.json points to an APK not yet published on GitHub Releases (404).
+                    // Prefer a published GitHub Release whose APK asset actually exists.
+                    if (parsedRelease is UpdateCheckState.UpdateAvailable) {
+                        val relApk = parsedRelease.apkUrl.ifBlank { parsedRelease.downloadUrl }
+                        if (verifyApkUrlReachable(relApk)) {
+                            return@withContext parsedRelease
+                        }
+                    }
+                    val publishedRelease = findReachableGitHubReleaseUpdate(
+                        owner = githubOwner,
+                        repo = githubRepo,
+                        currentVersionName = currentVersionName,
+                        currentVersionCode = currentVersionCode,
+                        checkedAtMs = now
+                    )
+                    if (publishedRelease != null) {
+                        return@withContext publishedRelease
+                    }
+                    if (parsedRelease is UpdateCheckState.UpToDate) {
+                        return@withContext parsedRelease
+                    }
+                    return@withContext UpdateCheckState.UpToDate(
+                        currentVersion = currentVersionName,
+                        latestVersion = currentVersionName,
+                        checkedAtMs = now,
+                        sourceLabel = "Pending Release APK"
+                    )
+                }
                 if (bestGitHub != null && bestGitHub !is UpdateCheckState.Error) {
                     return@withContext bestGitHub
                 }
@@ -936,8 +992,8 @@ object AppUpdateChecker {
 
     /**
      * Downloads the APK from [apkUrl] into app-specific cache storage (`cacheDir/updates`)
-     * with redirect following and progress callbacks. If the endpoint returns an HTML page
-     * instead of an APK binary, returns [ApkDownloadResult.OpenInBrowserFallback].
+     * with redirect following, GitHub Release 404 asset fallback resolution, and progress callbacks.
+     * If the endpoint returns an HTML page instead of an APK binary, returns [ApkDownloadResult.OpenInBrowserFallback].
      */
     suspend fun downloadApkToCache(
         context: Context,
@@ -963,11 +1019,58 @@ object AppUpdateChecker {
         val tempFile = File(updatesDir, "AccessibleStudio_V$safeVersion.apk.tmp")
         val targetFile = File(updatesDir, "AccessibleStudio_V$safeVersion.apk")
 
+        val primaryAttempt = attemptSingleApkDownload(
+            resolvedUrl = resolvedUrl,
+            tempFile = tempFile,
+            targetFile = targetFile,
+            onProgress = onProgress
+        )
+        when (primaryAttempt) {
+            is SingleDownloadAttempt.Success -> return@withContext ApkDownloadResult.Success(primaryAttempt.apkFile)
+            is SingleDownloadAttempt.BrowserFallback -> return@withContext ApkDownloadResult.OpenInBrowserFallback(primaryAttempt.url)
+            is SingleDownloadAttempt.HttpFailure -> {
+                if (primaryAttempt.code == HttpURLConnection.HTTP_NOT_FOUND || primaryAttempt.code == 410) {
+                    val fallbackCandidates = resolveGitHub404FallbackApkUrls(
+                        context = context,
+                        failedUrl = resolvedUrl,
+                        versionName = versionName
+                    )
+                    for (candidate in fallbackCandidates) {
+                        runCatching { tempFile.delete() }
+                        when (val retry = attemptSingleApkDownload(candidate, tempFile, targetFile, onProgress)) {
+                            is SingleDownloadAttempt.Success -> return@withContext ApkDownloadResult.Success(retry.apkFile)
+                            is SingleDownloadAttempt.BrowserFallback -> return@withContext ApkDownloadResult.OpenInBrowserFallback(retry.url)
+                            else -> Unit
+                        }
+                    }
+                    return@withContext ApkDownloadResult.Error(
+                        "Download failed (HTTP 404): Release APK was not found on GitHub Releases yet. Wait for the release build to finish or tap Open Releases Page."
+                    )
+                }
+                return@withContext ApkDownloadResult.Error("Download failed (HTTP ${primaryAttempt.code}).")
+            }
+            is SingleDownloadAttempt.Failure -> return@withContext ApkDownloadResult.Error(primaryAttempt.message)
+        }
+    }
+
+    private sealed interface SingleDownloadAttempt {
+        data class Success(val apkFile: File) : SingleDownloadAttempt
+        data class BrowserFallback(val url: String) : SingleDownloadAttempt
+        data class HttpFailure(val code: Int) : SingleDownloadAttempt
+        data class Failure(val message: String) : SingleDownloadAttempt
+    }
+
+    private fun attemptSingleApkDownload(
+        resolvedUrl: String,
+        tempFile: File,
+        targetFile: File,
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit
+    ): SingleDownloadAttempt {
         var connection: HttpURLConnection? = null
-        try {
+        return try {
             var currentUrl = resolvedUrl
             var redirects = 0
-            while (redirects < 6) {
+            while (redirects < 8) {
                 val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     connectTimeout = CONNECT_TIMEOUT_MS
@@ -991,7 +1094,7 @@ object AppUpdateChecker {
                     if (next.isEmpty()) break
                     currentUrl = if (next.startsWith("http", ignoreCase = true)) next else resolveDownloadUrl(next)
                     if (!currentUrl.startsWith("https://", ignoreCase = true)) {
-                        return@withContext ApkDownloadResult.Error("Blocked non-HTTPS redirect.")
+                        return SingleDownloadAttempt.Failure("Blocked non-HTTPS redirect.")
                     }
                     redirects++
                     continue
@@ -1000,15 +1103,16 @@ object AppUpdateChecker {
                 break
             }
 
-            val activeConn = connection ?: return@withContext ApkDownloadResult.Error("Too many redirects while downloading update.")
+            val activeConn = connection
+                ?: return SingleDownloadAttempt.Failure("Too many redirects while downloading update.")
             val code = activeConn.responseCode
             if (code !in 200..299) {
-                return@withContext ApkDownloadResult.Error("Download failed (HTTP $code).")
+                return SingleDownloadAttempt.HttpFailure(code)
             }
 
             val contentType = activeConn.contentType.orEmpty().lowercase(Locale.ROOT)
             if ("text/html" in contentType) {
-                return@withContext ApkDownloadResult.OpenInBrowserFallback(resolvedUrl)
+                return SingleDownloadAttempt.BrowserFallback(resolvedUrl)
             }
 
             val totalBytes = activeConn.contentLengthLong.coerceAtLeast(-1L)
@@ -1025,10 +1129,10 @@ object AppUpdateChecker {
                             firstRead = false
                             // Verify ZIP/APK signature ('PK') cleanly
                             if (read >= 2 && (buffer[0] != 0x50.toByte() || buffer[1] != 0x4B.toByte())) {
-                                return@withContext if (isDirectApkUrl(resolvedUrl)) {
-                                    ApkDownloadResult.Error("Downloaded file is not a valid Android APK package.")
+                                return if (isDirectApkUrl(resolvedUrl)) {
+                                    SingleDownloadAttempt.Failure("Downloaded file is not a valid Android APK package.")
                                 } else {
-                                    ApkDownloadResult.OpenInBrowserFallback(resolvedUrl)
+                                    SingleDownloadAttempt.BrowserFallback(resolvedUrl)
                                 }
                             }
                         }
@@ -1042,7 +1146,7 @@ object AppUpdateChecker {
 
             if (downloaded <= 0L) {
                 runCatching { tempFile.delete() }
-                return@withContext ApkDownloadResult.Error("Downloaded APK file was empty.")
+                return SingleDownloadAttempt.Failure("Downloaded APK file was empty.")
             }
 
             if (targetFile.exists()) targetFile.delete()
@@ -1051,13 +1155,175 @@ object AppUpdateChecker {
                 tempFile.delete()
             }
 
-            ApkDownloadResult.Success(targetFile)
+            SingleDownloadAttempt.Success(targetFile)
         } catch (e: Exception) {
             runCatching { tempFile.delete() }
             val msg = e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Network error during download"
-            ApkDownloadResult.Error("Update download failed: $msg")
+            SingleDownloadAttempt.Failure("Update download failed: $msg")
         } finally {
             connection?.disconnect()
+        }
+    }
+
+    internal fun extractGitHubOwnerRepoFromUrl(url: String): Pair<String, String>? {
+        val match = Regex(
+            """^https://github\.com/([^/]+)/([^/]+)(?:/|$)""",
+            RegexOption.IGNORE_CASE
+        ).find(url.trim()) ?: return null
+        val owner = match.groupValues[1]
+        val repo = match.groupValues[2]
+        return if (isValidGitHubRepo(owner, repo)) owner to repo else null
+    }
+
+    private fun resolveGitHub404FallbackApkUrls(
+        context: Context,
+        failedUrl: String,
+        versionName: String
+    ): List<String> {
+        val cleanVersion = versionName.trim().removePrefix("v").removePrefix("V")
+        val repoFromUrl = extractGitHubOwnerRepoFromUrl(failedUrl)
+        val config = runCatching { loadPublishConfig(context) }.getOrNull()
+        val ownerRepo = repoFromUrl ?: config?.takeIf { isValidGitHubRepo(it.owner, it.repo) }?.let { it.owner to it.repo }
+        val candidates = LinkedHashSet<String>()
+
+        if (ownerRepo != null) {
+            val (owner, repo) = ownerRepo
+            if (cleanVersion.isNotEmpty()) {
+                // 1. Check exact tag endpoints (`v1.5.0` or `1.5.0`) on GitHub Releases API to find whatever APK asset filename was uploaded
+                listOf(
+                    "$GITHUB_API_BASE/repos/$owner/$repo/releases/tags/v$cleanVersion",
+                    "$GITHUB_API_BASE/repos/$owner/$repo/releases/tags/$cleanVersion"
+                ).forEach { tagUrl ->
+                    val tagRes = fetchHttpText(tagUrl, acceptHeader = "application/vnd.github+json")
+                    if (tagRes.code in 200..299 && tagRes.body != null) {
+                        extractGitHubReleaseApkUrl(tagRes.body)?.let { candidates.add(it) }
+                    }
+                }
+                candidates.add("https://github.com/$owner/$repo/releases/download/$cleanVersion/AccessibleStudio_V$cleanVersion.apk")
+            }
+
+            // 2. Check GitHub releases/latest if not older than installed version
+            val installed = runCatching { getInstalledAppInfo(context) }.getOrNull()
+            val latestRes = fetchHttpText(buildGitHubLatestReleaseUrl(owner, repo), acceptHeader = "application/vnd.github+json")
+            if (latestRes.code in 200..299 && latestRes.body != null) {
+                val parsed = parseGitHubReleaseJson(
+                    jsonBody = latestRes.body,
+                    currentVersionName = installed?.versionName ?: BuildConfig.VERSION_NAME,
+                    currentVersionCode = installed?.versionCode ?: BuildConfig.VERSION_CODE.toLong()
+                )
+                if (parsed is UpdateCheckState.UpdateAvailable && isDirectApkUrl(parsed.apkUrl)) {
+                    candidates.add(parsed.apkUrl)
+                } else {
+                    extractGitHubReleaseApkUrl(latestRes.body)?.takeIf {
+                        installed == null || parsed !is UpdateCheckState.UpToDate
+                    }?.let { candidates.add(it) }
+                }
+            }
+        }
+
+        if (cleanVersion.isNotEmpty()) {
+            candidates.add("$BASE_HOST_URL/AccessibleStudio_V$cleanVersion.apk")
+        }
+        candidates.remove(failedUrl)
+        return candidates.filter { it.startsWith("https://", ignoreCase = true) }
+    }
+
+    private fun verifyApkUrlReachable(rawUrl: String): Boolean {
+        val resolved = resolveDownloadUrl(rawUrl)
+        if (!resolved.startsWith("https://", ignoreCase = true)) return false
+        return try {
+            var currentUrl = resolved
+            var redirects = 0
+            while (redirects < 8) {
+                val conn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "HEAD"
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                    instanceFollowRedirects = false
+                    useCaches = false
+                    setRequestProperty("User-Agent", "AccessibleStudio/${BuildConfig.VERSION_NAME}")
+                }
+                val code = try {
+                    conn.responseCode
+                } finally {
+                    conn.disconnect()
+                }
+                if (code in listOf(
+                        HttpURLConnection.HTTP_MOVED_PERM,
+                        HttpURLConnection.HTTP_MOVED_TEMP,
+                        HttpURLConnection.HTTP_SEE_OTHER,
+                        307,
+                        308
+                    )
+                ) {
+                    val next = conn.getHeaderField("Location")?.trim().orEmpty()
+                    if (next.isEmpty()) return false
+                    currentUrl = if (next.startsWith("http", ignoreCase = true)) next else resolveDownloadUrl(next)
+                    if (!currentUrl.startsWith("https://", ignoreCase = true)) return false
+                    redirects++
+                    continue
+                }
+                if (code in 200..299) {
+                    val contentType = conn.contentType.orEmpty().lowercase(Locale.ROOT)
+                    return "text/html" !in contentType
+                }
+                if (code == 405 || code == 403) {
+                    // Fallback tiny range GET when server disallows HEAD
+                    val getConn = (URL(currentUrl).openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 5000
+                        readTimeout = 5000
+                        instanceFollowRedirects = false
+                        useCaches = false
+                        setRequestProperty("Range", "bytes=0-0")
+                        setRequestProperty("User-Agent", "AccessibleStudio/${BuildConfig.VERSION_NAME}")
+                    }
+                    return try {
+                        val getCode = getConn.responseCode
+                        getCode in 200..299 || getCode == 206
+                    } finally {
+                        getConn.disconnect()
+                    }
+                }
+                return false
+            }
+            false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun findReachableGitHubReleaseUpdate(
+        owner: String,
+        repo: String,
+        currentVersionName: String,
+        currentVersionCode: Long,
+        checkedAtMs: Long
+    ): UpdateCheckState.UpdateAvailable? {
+        val listUrl = "$GITHUB_API_BASE/repos/${owner.trim()}/${repo.trim()}/releases?per_page=5"
+        val res = fetchHttpText(listUrl, acceptHeader = "application/vnd.github+json")
+        if (res.code !in 200..299 || res.body.isNullOrBlank()) return null
+        return try {
+            val arr = JSONArray(res.body)
+            for (i in 0 until arr.length()) {
+                val rel = arr.optJSONObject(i) ?: continue
+                if (rel.optBoolean("draft", false)) continue
+                val parsed = parseGitHubReleaseJson(
+                    jsonBody = rel.toString(),
+                    currentVersionName = currentVersionName,
+                    currentVersionCode = currentVersionCode,
+                    checkedAtMs = checkedAtMs
+                )
+                if (parsed is UpdateCheckState.UpdateAvailable &&
+                    isDirectApkUrl(parsed.apkUrl) &&
+                    verifyApkUrlReachable(parsed.apkUrl)
+                ) {
+                    return parsed
+                }
+            }
+            null
+        } catch (_: Exception) {
+            null
         }
     }
 

@@ -664,14 +664,37 @@
                 handleDownloadError();
             };
 
-            function handleDownloadError() {
-                progressTitle.innerHTML = '<span>⚠️</span><span>Direct Download</span>';
-                progressSpeed.textContent = 'Opening direct link...';
-                announce('Opening direct download in your browser.');
-                window.location.href = APK_URL;
+            async function handleDownloadError() {
+                progressTitle.innerHTML = '<span>⚠️</span><span>Checking Release Mirror...</span>';
+                progressSpeed.textContent = 'Resolving latest APK...';
+                try {
+                    const relRes = await fetch('https://api.github.com/repos/pv920840-cell/Accessible-studio/releases/latest', {
+                        headers: { 'Accept': 'application/vnd.github+json' }
+                    });
+                    if (relRes.ok) {
+                        const relData = await relRes.json();
+                        const assets = Array.isArray(relData.assets) ? relData.assets : [];
+                        const apkAsset = assets.find(a => a && typeof a.name === 'string' && a.name.toLowerCase().endsWith('.apk'));
+                        if (apkAsset && apkAsset.browser_download_url) {
+                            announce('Downloading latest published release APK.');
+                            window.location.href = apkAsset.browser_download_url;
+                            btn.disabled = false;
+                            btnIcon.textContent = '⬇️';
+                            btnText.textContent = 'Download APK (Latest Release)';
+                            isDownloading = false;
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    // Fall through to releases page
+                }
+                progressTitle.innerHTML = '<span>⚠️</span><span>Opening Releases</span>';
+                progressSpeed.textContent = 'Opening GitHub Releases...';
+                announce('Opening GitHub Releases page.');
+                window.location.href = 'https://github.com/pv920840-cell/Accessible-studio/releases';
                 btn.disabled = false;
                 btnIcon.textContent = '⬇️';
-                btnText.textContent = 'Download APK (Direct)';
+                btnText.textContent = 'Download APK (Releases)';
                 isDownloading = false;
             }
 

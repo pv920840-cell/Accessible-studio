@@ -794,6 +794,53 @@ fun AccessibilitySettingsSheet(
                 }
             )
 
+            // 6. Saved Projects & Workflow Storage Details
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("card_saved_projects_location"),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (draftHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
+                ),
+                border = BorderStroke(
+                    if (draftHighContrast) 2.dp else 1.dp,
+                    if (draftHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outlineVariant
+                ),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "SAVED PROJECTS & WORKFLOW LOCATION",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Black,
+                        color = if (draftHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "• Where Saved Projects Appear in App:\n" +
+                            "When you create a project or save from a workflow using Save, it appears on the Home Screen under \"Existing Projects\" with a Saved or Edited status badge. Tap any saved project there to reopen it in Project Hub with all trims, cuts, effects, and workflow state intact.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (draftHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "• Internal Project Workflow Folder:\n" +
+                            "Editable project files and workflow drafts are stored privately in app internal storage (filesDir/studio_projects/ and projects.json) so unfinished projects remain safe and editable separately from final exports.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (draftHighContrast) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "• Final Rendered Exports Location:\n" +
+                            "When you run Export, finished files appear in the Exports tab and are saved to Music/Audio Studio/ (for audio) or Movies/Accessible Studio/ (for video).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (draftHighContrast) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             // Primary Save All Settings Button
             Button(
                 onClick = {

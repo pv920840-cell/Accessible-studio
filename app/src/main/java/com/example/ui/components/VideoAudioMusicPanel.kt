@@ -120,6 +120,7 @@ fun VideoAudioMusicPanel(
     val context = LocalContext.current
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
+    var guideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
 
     var selectedPreset by remember { mutableStateOf(SoundEffectPreset.CHIME) }
     var sfxDurationMs by remember { mutableLongStateOf(1500L) }
@@ -166,7 +167,9 @@ fun VideoAudioMusicPanel(
         SectionToolCard(
             title = "Narration Recorder",
             subtitle = "Record voiceover segments directly over your video timeline",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_NARRATION },
+            featureGuideTag = "btn_feature_guide_narration"
         ) {
             Button(
                 onClick = {
@@ -227,7 +230,9 @@ fun VideoAudioMusicPanel(
         SectionToolCard(
             title = "Add Multi Music",
             subtitle = "Layer multiple background music tracks with Smart Ducking & Repeat Loop",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_MULTI_MUSIC },
+            featureGuideTag = "btn_feature_guide_multi_music"
         ) {
             OutlinedButton(
                 onClick = { musicPicker.launch("audio/*") },
@@ -405,7 +410,9 @@ fun VideoAudioMusicPanel(
         SectionToolCard(
             title = "Sound Effects & Freeze Frame",
             subtitle = "Insert sound effects at timestamps with custom durations & optional freeze frame",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_SOUND_EFFECTS },
+            featureGuideTag = "btn_feature_guide_sfx"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 SoundEffectPreset.values().filter { it != SoundEffectPreset.CUSTOM_FILE }.forEach { preset ->
@@ -481,7 +488,9 @@ fun VideoAudioMusicPanel(
             title = "Audio Track Manager",
             subtitle = "Keep, mute, or replace video audio track and set master volume",
             isHighContrast = isHighContrast,
-            modifier = Modifier.testTag("section_video_audio_manager")
+            modifier = Modifier.testTag("section_video_audio_manager"),
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_AUDIO_MANAGER },
+            featureGuideTag = "btn_feature_guide_audio_manager"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 VideoAudioOption.values().forEach { opt ->
@@ -523,7 +532,9 @@ fun VideoAudioMusicPanel(
             title = "Adaptive Noise Reducer",
             subtitle = "Remove background hiss, hum, or fan noise cleanly with studio de-noise",
             isHighContrast = isHighContrast,
-            modifier = Modifier.testTag("section_video_noise_reducer")
+            modifier = Modifier.testTag("section_video_noise_reducer"),
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_NOISE_REDUCER },
+            featureGuideTag = "btn_feature_guide_video_denoise"
         ) {
             VideoAdaptiveNoiseReductionSection(
                 enabled = noiseReduceEnabled,
@@ -539,7 +550,9 @@ fun VideoAudioMusicPanel(
         SectionToolCard(
             title = "Video to Audio",
             subtitle = "Extract the audio track directly into Music/Audio Studio",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_TO_AUDIO },
+            featureGuideTag = "btn_feature_guide_video_to_audio"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("MP3", "AAC", "M4A", "WAV", "FLAC").forEach { fmt ->
@@ -561,6 +574,13 @@ fun VideoAudioMusicPanel(
             }
         }
         }
+    }
+
+    guideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { guideTopic = null }
+        )
     }
 }
 

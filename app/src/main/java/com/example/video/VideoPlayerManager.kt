@@ -37,6 +37,12 @@ class VideoPlayerManager(private val context: Context) {
     private val _videoAspectRatio = MutableStateFlow(1.0f)
     val videoAspectRatio: StateFlow<Float> = _videoAspectRatio.asStateFlow()
 
+    fun updateDurationHint(hintMs: Long) {
+        if (!_isPreparedDuration.value && hintMs > 0L) {
+            _durationMs.value = hintMs.coerceAtLeast(1000L)
+        }
+    }
+
     fun attachSurface(holder: SurfaceHolder) {
         surfaceHolder = holder
         mediaPlayer?.setDisplay(holder)
@@ -110,7 +116,10 @@ class VideoPlayerManager(private val context: Context) {
     }
 
     fun seekTo(positionMs: Long) {
-        val safe = positionMs.coerceIn(0L, _durationMs.value)
+        val maxDur = _durationMs.value.coerceAtLeast(positionMs.coerceAtLeast(1000L).let {
+            if (_isPreparedDuration.value) _durationMs.value else maxOf(_durationMs.value, positionMs)
+        })
+        val safe = positionMs.coerceIn(0L, maxDur)
         _currentPositionMs.value = safe
         try {
             mediaPlayer?.seekTo(safe.toInt())
@@ -122,7 +131,8 @@ class VideoPlayerManager(private val context: Context) {
      * or seeks smoothly if already playing.
      */
     fun scrubPreviewAt(positionMs: Long, previewDurationMs: Long = 220L) {
-        val safe = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(0L))
+        val maxDur = if (_isPreparedDuration.value) _durationMs.value else maxOf(_durationMs.value, positionMs)
+        val safe = positionMs.coerceIn(0L, maxDur.coerceAtLeast(0L))
         if (_isPlaying.value && previewPulseJob?.isActive != true) {
             seekTo(safe)
             return
@@ -133,7 +143,7 @@ class VideoPlayerManager(private val context: Context) {
             return
         }
         previewPulseJob?.cancel()
-        val endLimit = (safe + previewDurationMs).coerceAtMost(_durationMs.value.coerceAtLeast(safe))
+        val endLimit = (safe + previewDurationMs).coerceAtMost(maxDur.coerceAtLeast(safe))
         play(startMs = safe, endLimitMs = endLimit)
         previewPulseJob = scope.launch {
             delay(previewDurationMs)

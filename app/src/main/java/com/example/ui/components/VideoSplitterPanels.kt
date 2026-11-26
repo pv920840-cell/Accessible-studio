@@ -41,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -226,12 +227,22 @@ fun VideoSplitterPanel(
     splitPointsMs: List<Long>,
     onUpdateSplitPoints: (List<Long>) -> Unit,
     onPlayFrom: (Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPositionMsProvider: (() -> Long)? = null,
+    onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val safeDuration = durationMs.coerceAtLeast(1000L)
     var stepMs by remember { mutableStateOf(1000L) }
+    var showGuide by remember { mutableStateOf(false) }
     var pointMs by remember(durationMs) {
         mutableStateOf((currentPositionMs.coerceIn(trimStartMs, trimEndMs.coerceAtLeast(trimStartMs))))
+    }
+
+    val latestPosProvider by rememberUpdatedState(currentPositionMsProvider)
+    val latestCurrentPos by rememberUpdatedState(currentPositionMs)
+    val latestSafeDuration by rememberUpdatedState(safeDuration)
+    val movePointToNow = {
+        pointMs = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
     }
 
     val resultingParts = remember(trimStartMs, trimEndMs, splitPointsMs) {
@@ -244,11 +255,23 @@ fun VideoSplitterPanel(
             .testTag("panel_video_splitter"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "Video Splitter",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Video Splitter",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            FeatureGuideButton(
+                featureTitle = "Video Splitter",
+                onClick = { onOpenFeatureGuide?.invoke() ?: run { showGuide = true } },
+                testTag = "btn_feature_guide_splitter"
+            )
+        }
         Text(
             text = "Move Point to each split position and tap Add split point.",
             style = MaterialTheme.typography.bodySmall,
@@ -267,11 +290,17 @@ fun VideoSplitterPanel(
                     .testTag("btn_splitter_move_point_now")
                     .combinedClickable(
                         role = Role.Button,
-                        onClick = { pointMs = currentPositionMs.coerceIn(0L, safeDuration) },
-                        onDoubleClick = { pointMs = currentPositionMs.coerceIn(0L, safeDuration) }
+                        onClick = { movePointToNow() },
+                        onDoubleClick = { movePointToNow() }
                     )
                     .semantics {
                         contentDescription = "Move Point slider to now playing. Double tap to place Point at current playback position."
+                        customActions = listOf(
+                            CustomAccessibilityAction("Place Point marker at now playing") {
+                                movePointToNow()
+                                true
+                            }
+                        )
                     },
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surface,
@@ -391,6 +420,13 @@ fun VideoSplitterPanel(
             }
         }
     }
+
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.VIDEO_SPLITTER,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -408,15 +444,25 @@ fun VideoAutoSplitterPanel(
     onUpdateBounds: (startMs: Long, endMs: Long) -> Unit,
     onUpdateAutoSplitConfig: (AutoSplitMode, Long, Int, Float) -> Unit,
     onPlaySelection: (Long, Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPositionMsProvider: (() -> Long)? = null,
+    onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val safeDuration = durationMs.coerceAtLeast(1000L)
     var stepMs by remember { mutableStateOf(1000L) }
     var showCustomDialog by remember { mutableStateOf(false) }
+    var showGuide by remember { mutableStateOf(false) }
 
     val clampedStart = trimStartMs.coerceIn(0L, safeDuration)
     val clampedEnd = trimEndMs.coerceIn((clampedStart + 250L).coerceAtMost(safeDuration), safeDuration)
     val clipDurationMs = (clampedEnd - clampedStart).coerceAtLeast(0L)
+
+    val latestPosProvider by rememberUpdatedState(currentPositionMsProvider)
+    val latestCurrentPos by rememberUpdatedState(currentPositionMs)
+    val latestSafeDuration by rememberUpdatedState(safeDuration)
+    val latestClampedStart by rememberUpdatedState(clampedStart)
+    val latestClampedEnd by rememberUpdatedState(clampedEnd)
+    val latestOnUpdateBounds by rememberUpdatedState(onUpdateBounds)
 
     val previewSegments = remember(
         clampedStart,
@@ -453,21 +499,35 @@ fun VideoAutoSplitterPanel(
             .testTag("panel_video_auto_splitter"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "Video Auto splitter",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Video Auto splitter",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            FeatureGuideButton(
+                featureTitle = "Video Auto splitter",
+                onClick = { onOpenFeatureGuide?.invoke() ?: run { showGuide = true } },
+                testTag = "btn_feature_guide_auto_splitter"
+            )
+        }
 
         MovePlayMoveRow(
             onMoveStartNow = {
-                val (s, e) = VideoCutMath.clampStartCutMarker(currentPositionMs, clampedEnd, safeDuration)
-                onUpdateBounds(s, e)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampStartCutMarker(nowPos, latestClampedEnd, latestSafeDuration)
+                latestOnUpdateBounds(s, e)
             },
-            onPlay = { onPlaySelection(clampedStart, clampedEnd) },
+            onPlay = { onPlaySelection(latestClampedStart, latestClampedEnd) },
             onMoveFinishNow = {
-                val (s, e) = VideoCutMath.clampEndCutMarker(clampedStart, currentPositionMs, safeDuration)
-                onUpdateBounds(s, e)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampEndCutMarker(latestClampedStart, nowPos, latestSafeDuration)
+                latestOnUpdateBounds(s, e)
             },
             tagPrefix = "auto_splitter"
         )
@@ -616,6 +676,13 @@ fun VideoAutoSplitterPanel(
                     onUpdateAutoSplitConfig(mode, intervalMs, count, sizeMb)
                     showCustomDialog = false
                 }
+            )
+        }
+
+        if (showGuide) {
+            SingleFeatureGuideDialog(
+                topic = FeatureGuideTopic.VIDEO_AUTO_SPLITTER,
+                onDismiss = { showGuide = false }
             )
         }
     }

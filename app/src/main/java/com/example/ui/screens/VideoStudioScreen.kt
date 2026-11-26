@@ -88,7 +88,9 @@ import com.example.ui.components.AccessibleTrimSection
 import com.example.ui.components.AccessibleVideoPickerDialog
 import com.example.ui.components.ActiveEffectChipData
 import com.example.ui.components.ActiveEffectsLongPressBar
-import com.example.ui.components.StudioFeatureGuideDialog
+import com.example.ui.components.FeatureGuideCatalog
+import com.example.ui.components.FeatureGuideTopic
+import com.example.ui.components.SingleFeatureGuideDialog
 import com.example.ui.components.VideoAudioMusicPanel
 import com.example.ui.components.VideoConvertAndMetaPanel
 import com.example.ui.components.VideoOverlaysVfxPanel
@@ -179,6 +181,7 @@ fun VideoStudioScreen(
 
     val isPlaying by videoPlayer.isPlaying.collectAsState()
     val durationMs by videoPlayer.durationMs.collectAsState()
+    val effectiveDuration = maxOf(durationMs, videoMeta.durationMs)
     val playerAspectRatio by videoPlayer.videoAspectRatio.collectAsState()
 
     val isRecordingNarration by recorder.isRecording.collectAsState()
@@ -206,7 +209,7 @@ fun VideoStudioScreen(
     var autoSplitIntervalMs by remember { mutableLongStateOf(30_000L) }
     var autoSplitFileCount by remember { mutableIntStateOf(2) }
     var autoSplitTargetSizeMb by remember { mutableFloatStateOf(25f) }
-    var showFeatureGuide by remember { mutableStateOf(false) }
+    var activeGuideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
     var showVideoPickerDialog by remember { mutableStateOf(false) }
     val exportedMedia by mediaRepository.exportedFiles.collectAsState()
     var mergeClipUris by remember { mutableStateOf<List<Uri>>(emptyList()) }
@@ -273,17 +276,26 @@ fun VideoStudioScreen(
     var exportedFileResult by remember { mutableStateOf<File?>(null) }
     var surfaceCreated by remember { mutableStateOf(false) }
 
-    LaunchedEffect(durationMs) {
-        if (durationMs > 0) {
-            if (trimEndMs > durationMs || trimEndMs <= 0L) trimEndMs = durationMs
-            if (blurConfig.endMs > durationMs) blurConfig = blurConfig.copy(endMs = durationMs)
-            if (imageOverlay.endMs > durationMs) imageOverlay = imageOverlay.copy(endMs = durationMs)
+    LaunchedEffect(effectiveDuration) {
+        if (effectiveDuration > 0) {
+            if (trimEndMs > effectiveDuration || trimEndMs <= 0L) trimEndMs = effectiveDuration
+            if (blurConfig.endMs > effectiveDuration) blurConfig = blurConfig.copy(endMs = effectiveDuration)
+            if (imageOverlay.endMs > effectiveDuration) imageOverlay = imageOverlay.copy(endMs = effectiveDuration)
+        }
+    }
+
+    LaunchedEffect(videoMeta.durationMs) {
+        if (videoMeta.durationMs > 0L) {
+            videoPlayer.updateDurationHint(videoMeta.durationMs)
         }
     }
 
     LaunchedEffect(currentVideoUri) {
         currentVideoUri?.let { uri ->
             videoMeta = toolkit.inspectDetailedMetadata(uri)
+            if (videoMeta.durationMs > 0L) {
+                videoPlayer.updateDurationHint(videoMeta.durationMs)
+            }
             try {
                 val pcm = withContext(Dispatchers.IO) { audioMixer.decodeUriToPcm(uri) }
                 baseSpeechBins = MultiMusicPreviewController.computeSpeechActivityBins(pcm)
@@ -498,9 +510,18 @@ fun VideoStudioScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
-                            onClick = { showFeatureGuide = true },
+                            onClick = {
+                                activeGuideTopic = focusedFeature?.let { FeatureGuideCatalog.forVideoFeature(it) }
+                                    ?: when (activeSection) {
+                                        VideoToolSection.TIMELINE -> FeatureGuideTopic.VIDEO_TRIMMER
+                                        VideoToolSection.AUDIO_MUSIC -> FeatureGuideTopic.VIDEO_NARRATION
+                                        VideoToolSection.OVERLAYS -> FeatureGuideTopic.VIDEO_TEXT_OVERLAY
+                                        VideoToolSection.TRANSFORM -> FeatureGuideTopic.VIDEO_SPEED_CHANGER
+                                        VideoToolSection.TOOLS -> FeatureGuideTopic.VIDEO_COMPRESSOR
+                                    }
+                            },
                             modifier = Modifier.size(48.dp).testTag("btn_video_studio_guide")
-                                .semantics { contentDescription = "Open Feature Guide and Studio Quality Help" }
+                                .semantics { contentDescription = "Open Feature Guide" }
                         ) {
                             Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null)
                         }
@@ -598,7 +619,7 @@ fun VideoStudioScreen(
 
             VideoPreviewTimeBadge(
                 isPlaying = isPlaying,
-                durationMs = durationMs,
+                durationMs = effectiveDuration,
                 positionFlow = videoPlayer.currentPositionMs,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)
             )
@@ -608,7 +629,7 @@ fun VideoStudioScreen(
         val livePosForSlider by videoPlayer.currentPositionMs.collectAsState()
         AccessiblePreviewPlaybackSlider(
             currentPositionMs = livePosForSlider,
-            durationMs = durationMs,
+            durationMs = effectiveDuration,
             onSeekTo = { videoPlayer.seekTo(it) },
             isPlaying = isPlaying,
             onTogglePlayPause = { if (isPlaying) videoPlayer.pause() else videoPlayer.play() },
@@ -617,7 +638,7 @@ fun VideoStudioScreen(
         )
         AccessibleTimeReadout(
             currentMs = 0L,
-            durationMs = durationMs,
+            durationMs = effectiveDuration,
             label = "Video Playhead",
             isPlaying = isPlaying,
             positionFlow = videoPlayer.currentPositionMs
@@ -625,9 +646,9 @@ fun VideoStudioScreen(
         AccessibleTransportControls(
             isPlaying = isPlaying,
             onPlayPause = { if (isPlaying) videoPlayer.pause() else videoPlayer.play() },
-            onNudge = { d -> videoPlayer.seekTo((videoPlayer.currentPositionMs.value + d).coerceIn(0L, durationMs)) },
+            onNudge = { d -> videoPlayer.seekTo((videoPlayer.currentPositionMs.value + d).coerceIn(0L, effectiveDuration)) },
             onJumpStart = { videoPlayer.seekTo(0L) },
-            onJumpEnd = { videoPlayer.seekTo(durationMs) },
+            onJumpEnd = { videoPlayer.seekTo(effectiveDuration) },
             scrubSpeed = scrubSpeed,
             onChangeScrubSpeed = { spd ->
                 val normalized = StudioPreferences.normalizeScrubSpeed(spd)
@@ -639,44 +660,44 @@ fun VideoStudioScreen(
                 )
             },
             onPlaySelection = {
-                if (durationMs > 0L) {
-                    val start = trimStartMs.coerceIn(0L, durationMs)
-                    val end = trimEndMs.coerceIn(start, durationMs).let { if (it <= start) durationMs else it }
+                if (effectiveDuration > 0L) {
+                    val start = trimStartMs.coerceIn(0L, effectiveDuration)
+                    val end = trimEndMs.coerceIn(start, effectiveDuration).let { if (it <= start) effectiveDuration else it }
                     videoPlayer.seekTo(start)
                     videoPlayer.play(startMs = start, endLimitMs = end)
                 }
             },
             onPlayContinuous = {
-                if (durationMs > 0L) videoPlayer.play(startMs = videoPlayer.currentPositionMs.value, endLimitMs = null)
+                if (effectiveDuration > 0L) videoPlayer.play(startMs = videoPlayer.currentPositionMs.value, endLimitMs = null)
             }
         )
 
         AccessibleTrimSection(
             currentMs = 0L,
-            durationMs = durationMs,
+            durationMs = effectiveDuration,
             trimStartMs = trimStartMs,
             trimEndMs = trimEndMs,
             currentPositionMsProvider = { videoPlayer.currentPositionMs.value },
             onSetTrimStart = {
-                val maxS = (trimEndMs - 500L.coerceAtMost(durationMs)).coerceIn(0L, durationMs)
+                val maxS = (trimEndMs - 500L.coerceAtMost(effectiveDuration)).coerceIn(0L, effectiveDuration)
                 trimStartMs = it.coerceIn(0L, maxS)
             },
             onSetTrimEnd = {
-                val minE = (trimStartMs + 500L.coerceAtMost(durationMs)).coerceIn(0L, durationMs)
-                trimEndMs = it.coerceIn(minE, durationMs)
+                val minE = (trimStartMs + 500L.coerceAtMost(effectiveDuration)).coerceIn(0L, effectiveDuration)
+                trimEndMs = it.coerceIn(minE, effectiveDuration)
             },
             onFineTuneStart = { d ->
-                val maxS = (trimEndMs - 500L.coerceAtMost(durationMs)).coerceIn(0L, durationMs)
+                val maxS = (trimEndMs - 500L.coerceAtMost(effectiveDuration)).coerceIn(0L, effectiveDuration)
                 trimStartMs = (trimStartMs + d).coerceIn(0L, maxS)
             },
             onFineTuneEnd = { d ->
-                val minE = (trimStartMs + 500L.coerceAtMost(durationMs)).coerceIn(0L, durationMs)
-                trimEndMs = (trimEndMs + d).coerceIn(minE, durationMs)
+                val minE = (trimStartMs + 500L.coerceAtMost(effectiveDuration)).coerceIn(0L, effectiveDuration)
+                trimEndMs = (trimEndMs + d).coerceIn(minE, effectiveDuration)
             },
             onPreviewTrim = {
-                if (durationMs > 0L) {
-                    val start = trimStartMs.coerceIn(0L, durationMs)
-                    val end = trimEndMs.coerceIn(start, durationMs).let { if (it <= start) durationMs else it }
+                if (effectiveDuration > 0L) {
+                    val start = trimStartMs.coerceIn(0L, effectiveDuration)
+                    val end = trimEndMs.coerceIn(start, effectiveDuration).let { if (it <= start) effectiveDuration else it }
                     videoPlayer.seekTo(start)
                     videoPlayer.play(startMs = start, endLimitMs = end)
                 }
@@ -841,7 +862,7 @@ fun VideoStudioScreen(
         when (activeSection) {
             VideoToolSection.TIMELINE -> VideoTimelineToolsPanel(
                 currentPositionMs = 0L,
-                durationMs = durationMs,
+                durationMs = effectiveDuration,
                 trimStartMs = trimStartMs,
                 trimEndMs = trimEndMs,
                 streamCopyTrim = streamCopyTrim,
@@ -911,13 +932,13 @@ fun VideoStudioScreen(
                 snapshots = snapshots,
                 onCaptureSnapshot = {
                     val s = videoPlayer.currentPositionMs.value
-                    val e = (s + 2000L).coerceAtMost(durationMs.coerceAtLeast(2000L))
+                    val e = (s + 2000L).coerceAtMost(effectiveDuration.coerceAtLeast(2000L))
                     snapshots = snapshots + SnapshotGlimpseItem(label = "Glimpse #${snapshots.size + 1}", startMs = s, endMs = e)
                 },
                 onRemoveSnapshot = { id -> snapshots = snapshots.filterNot { it.id == id } },
                 onExportSnapshots = { prepend ->
                     val uri = currentVideoUri ?: return@VideoTimelineToolsPanel
-                    val ranges = snapshots.map { it.startMs to it.endMs } + if (prepend) listOf(0L to durationMs) else emptyList()
+                    val ranges = snapshots.map { it.startMs to it.endMs } + if (prepend) listOf(0L to effectiveDuration) else emptyList()
                     runAsyncTask(if (prepend) "Prepending Highlights..." else "Extracting Glimpses...") { prog ->
                         toolkit.exportStreamCopyRanges(uri, ranges, "Highlights_$timestamp", outputFormat, onProgress = prog)
                     }
@@ -940,14 +961,17 @@ fun VideoStudioScreen(
                     autoSplitTargetSizeMb = sizeMb
                 },
                 onPlayRange = { s, e ->
-                    if (durationMs > 0L) {
-                        val safeStart = s.coerceIn(0L, durationMs)
-                        val safeEnd = e.coerceIn(safeStart, durationMs).let { if (it <= safeStart) durationMs else it }
+                    if (effectiveDuration > 0L) {
+                        val safeStart = s.coerceIn(0L, effectiveDuration)
+                        val safeEnd = e.coerceIn(safeStart, effectiveDuration).let { if (it <= safeStart) effectiveDuration else it }
                         videoPlayer.seekTo(safeStart)
                         videoPlayer.play(startMs = safeStart, endLimitMs = safeEnd)
                     }
                 },
-                onOpenFeatureGuide = { showFeatureGuide = true }
+                onOpenFeatureGuide = {
+                    activeGuideTopic = focusedFeature?.let { FeatureGuideCatalog.forVideoFeature(it) }
+                        ?: FeatureGuideTopic.VIDEO_TRIMMER
+                }
             )
 
             VideoToolSection.AUDIO_MUSIC -> VideoAudioMusicPanel(
@@ -1009,7 +1033,7 @@ fun VideoStudioScreen(
                     if (isPlaying) videoPlayer.pause()
                     multiMusicPreview.toggleSoloPreview(track)
                 },
-                videoDurationMs = durationMs,
+                videoDurationMs = effectiveDuration,
                 soundEffects = soundEffects,
                 onAddSoundEffect = { preset, uri, dur, freeze ->
                     soundEffects = soundEffects + SoundEffectOverlay(
@@ -1059,7 +1083,7 @@ fun VideoStudioScreen(
             )
 
             VideoToolSection.OVERLAYS -> VideoOverlaysVfxPanel(
-                durationMs = durationMs,
+                durationMs = effectiveDuration,
                 textOverlay = textOverlay,
                 textPosition = textPosition,
                 textAnimStyle = textAnimStyle,
@@ -1073,7 +1097,7 @@ fun VideoStudioScreen(
                     scope.launch {
                         try {
                             val (iw, ih, warning) = toolkit.inspectOverlayImage(uri, videoMeta.width.coerceAtLeast(1), videoMeta.height.coerceAtLeast(1))
-                            imageOverlay = imageOverlay.copy(uri = uri, imageWidth = iw, imageHeight = ih, mismatchWarning = warning, endMs = durationMs.coerceAtLeast(3000L))
+                            imageOverlay = imageOverlay.copy(uri = uri, imageWidth = iw, imageHeight = ih, mismatchWarning = warning, endMs = effectiveDuration.coerceAtLeast(3000L))
                         } catch (t: Throwable) {
                             if (t is kotlinx.coroutines.CancellationException) throw t
                             Toast.makeText(context, "Overlay image error: ${t.localizedMessage ?: "Unsupported image"}", Toast.LENGTH_LONG).show()
@@ -1145,7 +1169,7 @@ fun VideoStudioScreen(
                 onConvertFormatNow = {
                     val uri = currentVideoUri ?: return@VideoConvertAndMetaPanel
                     runAsyncTask("Converting to .${outputFormat.extension.uppercase()}...") { prog ->
-                        toolkit.exportStreamCopyRanges(uri, listOf(0L to durationMs), "Converted_$timestamp", outputFormat, onProgress = prog)
+                        toolkit.exportStreamCopyRanges(uri, listOf(0L to effectiveDuration), "Converted_$timestamp", outputFormat, onProgress = prog)
                     }
                 },
                 onRemoveSilenceNow = { threshDb ->
@@ -1184,7 +1208,7 @@ fun VideoStudioScreen(
                     videoMeta = videoMeta.copy(title = title, artist = artist, album = album, genre = genre)
                     val uri = currentVideoUri ?: return@VideoConvertAndMetaPanel
                     runAsyncTask("Saving Video Metadata Tags...") { prog ->
-                        toolkit.exportStreamCopyRanges(uri, listOf(0L to durationMs), title.ifBlank { "Tagged_$timestamp" }, outputFormat, onProgress = prog)
+                        toolkit.exportStreamCopyRanges(uri, listOf(0L to effectiveDuration), title.ifBlank { "Tagged_$timestamp" }, outputFormat, onProgress = prog)
                     }
                 },
                 initialFocusedFeature = focusedFeature
@@ -1290,8 +1314,11 @@ fun VideoStudioScreen(
         )
     }
 
-    if (showFeatureGuide) {
-        StudioFeatureGuideDialog(onDismiss = { showFeatureGuide = false })
+    activeGuideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { activeGuideTopic = null }
+        )
     }
 
     if (showVideoPickerDialog) {

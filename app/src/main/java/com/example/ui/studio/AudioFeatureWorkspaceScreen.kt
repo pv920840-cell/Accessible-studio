@@ -127,9 +127,12 @@ import com.example.ui.components.AccessibleTrimSection
 import com.example.ui.components.ActiveEffectChipData
 import com.example.ui.components.ActiveEffectsLongPressBar
 import com.example.ui.components.AudioStudioCommand
+import com.example.ui.components.FeatureGuideButton
+import com.example.ui.components.FeatureGuideCatalog
+import com.example.ui.components.FeatureGuideTopic
 import com.example.ui.components.MusicRebalancePanel
+import com.example.ui.components.SingleFeatureGuideDialog
 import com.example.ui.components.StudioDawTopBar
-import com.example.ui.components.StudioFeatureGuideDialog
 import com.example.ui.screens.AudioStudioScreen
 import com.example.storage.StorageExportManager
 import com.example.ui.theme.LocalHighContrast
@@ -186,7 +189,7 @@ fun AudioFeatureWorkspaceScreen(
 
     val undoHistory = remember(session.projectId, tool) { mutableStateListOf<ShortArray>() }
     var isApplyingTransform by remember(session.projectId, tool) { mutableStateOf(false) }
-    var showFeatureGuide by remember { mutableStateOf(false) }
+    var activeWorkspaceGuideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
 
     val isPlaying by playerManager.isPlaying.collectAsState()
     val durationMs by playerManager.durationMs.collectAsState()
@@ -404,7 +407,7 @@ fun AudioFeatureWorkspaceScreen(
                 onCancelBack()
             },
             onSave = { commitAndSave() },
-            onHelp = { showFeatureGuide = true }
+            onHelp = { activeWorkspaceGuideTopic = FeatureGuideCatalog.forAudioTool(tool) }
         )
 
         Column(
@@ -594,6 +597,11 @@ fun AudioFeatureWorkspaceScreen(
 
             when (tool) {
                 AudioFeatureTool.TRIM_CUT -> {
+                    FeatureGuideButton(
+                        featureTitle = "Audio Trim & Cut",
+                        onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_TRIM_CUT },
+                        testTag = "btn_feature_guide_audio_trim"
+                    )
                     AccessibleAudioWaveform(
                         currentMs = 0L,
                         durationMs = durationMs,
@@ -755,7 +763,23 @@ fun AudioFeatureWorkspaceScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                     ) {
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Mix Second Audio File", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Mix Second Audio File",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeatureGuideButton(
+                                    featureTitle = "Audio Mix & Overdub",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_MIX_OVERDUB },
+                                    testTag = "btn_feature_guide_audio_mix"
+                                )
+                            }
                             OutlinedButton(
                                 onClick = { showMixAudioPickerDialog = true },
                                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_mix_browse_file")
@@ -942,7 +966,23 @@ fun AudioFeatureWorkspaceScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                     ) {
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Quick Effects & Cleaning Buttons", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Quick Effects & Cleaning Buttons",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeatureGuideButton(
+                                    featureTitle = "Quick Effects & Cleaning",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_EFFECTS_CLEANING },
+                                    testTag = "btn_feature_guide_quick_effects"
+                                )
+                            }
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1132,7 +1172,23 @@ fun AudioFeatureWorkspaceScreen(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("EQ Presets", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "EQ Presets",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    FeatureGuideButton(
+                                        featureTitle = "EQ Presets",
+                                        onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_EQ_PRESETS },
+                                        testTag = "btn_feature_guide_eq_presets"
+                                    )
+                                }
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1176,7 +1232,23 @@ fun AudioFeatureWorkspaceScreen(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Echo (Delay)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Echo (Delay)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    FeatureGuideButton(
+                                        featureTitle = "Echo (Delay)",
+                                        onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_EFFECT_ECHO },
+                                        testTag = "btn_feature_guide_workspace_echo"
+                                    )
+                                }
                                 EffectPresetDropdown(
                                     effectId = "echo",
                                     effectTitle = "Echo",
@@ -1264,7 +1336,23 @@ fun AudioFeatureWorkspaceScreen(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Text("Reverb (Acoustic Space)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Reverb (Acoustic Space)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Black,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    FeatureGuideButton(
+                                        featureTitle = "Reverb (Acoustic Space)",
+                                        onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_EFFECT_REVERB },
+                                        testTag = "btn_feature_guide_workspace_reverb"
+                                    )
+                                }
                                 EffectPresetDropdown(
                                     effectId = "reverb",
                                     effectTitle = "Reverb",
@@ -1669,7 +1757,23 @@ fun AudioFeatureWorkspaceScreen(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                     ) {
                         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Voice Recording Studio", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Voice Recording Studio",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeatureGuideButton(
+                                    featureTitle = "Voice Recording Studio",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_VOICE_RECORDER },
+                                    testTag = "btn_feature_guide_voice_recorder"
+                                )
+                            }
                             Text(
                                 text = "Active Profile: ${resolvedRecConfig.summaryLabel()} • Input Gain ${(recorderManager.micGainVolume * 100).toInt()}%",
                                 style = MaterialTheme.typography.bodySmall,
@@ -1844,7 +1948,7 @@ fun AudioFeatureWorkspaceScreen(
                                 }
                             }
                         },
-                        onOpenGuide = { showFeatureGuide = true }
+                        onOpenGuide = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_MUSIC_REBALANCE }
                     )
                 }
 
@@ -1853,8 +1957,11 @@ fun AudioFeatureWorkspaceScreen(
         }
     }
 
-    if (showFeatureGuide) {
-        StudioFeatureGuideDialog(onDismiss = { showFeatureGuide = false })
+    activeWorkspaceGuideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { activeWorkspaceGuideTopic = null }
+        )
     }
 }
 

@@ -63,7 +63,9 @@ import com.example.ui.components.AccessiblePreviewPlaybackSlider
 import com.example.ui.components.AccessibleTimeReadout
 import com.example.ui.components.ActiveEffectChipData
 import com.example.ui.components.ActiveEffectsLongPressBar
-import com.example.ui.components.StudioFeatureGuideDialog
+import com.example.ui.components.FeatureGuideCatalog
+import com.example.ui.components.FeatureGuideTopic
+import com.example.ui.components.SingleFeatureGuideDialog
 import com.example.ui.components.VideoAudioMusicPanel
 import com.example.ui.components.VideoConvertAndMetaPanel
 import com.example.ui.components.VideoOverlaysVfxPanel
@@ -335,6 +337,12 @@ fun VideoFeatureWorkspaceScreen(
         durationMs
     } else {
         draft.durationMs.takeIf { it > 0L } ?: durationMs
+    }
+
+    LaunchedEffect(effectiveDuration) {
+        if (effectiveDuration > 0L) {
+            videoPlayer.updateDurationHint(effectiveDuration)
+        }
     }
 
     Column(
@@ -881,6 +889,17 @@ fun VideoFeatureWorkspaceScreen(
     }
 
     if (showFeatureGuide) {
-        StudioFeatureGuideDialog(onDismiss = { showFeatureGuide = false })
+        val scopedTopic = initialFeature?.let { FeatureGuideCatalog.forVideoFeature(it) } ?: when (tool) {
+            VideoFeatureTool.TRIM_TIMELINE -> FeatureGuideTopic.VIDEO_TRIMMER
+            VideoFeatureTool.AUDIO_MUSIC -> FeatureGuideTopic.VIDEO_NARRATION
+            VideoFeatureTool.OVERLAYS_VFX -> FeatureGuideTopic.VIDEO_TEXT_OVERLAY
+            VideoFeatureTool.TRANSFORM_SPEED -> FeatureGuideTopic.VIDEO_SPEED_CHANGER
+            VideoFeatureTool.CONVERT_TOOLS -> FeatureGuideTopic.VIDEO_COMPRESSOR
+            VideoFeatureTool.FULL_VIDEO_STUDIO -> FeatureGuideTopic.VIDEO_TRIMMER
+        }
+        SingleFeatureGuideDialog(
+            topic = scopedTopic,
+            onDismiss = { showFeatureGuide = false }
+        )
     }
 }

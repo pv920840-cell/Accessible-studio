@@ -128,15 +128,12 @@ fun MusicRebalancePanel(
                         )
                     }
                 }
-                IconButton(
+                Spacer(Modifier.width(8.dp))
+                FeatureGuideButton(
+                    featureTitle = "Music Rebalance & Stems",
                     onClick = onOpenGuide,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .testTag("btn_music_rebalance_guide")
-                        .semantics { contentDescription = "Open Music Rebalance Feature Guide" }
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null)
-                }
+                    testTag = "btn_music_rebalance_guide"
+                )
             }
 
             if (isProcessing) {

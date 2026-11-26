@@ -1,10 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 24,
-  "versionName": "1.4.0",
-  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.4.0/AccessibleStudio_V1.4.0.apk",
+  "versionCode": 25,
+  "versionName": "1.5.0",
+  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.0/AccessibleStudio_V1.5.0.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 21871849,
-  "changelog": "Upgraded Video Trimmer, Multi Trim, Delete Part, Multi Delete, Splitter & Auto Splitter with swipe-up/down Playback Slider preview, double-tap Play/Pause & marker shortcuts, ms/s/min Step Slider (1s default), double-tap Min/Sec/ms Time Edit dialogs, Auto Splitter slider, Accessible Video Picker, RX-12-style Music Rebalance & crash-free streaming stem separation, and automated GitHub Releases v1.4.0 auto-updates.",
-  "releaseNotes": "Upgraded Video Trimmer, Multi Trim, Delete Part, Multi Delete, Splitter & Auto Splitter with swipe-up/down Playback Slider preview, double-tap Play/Pause & marker shortcuts, ms/s/min Step Slider (1s default), double-tap Min/Sec/ms Time Edit dialogs, Auto Splitter slider, Accessible Video Picker, RX-12-style Music Rebalance & crash-free streaming stem separation, and automated GitHub Releases v1.4.0 auto-updates."
+  "apkSizeBytes": 20688569,
+  "changelog": "Added dedicated per-feature Feature Guide buttons inside every audio, video, effect, and Music Rebalance tool; wired live playback positions to Move Start/Finish/Point to now playing; removed the 1-minute playback slider cap for 5+ minute videos; and added Saved Projects location details in Settings.",
+  "releaseNotes": "Added dedicated per-feature Feature Guide buttons inside every audio, video, effect, and Music Rebalance tool; wired live playback positions to Move Start/Finish/Point to now playing; removed the 1-minute playback slider cap for 5+ minute videos; and added Saved Projects location details in Settings."
 }

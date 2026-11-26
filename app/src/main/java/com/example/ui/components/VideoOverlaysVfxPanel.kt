@@ -84,6 +84,7 @@ fun VideoOverlaysVfxPanel(
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
+    var guideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
     var showInlineSrtBox by remember { mutableStateOf(false) }
     var inlineSrtDraft by remember {
         mutableStateOf(
@@ -117,7 +118,9 @@ fun VideoOverlaysVfxPanel(
         SectionToolCard(
             title = "Text Overlay Studio",
             subtitle = "Burn custom text, scrolling news tickers, or typing animations onto video",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_TEXT_OVERLAY },
+            featureGuideTag = "btn_feature_guide_text_overlay"
         ) {
             OutlinedTextField(
                 value = textOverlay,
@@ -157,7 +160,9 @@ fun VideoOverlaysVfxPanel(
         SectionToolCard(
             title = "Video Blur & Mosaic Editor",
             subtitle = "Apply customizable blur or pixel mosaic over a selected timeline duration",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_BLUR_MOSAIC },
+            featureGuideTag = "btn_feature_guide_blur_mosaic"
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -235,7 +240,9 @@ fun VideoOverlaysVfxPanel(
         SectionToolCard(
             title = "Image Overlay Adder",
             subtitle = "Superimpose an image over video for custom duration with aspect mismatch checks",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_IMAGE_OVERLAY },
+            featureGuideTag = "btn_feature_guide_image_overlay"
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
@@ -300,7 +307,9 @@ fun VideoOverlaysVfxPanel(
         SectionToolCard(
             title = "Burn Subtitles (.SRT / .VTT)",
             subtitle = "Permanently burn timed caption cues onto the exported video track",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_SUBTITLES },
+            featureGuideTag = "btn_feature_guide_subtitles"
         ) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
@@ -357,7 +366,9 @@ fun VideoOverlaysVfxPanel(
             title = "Color Filters",
             subtitle = "Choose an individual color grading filter button",
             isHighContrast = isHighContrast,
-            modifier = Modifier.testTag("section_video_color_filters")
+            modifier = Modifier.testTag("section_video_color_filters"),
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_COLOR_FILTERS },
+            featureGuideTag = "btn_feature_guide_color_filters"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 VideoFilter.values().forEach { filter ->
@@ -394,7 +405,9 @@ fun VideoOverlaysVfxPanel(
             title = "VFX Effects",
             subtitle = "Choose an individual VFX visual effect button",
             isHighContrast = isHighContrast,
-            modifier = Modifier.testTag("section_video_vfx_effects")
+            modifier = Modifier.testTag("section_video_vfx_effects"),
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_VFX_EFFECTS },
+            featureGuideTag = "btn_feature_guide_vfx_effects"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 VideoVfx.values().forEach { vfx ->
@@ -424,5 +437,12 @@ fun VideoOverlaysVfxPanel(
             }
         }
         }
+    }
+
+    guideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { guideTopic = null }
+        )
     }
 }

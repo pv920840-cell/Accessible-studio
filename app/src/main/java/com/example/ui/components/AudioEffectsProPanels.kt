@@ -81,6 +81,7 @@ fun AccessibleProSuiteSection(
 ) {
     val isHighContrast = LocalHighContrast.current
     val categories = listOf("Effect", "Channels", "Filter", "Volume")
+    var showProGuide by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
@@ -107,6 +108,7 @@ fun AccessibleProSuiteSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier.weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -142,6 +144,12 @@ fun AccessibleProSuiteSection(
                     )
                 }
             }
+
+            FeatureGuideButton(
+                featureTitle = "Pro DSP Suite",
+                onClick = { showProGuide = true },
+                testTag = "btn_feature_guide_pro_suite"
+            )
 
             ScrollableTabRow(
                 selectedTabIndex = selectedCategoryIndex.coerceIn(0, 3),
@@ -198,6 +206,12 @@ fun AccessibleProSuiteSection(
                 )
             }
         }
+    }
+    if (showProGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_PRO_DSP_SUITE,
+            onDismiss = { showProGuide = false }
+        )
     }
 }
 

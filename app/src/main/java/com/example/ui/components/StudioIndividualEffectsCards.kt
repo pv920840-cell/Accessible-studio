@@ -137,6 +137,7 @@ fun EchoEffectCard(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth().testTag("card_single_fx_echo")
@@ -149,13 +150,18 @@ fun EchoEffectCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Echo (Delay)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Text("Echo (Delay)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Switch(
                     checked = echoEnabled,
                     onCheckedChange = onEchoEnabledChange,
                     modifier = Modifier.testTag("switch_echo_enabled")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "Echo (Delay)",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_echo"
+            )
             AnimatedVisibility(visible = alwaysExpanded || echoEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     EffectPresetDropdown(
@@ -218,6 +224,12 @@ fun EchoEffectCard(
             }
         }
     }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_ECHO,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -235,6 +247,7 @@ fun ReverbEffectCard(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth().testTag("card_single_fx_reverb")
@@ -247,13 +260,18 @@ fun ReverbEffectCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Reverb (Acoustic Space)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                Text("Reverb (Acoustic Space)", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 Switch(
                     checked = reverbEnabled,
                     onCheckedChange = onReverbEnabledChange,
                     modifier = Modifier.testTag("switch_reverb_enabled")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "Reverb (Acoustic Space)",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_reverb"
+            )
             AnimatedVisibility(visible = alwaysExpanded || reverbEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     EffectPresetDropdown(
@@ -316,6 +334,12 @@ fun ReverbEffectCard(
             }
         }
     }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_REVERB,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -327,6 +351,7 @@ fun CompressorEffectCard(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth().testTag("card_single_fx_compressor")
@@ -349,6 +374,11 @@ fun CompressorEffectCard(
                     modifier = Modifier.testTag("switch_compressor_enabled")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "Dynamics Compressor",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_compressor"
+            )
 
             AnimatedVisibility(visible = alwaysExpanded || settings.compressorEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -419,6 +449,12 @@ fun CompressorEffectCard(
             }
         }
     }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_COMPRESSOR,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -430,6 +466,7 @@ fun PeakLimiterEffectCard(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth().testTag("card_single_fx_peak_limiter")
@@ -452,6 +489,11 @@ fun PeakLimiterEffectCard(
                     modifier = Modifier.testTag("switch_limiter_enabled")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "Peak Limiter (Anti-Clip)",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_peak_limiter"
+            )
 
             AnimatedVisibility(visible = alwaysExpanded || settings.peakLimiterEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -488,6 +530,12 @@ fun PeakLimiterEffectCard(
             }
         }
     }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_PEAK_LIMITER,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -499,6 +547,7 @@ fun FlangerEffectCard(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth().testTag("card_single_fx_flanger")
@@ -521,6 +570,11 @@ fun FlangerEffectCard(
                     modifier = Modifier.testTag("switch_flanger_enabled")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "Flanger",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_flanger"
+            )
 
             AnimatedVisibility(visible = alwaysExpanded || settings.flangerEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -604,6 +658,12 @@ fun FlangerEffectCard(
             }
         }
     }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_FLANGER,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -615,6 +675,7 @@ fun ChorusEffectCard(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth().testTag("card_single_fx_chorus")
@@ -637,6 +698,11 @@ fun ChorusEffectCard(
                     modifier = Modifier.testTag("switch_chorus_enabled")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "Chorus (Multi-Voice)",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_chorus"
+            )
 
             AnimatedVisibility(visible = alwaysExpanded || settings.chorusEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -707,6 +773,12 @@ fun ChorusEffectCard(
             }
         }
     }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_CHORUS,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -718,6 +790,7 @@ fun DistortionEffectCard(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth().testTag("card_single_fx_distortion")
@@ -740,6 +813,11 @@ fun DistortionEffectCard(
                     modifier = Modifier.testTag("switch_distortion_enabled")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "Overdrive & Distortion",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_distortion"
+            )
 
             AnimatedVisibility(visible = alwaysExpanded || settings.distortionEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -794,6 +872,12 @@ fun DistortionEffectCard(
             }
         }
     }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_DISTORTION,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -805,6 +889,7 @@ fun Eq7BandEffectCard(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
         modifier = modifier.fillMaxWidth().testTag("card_single_fx_eq7band")
@@ -827,6 +912,11 @@ fun Eq7BandEffectCard(
                     modifier = Modifier.testTag("switch_eq7band_enabled")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "7-Band Graphic Equalizer",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_eq7band"
+            )
 
             AnimatedVisibility(visible = alwaysExpanded || settings.eq7BandEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -950,6 +1040,12 @@ fun Eq7BandEffectCard(
             }
         }
     }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_EQ_7BAND,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -961,6 +1057,7 @@ fun PitchPolarityEffectCard(
 ) {
     val isHighContrast = LocalHighContrast.current
     var pitchExpanded by remember { mutableStateOf(true) }
+    var showGuide by remember { mutableStateOf(false) }
 
     Card(
         colors = CardDefaults.cardColors(containerColor = if (isHighContrast) Color(0xFF141414) else MaterialTheme.colorScheme.surfaceVariant),
@@ -984,6 +1081,11 @@ fun PitchPolarityEffectCard(
                     modifier = Modifier.testTag("switch_pitch_expanded")
                 )
             }
+            FeatureGuideButton(
+                featureTitle = "Pitch Shifter & Polarity",
+                onClick = { showGuide = true },
+                testTag = "btn_feature_guide_fx_pitch_polarity"
+            )
 
             AnimatedVisibility(visible = pitchExpanded) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1042,5 +1144,11 @@ fun PitchPolarityEffectCard(
                 }
             }
         }
+    }
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_PITCH_POLARITY,
+            onDismiss = { showGuide = false }
+        )
     }
 }

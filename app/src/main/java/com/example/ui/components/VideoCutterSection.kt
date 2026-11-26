@@ -295,9 +295,11 @@ fun VideoCutterSection(
     onRemoveCutSegment: (String) -> Unit,
     onClearCutSegments: () -> Unit = {},
     modifier: Modifier = Modifier,
-    currentPositionMsProvider: (() -> Long)? = null
+    currentPositionMsProvider: (() -> Long)? = null,
+    onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showGuide by remember { mutableStateOf(false) }
     val safeDuration = durationMs.coerceAtLeast(0L)
     val effectiveSpanDuration = safeDuration.coerceAtLeast(1000L)
 
@@ -342,7 +344,9 @@ fun VideoCutterSection(
         title = "Video Cutter",
         subtitle = "Mark regions to remove without exporting yet — cuts apply when you save & export later",
         isHighContrast = isHighContrast,
-        modifier = modifier.testTag("section_video_cutter")
+        modifier = modifier.testTag("section_video_cutter"),
+        onFeatureGuide = { onOpenFeatureGuide?.invoke() ?: run { showGuide = true } },
+        featureGuideTag = "btn_feature_guide_cutter"
     ) {
         // 1. Playback Controls
         Text(
@@ -840,6 +844,13 @@ fun VideoCutterSection(
                     }
                 }
             }
+        )
+    }
+
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.VIDEO_CUTTER,
+            onDismiss = { showGuide = false }
         )
     }
 }

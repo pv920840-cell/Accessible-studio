@@ -81,6 +81,9 @@ import com.example.audio.BatchItem
 import com.example.audio.BatchItemStatus
 import com.example.audio.DemoAudioType
 import com.example.data.MediaRepository
+import com.example.ui.components.FeatureGuideButton
+import com.example.ui.components.FeatureGuideTopic
+import com.example.ui.components.SingleFeatureGuideDialog
 import com.example.ui.theme.LocalHighContrast
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -118,6 +121,7 @@ fun BatchProcessingDialog(
 
     val isPlaying by playerManager.isPlaying.collectAsState()
     var currentPlayingPath by remember { mutableStateOf<String?>(null) }
+    var showBatchGuide by remember { mutableStateOf(false) }
 
     // Multi-file picker contract
     val multipleFilePicker = rememberLauncherForActivityResult(
@@ -190,6 +194,13 @@ fun BatchProcessingDialog(
                     )
                 }
             }
+
+            FeatureGuideButton(
+                featureTitle = "Batch Processing Studio",
+                onClick = { showBatchGuide = true },
+                modifier = Modifier.padding(bottom = 8.dp),
+                testTag = "btn_feature_guide_batch"
+            )
 
             LazyColumn(
                 state = listState,
@@ -758,6 +769,13 @@ fun BatchProcessingDialog(
                 }
             }
         }
+    }
+
+    if (showBatchGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_BATCH_PROCESSING,
+            onDismiss = { showBatchGuide = false }
+        )
     }
 }
 

@@ -1039,6 +1039,10 @@ fun AccessibleTrimSection(
 ) {
     val isHighContrast = LocalHighContrast.current
     val trimmedDuration = (trimEndMs - trimStartMs).coerceAtLeast(0L)
+    val latestCurrentMs by rememberUpdatedState(currentMs)
+    val latestPosProvider by rememberUpdatedState(currentPositionMsProvider)
+    val latestOnSetTrimStart by rememberUpdatedState(onSetTrimStart)
+    val latestOnSetTrimEnd by rememberUpdatedState(onSetTrimEnd)
 
     Card(
         modifier = modifier
@@ -1099,7 +1103,7 @@ fun AccessibleTrimSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { onSetTrimStart(currentPositionMsProvider?.invoke() ?: currentMs) },
+                    onClick = { latestOnSetTrimStart(latestPosProvider?.invoke() ?: latestCurrentMs) },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
@@ -1131,7 +1135,7 @@ fun AccessibleTrimSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { onSetTrimEnd(currentPositionMsProvider?.invoke() ?: currentMs) },
+                    onClick = { latestOnSetTrimEnd(latestPosProvider?.invoke() ?: latestCurrentMs) },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
@@ -1315,6 +1319,7 @@ fun AccessiblePreviewPlaybackSlider(
     val percent = ((displayPosMs.toFloat() / safeDuration.toFloat()) * 100f).toInt().coerceIn(0, 100)
 
     val latestPos by rememberUpdatedState(displayPosMs)
+    val latestSafeDuration by rememberUpdatedState(safeDuration)
     val latestOnSeekTo by rememberUpdatedState(onSeekTo)
     val latestOnTogglePlayPause by rememberUpdatedState(onTogglePlayPause)
     val latestOnScrubPreviewPulse by rememberUpdatedState(onScrubPreviewPulse)
@@ -1326,7 +1331,6 @@ fun AccessiblePreviewPlaybackSlider(
             .pointerInput(safeDuration) {
                 var accumulatedDragY = 0f
                 val thresholdPx = 22f
-                val stepMs = maxOf(250L, (safeDuration * 0.05f).roundToLong())
                 detectVerticalDragGestures(
                     onDragStart = {
                         accumulatedDragY = 0f
@@ -1341,17 +1345,19 @@ fun AccessiblePreviewPlaybackSlider(
                     }
                 ) { _, dragAmount ->
                     accumulatedDragY += dragAmount
+                    val activeDur = latestSafeDuration
+                    val stepMs = maxOf(250L, (activeDur * 0.05f).roundToLong())
                     if (accumulatedDragY <= -thresholdPx) {
-                        // Swipe UP -> move forward toward end + brief preview
-                        val next = (latestPos + stepMs).coerceIn(0L, safeDuration)
+                        // Swipe UP -> move forward toward end + brief preview across full duration
+                        val next = (latestPos + stepMs).coerceIn(0L, activeDur)
                         isDragging = true
                         dragPosMs = next
                         latestOnSeekTo(next)
                         latestOnScrubPreviewPulse?.invoke(next)
                         accumulatedDragY = 0f
                     } else if (accumulatedDragY >= thresholdPx) {
-                        // Swipe DOWN -> move backward toward start + brief preview
-                        val next = (latestPos - stepMs).coerceIn(0L, safeDuration)
+                        // Swipe DOWN -> move backward toward start + brief preview across full duration
+                        val next = (latestPos - stepMs).coerceIn(0L, activeDur)
                         isDragging = true
                         dragPosMs = next
                         latestOnSeekTo(next)
@@ -1444,20 +1450,21 @@ fun AccessiblePreviewPlaybackSlider(
                         }
                     }
             ) {
-                val scrubNudgeMs = maxOf(500L, (safeDuration * 0.05f).roundToLong())
                 Slider(
                     value = displayPosMs.toFloat(),
                     onValueChange = { raw ->
-                        val target = raw.toLong().coerceIn(0L, safeDuration)
+                        val activeDur = latestSafeDuration
+                        val target = raw.roundToLong().coerceIn(0L, activeDur)
                         isDragging = true
                         dragPosMs = target
-                        onSeekTo(target)
-                        onScrubPreviewPulse?.invoke(target)
+                        latestOnSeekTo(target)
+                        latestOnScrubPreviewPulse?.invoke(target)
                     },
                     onValueChangeFinished = {
-                        val committed = dragPosMs.coerceIn(0L, safeDuration)
+                        val activeDur = latestSafeDuration
+                        val committed = dragPosMs.coerceIn(0L, activeDur)
                         isDragging = false
-                        onSeekTo(committed)
+                        latestOnSeekTo(committed)
                     },
                     valueRange = 0f..safeDuration.toFloat(),
                     modifier = Modifier
@@ -1465,29 +1472,35 @@ fun AccessiblePreviewPlaybackSlider(
                         .testTag(testTag)
                         .semantics {
                             val stateText = if (isPlaying) "Playing" else "Paused"
+                            val activeDur = latestSafeDuration
+                            val scrubNudgeMs = maxOf(500L, (activeDur * 0.05f).roundToLong())
                             contentDescription = "$label slider, $percent percent, $stateText. Position ${AccessibilityHelper.formatTimeSpoken(displayPosMs)} of ${AccessibilityHelper.formatTimeSpoken(durationMs.coerceAtLeast(0L))}. Swipe up to move toward end with preview, swipe down to move toward start, double tap to play or pause."
                             customActions = buildList {
-                                if (onTogglePlayPause != null) {
+                                if (latestOnTogglePlayPause != null) {
                                     add(
                                         CustomAccessibilityAction(if (isPlaying) "Pause preview" else "Play preview") {
-                                            onTogglePlayPause.invoke()
+                                            latestOnTogglePlayPause?.invoke()
                                             true
                                         }
                                     )
                                 }
                                 add(
                                     CustomAccessibilityAction("Move forward toward end with preview") {
-                                        val target = (displayPosMs + scrubNudgeMs).coerceIn(0L, safeDuration)
-                                        onSeekTo(target)
-                                        onScrubPreviewPulse?.invoke(target)
+                                        val curDur = latestSafeDuration
+                                        val step = maxOf(500L, (curDur * 0.05f).roundToLong())
+                                        val target = (latestPos + step).coerceIn(0L, curDur)
+                                        latestOnSeekTo(target)
+                                        latestOnScrubPreviewPulse?.invoke(target)
                                         true
                                     }
                                 )
                                 add(
                                     CustomAccessibilityAction("Move backward toward start with preview") {
-                                        val target = (displayPosMs - scrubNudgeMs).coerceIn(0L, safeDuration)
-                                        onSeekTo(target)
-                                        onScrubPreviewPulse?.invoke(target)
+                                        val curDur = latestSafeDuration
+                                        val step = maxOf(500L, (curDur * 0.05f).roundToLong())
+                                        val target = (latestPos - step).coerceIn(0L, curDur)
+                                        latestOnSeekTo(target)
+                                        latestOnScrubPreviewPulse?.invoke(target)
                                         true
                                     }
                                 )

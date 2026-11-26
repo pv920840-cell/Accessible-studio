@@ -41,6 +41,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -156,10 +160,12 @@ fun AdaptiveNoiseReductionPanel(
     onApplyDeClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     isEnabled: Boolean = true,
-    onEnabledChange: ((Boolean) -> Unit)? = null
+    onEnabledChange: ((Boolean) -> Unit)? = null,
+    onOpenGuide: (() -> Unit)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
     val safeParams = params.clamped()
+    var showLocalGuide by remember { mutableStateOf(false) }
 
     Card(
         modifier = modifier
@@ -222,6 +228,14 @@ fun AdaptiveNoiseReductionPanel(
                     )
                 }
             }
+
+            FeatureGuideButton(
+                featureTitle = "Adaptive Spectral De-Noise",
+                onClick = {
+                    if (onOpenGuide != null) onOpenGuide() else showLocalGuide = true
+                },
+                testTag = "btn_feature_guide_adaptive_denoise"
+            )
 
             AnimatedVisibility(visible = isEnabled) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -578,6 +592,12 @@ fun AdaptiveNoiseReductionPanel(
                 }
             }
         }
+    }
+    if (showLocalGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_EFFECT_ADAPTIVE_DENOISE,
+            onDismiss = { showLocalGuide = false }
+        )
     }
 }
 

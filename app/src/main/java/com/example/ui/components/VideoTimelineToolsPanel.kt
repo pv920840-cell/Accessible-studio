@@ -47,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -131,7 +132,15 @@ fun VideoTimelineToolsPanel(
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
-    var showLocalGuide by remember { mutableStateOf(false) }
+    var localGuideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
+    val livePosMs = if (positionFlow != null) {
+        positionFlow.collectAsState().value
+    } else {
+        currentPositionMs
+    }
+    val resolvedPosProvider: () -> Long = {
+        currentPositionMsProvider?.invoke() ?: livePosMs
+    }
     val selectFeature: (VideoStudioFeatureButton?) -> Unit = { next ->
         focusedFeature = next
         onFocusedFeatureChange?.invoke(next)
@@ -227,13 +236,13 @@ fun VideoTimelineToolsPanel(
                         }
                         IconButton(
                             onClick = {
-                                if (onOpenFeatureGuide != null) onOpenFeatureGuide() else showLocalGuide = true
+                                localGuideTopic = FeatureGuideCatalog.forVideoFeature(activeFeature)
                             },
                             modifier = Modifier
                                 .size(48.dp)
                                 .testTag("btn_timeline_feature_guide")
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "Open Feature Guide")
+                            Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "Open ${activeFeature.title} Feature Guide")
                         }
                         IconButton(
                             onClick = { selectFeature(null) },
@@ -264,7 +273,7 @@ fun VideoTimelineToolsPanel(
                                 ) {
                                     VideoTrimmerPrecisionPanel(
                                         durationMs = durationMs,
-                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        currentPositionMs = livePosMs,
                                         trimStartMs = trimStartMs,
                                         trimEndMs = trimEndMs,
                                         streamCopyTrim = streamCopyTrim,
@@ -272,7 +281,11 @@ fun VideoTimelineToolsPanel(
                                             onUpdateTrimRange(s, e)
                                             if (sc != streamCopyTrim) onToggleStreamCopyTrim(sc)
                                         },
-                                        onPlaySelection = onPlayRange
+                                        onPlaySelection = onPlayRange,
+                                        currentPositionMsProvider = resolvedPosProvider,
+                                        onOpenFeatureGuide = {
+                                            localGuideTopic = FeatureGuideTopic.VIDEO_TRIMMER
+                                        }
                                     )
 
                                     if (showTrimmerExportButton && onExportTrimmed != null) {
@@ -297,10 +310,14 @@ fun VideoTimelineToolsPanel(
                                 ) {
                                     VideoMultiTrimPanel(
                                         durationMs = durationMs,
-                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        currentPositionMs = livePosMs,
                                         multiTrimClips = multiTrimClips,
                                         onUpdateMultiTrimClips = onUpdateMultiTrimClips,
-                                        onPlaySelection = onPlayRange
+                                        onPlaySelection = onPlayRange,
+                                        currentPositionMsProvider = resolvedPosProvider,
+                                        onOpenFeatureGuide = {
+                                            localGuideTopic = FeatureGuideTopic.VIDEO_MULTI_TRIM
+                                        }
                                     )
                                 }
                             }
@@ -314,10 +331,14 @@ fun VideoTimelineToolsPanel(
                                 ) {
                                     VideoDeletePartPanel(
                                         durationMs = durationMs,
-                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        currentPositionMs = livePosMs,
                                         cutSegments = cutSegments,
                                         onUpdateCutSegments = onUpdateCutSegments,
-                                        onPlaySelection = onPlayRange
+                                        onPlaySelection = onPlayRange,
+                                        currentPositionMsProvider = resolvedPosProvider,
+                                        onOpenFeatureGuide = {
+                                            localGuideTopic = FeatureGuideTopic.VIDEO_DELETE_PART
+                                        }
                                     )
                                 }
                             }
@@ -331,10 +352,14 @@ fun VideoTimelineToolsPanel(
                                 ) {
                                     VideoMultiDeletePanel(
                                         durationMs = durationMs,
-                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        currentPositionMs = livePosMs,
                                         cutSegments = cutSegments,
                                         onUpdateCutSegments = onUpdateCutSegments,
-                                        onPlaySelection = onPlayRange
+                                        onPlaySelection = onPlayRange,
+                                        currentPositionMsProvider = resolvedPosProvider,
+                                        onOpenFeatureGuide = {
+                                            localGuideTopic = FeatureGuideTopic.VIDEO_MULTI_DELETE
+                                        }
                                     )
                                 }
                             }
@@ -348,12 +373,16 @@ fun VideoTimelineToolsPanel(
                                 ) {
                                     VideoSplitterPanel(
                                         durationMs = durationMs,
-                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        currentPositionMs = livePosMs,
                                         trimStartMs = trimStartMs,
                                         trimEndMs = trimEndMs,
                                         splitPointsMs = splitPointsMs,
                                         onUpdateSplitPoints = onUpdateSplitPoints,
-                                        onPlayFrom = { pt -> onPlayRange(pt, trimEndMs.coerceAtLeast(pt + 1000L)) }
+                                        onPlayFrom = { pt -> onPlayRange(pt, trimEndMs.coerceAtLeast(pt + 1000L)) },
+                                        currentPositionMsProvider = resolvedPosProvider,
+                                        onOpenFeatureGuide = {
+                                            localGuideTopic = FeatureGuideTopic.VIDEO_SPLITTER
+                                        }
                                     )
                                 }
                             }
@@ -367,7 +396,7 @@ fun VideoTimelineToolsPanel(
                                 ) {
                                     VideoAutoSplitterPanel(
                                         durationMs = durationMs,
-                                        currentPositionMs = currentPositionMsProvider?.invoke() ?: currentPositionMs,
+                                        currentPositionMs = livePosMs,
                                         trimStartMs = trimStartMs,
                                         trimEndMs = trimEndMs,
                                         autoSplitMode = autoSplitMode,
@@ -377,14 +406,18 @@ fun VideoTimelineToolsPanel(
                                         estimatedTotalBytes = videoMetadata.fileSizeBytes,
                                         onUpdateBounds = onUpdateTrimRange,
                                         onUpdateAutoSplitConfig = onUpdateAutoSplitConfig,
-                                        onPlaySelection = onPlayRange
+                                        onPlaySelection = onPlayRange,
+                                        currentPositionMsProvider = resolvedPosProvider,
+                                        onOpenFeatureGuide = {
+                                            localGuideTopic = FeatureGuideTopic.VIDEO_AUTO_SPLITTER
+                                        }
                                     )
                                 }
                             }
 
                             VideoStudioFeatureButton.CUTTER -> {
                                 VideoCutterSection(
-                                    currentPositionMs = currentPositionMs,
+                                    currentPositionMs = livePosMs,
                                     durationMs = durationMs,
                                     trimStartMs = trimStartMs,
                                     trimEndMs = trimEndMs,
@@ -396,12 +429,21 @@ fun VideoTimelineToolsPanel(
                                     onAddCutSegment = onAddCutSegment,
                                     onRemoveCutSegment = onRemoveCutSegment,
                                     onClearCutSegments = onClearCutSegments,
-                                    currentPositionMsProvider = currentPositionMsProvider
+                                    currentPositionMsProvider = resolvedPosProvider,
+                                    onOpenFeatureGuide = {
+                                        localGuideTopic = FeatureGuideTopic.VIDEO_CUTTER
+                                    }
                                 )
                             }
 
                             VideoStudioFeatureButton.SNAPSHOT_GLIMPSE -> {
-                                SectionToolCard(title = "Snapshot & Glimpse Creator", subtitle = "Capture clip highlights at playhead, extract separately or prepend", isHighContrast = isHighContrast) {
+                                SectionToolCard(
+                                    title = "Snapshot & Glimpse Creator",
+                                    subtitle = "Capture clip highlights at playhead, extract separately or prepend",
+                                    isHighContrast = isHighContrast,
+                                    onFeatureGuide = { localGuideTopic = FeatureGuideTopic.VIDEO_SNAPSHOT_GLIMPSE },
+                                    featureGuideTag = "btn_feature_guide_snapshot"
+                                ) {
                                     Button(
                                         onClick = onCaptureSnapshot,
                                         modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_capture_glimpse")
@@ -412,7 +454,7 @@ fun VideoTimelineToolsPanel(
                                             text = if (currentPositionMsProvider != null || isPlaying) {
                                                 "Capture 2s Glimpse at Playhead"
                                             } else {
-                                                "Capture 2s Glimpse at ${AccessibilityHelper.formatTimeVisual(currentPositionMs)}"
+                                                "Capture 2s Glimpse at ${AccessibilityHelper.formatTimeVisual(livePosMs)}"
                                             },
                                             fontWeight = FontWeight.Bold
                                         )
@@ -450,7 +492,13 @@ fun VideoTimelineToolsPanel(
                             }
 
                             VideoStudioFeatureButton.MERGER -> {
-                                SectionToolCard(title = "Video Merger", subtitle = "Pick multiple videos, reorder sequence, then merge into one clip", isHighContrast = isHighContrast) {
+                                SectionToolCard(
+                                    title = "Video Merger",
+                                    subtitle = "Pick multiple videos, reorder sequence, then merge into one clip",
+                                    isHighContrast = isHighContrast,
+                                    onFeatureGuide = { localGuideTopic = FeatureGuideTopic.VIDEO_MERGER },
+                                    featureGuideTag = "btn_feature_guide_merger"
+                                ) {
                                     OutlinedButton(
                                         onClick = { multiVideoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) },
                                         modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_pick_merge_videos")
@@ -495,7 +543,13 @@ fun VideoTimelineToolsPanel(
                             }
 
                             VideoStudioFeatureButton.SLIDESHOW_BLANK -> {
-                                SectionToolCard(title = "Slideshow & Blank Clip Creator", subtitle = "Assemble multiple images with custom duration and background music", isHighContrast = isHighContrast) {
+                                SectionToolCard(
+                                    title = "Slideshow & Blank Clip Creator",
+                                    subtitle = "Assemble multiple images with custom duration and background music",
+                                    isHighContrast = isHighContrast,
+                                    onFeatureGuide = { localGuideTopic = FeatureGuideTopic.VIDEO_SLIDESHOW_BLANK },
+                                    featureGuideTag = "btn_feature_guide_slideshow"
+                                ) {
                                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         OutlinedButton(
                                             onClick = { multiPhotoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
@@ -568,8 +622,11 @@ fun VideoTimelineToolsPanel(
         }
     }
 
-    if (showLocalGuide) {
-        StudioFeatureGuideDialog(onDismiss = { showLocalGuide = false })
+    localGuideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { localGuideTopic = null }
+        )
     }
 }
 
@@ -667,6 +724,8 @@ fun SectionToolCard(
     subtitle: String,
     isHighContrast: Boolean,
     modifier: Modifier = Modifier,
+    onFeatureGuide: (() -> Unit)? = null,
+    featureGuideTag: String = "btn_feature_guide",
     content: @Composable () -> Unit
 ) {
     Card(
@@ -684,9 +743,23 @@ fun SectionToolCard(
             modifier = Modifier.fillMaxWidth().padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (onFeatureGuide != null) {
+                    Spacer(Modifier.width(8.dp))
+                    FeatureGuideButton(
+                        featureTitle = title,
+                        onClick = onFeatureGuide,
+                        testTag = featureGuideTag
+                    )
+                }
             }
             content()
         }

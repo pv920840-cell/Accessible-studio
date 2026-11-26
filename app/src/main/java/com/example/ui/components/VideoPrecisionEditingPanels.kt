@@ -171,6 +171,10 @@ internal fun MovePlayMoveRow(
     onMoveFinishNow: () -> Unit,
     tagPrefix: String
 ) {
+    val latestMoveStartNow by rememberUpdatedState(onMoveStartNow)
+    val latestPlay by rememberUpdatedState(onPlay)
+    val latestMoveFinishNow by rememberUpdatedState(onMoveFinishNow)
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -183,11 +187,17 @@ internal fun MovePlayMoveRow(
                 .testTag("btn_${tagPrefix}_move_start_now")
                 .combinedClickable(
                     role = Role.Button,
-                    onClick = onMoveStartNow,
-                    onDoubleClick = onMoveStartNow
+                    onClick = { latestMoveStartNow() },
+                    onDoubleClick = { latestMoveStartNow() }
                 )
                 .semantics {
                     contentDescription = "Move Start slider to now playing. Double tap to place Start marker at current playback position."
+                    customActions = listOf(
+                        CustomAccessibilityAction("Place Start marker at now playing") {
+                            latestMoveStartNow()
+                            true
+                        }
+                    )
                 },
             shape = RoundedCornerShape(10.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -209,7 +219,7 @@ internal fun MovePlayMoveRow(
             }
         }
         Button(
-            onClick = onPlay,
+            onClick = { latestPlay() },
             modifier = Modifier
                 .height(48.dp)
                 .testTag("btn_${tagPrefix}_play")
@@ -225,11 +235,17 @@ internal fun MovePlayMoveRow(
                 .testTag("btn_${tagPrefix}_move_finish_now")
                 .combinedClickable(
                     role = Role.Button,
-                    onClick = onMoveFinishNow,
-                    onDoubleClick = onMoveFinishNow
+                    onClick = { latestMoveFinishNow() },
+                    onDoubleClick = { latestMoveFinishNow() }
                 )
                 .semantics {
                     contentDescription = "Move Finish slider to now playing. Double tap to place Finish marker at current playback position."
+                    customActions = listOf(
+                        CustomAccessibilityAction("Place Finish marker at now playing") {
+                            latestMoveFinishNow()
+                            true
+                        }
+                    )
                 },
             shape = RoundedCornerShape(10.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -546,12 +562,23 @@ fun VideoTrimmerPrecisionPanel(
     streamCopyTrim: Boolean,
     onUpdateTrim: (startMs: Long, endMs: Long, streamCopy: Boolean) -> Unit,
     onPlaySelection: (Long, Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPositionMsProvider: (() -> Long)? = null,
+    onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val safeDuration = durationMs.coerceAtLeast(1000L)
     var stepMs by remember { mutableStateOf(1000L) }
+    var showGuide by remember { mutableStateOf(false) }
     val clampedStart = trimStartMs.coerceIn(0L, safeDuration)
     val clampedEnd = trimEndMs.coerceIn((clampedStart + 250L).coerceAtMost(safeDuration), safeDuration)
+
+    val latestPosProvider by rememberUpdatedState(currentPositionMsProvider)
+    val latestCurrentPos by rememberUpdatedState(currentPositionMs)
+    val latestSafeDuration by rememberUpdatedState(safeDuration)
+    val latestClampedStart by rememberUpdatedState(clampedStart)
+    val latestClampedEnd by rememberUpdatedState(clampedEnd)
+    val latestStreamCopy by rememberUpdatedState(streamCopyTrim)
+    val latestOnUpdateTrim by rememberUpdatedState(onUpdateTrim)
 
     Column(
         modifier = modifier
@@ -559,11 +586,23 @@ fun VideoTrimmerPrecisionPanel(
             .testTag("panel_video_trimmer"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "Video Trimmer",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Video Trimmer",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            FeatureGuideButton(
+                featureTitle = "Video Trimmer",
+                onClick = { onOpenFeatureGuide?.invoke() ?: run { showGuide = true } },
+                testTag = "btn_feature_guide_trimmer"
+            )
+        }
         Text(
             text = "Set Start and Finish around the part you want to keep, then save using your project save or export.",
             style = MaterialTheme.typography.bodySmall,
@@ -572,13 +611,15 @@ fun VideoTrimmerPrecisionPanel(
 
         MovePlayMoveRow(
             onMoveStartNow = {
-                val (s, e) = VideoCutMath.clampStartCutMarker(currentPositionMs, clampedEnd, safeDuration)
-                onUpdateTrim(s, e, streamCopyTrim)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampStartCutMarker(nowPos, latestClampedEnd, latestSafeDuration)
+                latestOnUpdateTrim(s, e, latestStreamCopy)
             },
-            onPlay = { onPlaySelection(clampedStart, clampedEnd) },
+            onPlay = { onPlaySelection(latestClampedStart, latestClampedEnd) },
             onMoveFinishNow = {
-                val (s, e) = VideoCutMath.clampEndCutMarker(clampedStart, currentPositionMs, safeDuration)
-                onUpdateTrim(s, e, streamCopyTrim)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampEndCutMarker(latestClampedStart, nowPos, latestSafeDuration)
+                latestOnUpdateTrim(s, e, latestStreamCopy)
             },
             tagPrefix = "trimmer"
         )
@@ -660,6 +701,13 @@ fun VideoTrimmerPrecisionPanel(
             )
         }
     }
+
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.VIDEO_TRIMMER,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 /**
@@ -672,12 +720,21 @@ fun VideoMultiTrimPanel(
     multiTrimClips: List<VideoCutSegment>,
     onUpdateMultiTrimClips: (List<VideoCutSegment>) -> Unit,
     onPlaySelection: (Long, Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPositionMsProvider: (() -> Long)? = null,
+    onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val safeDuration = durationMs.coerceAtLeast(1000L)
     var stepMs by remember { mutableStateOf(1000L) }
+    var showGuide by remember { mutableStateOf(false) }
     var startMs by remember(durationMs) { mutableStateOf(0L) }
     var finishMs by remember(durationMs) { mutableStateOf((safeDuration / 2L).coerceAtLeast(1000L)) }
+
+    val latestPosProvider by rememberUpdatedState(currentPositionMsProvider)
+    val latestCurrentPos by rememberUpdatedState(currentPositionMs)
+    val latestSafeDuration by rememberUpdatedState(safeDuration)
+    val latestStart by rememberUpdatedState(startMs)
+    val latestFinish by rememberUpdatedState(finishMs)
 
     Column(
         modifier = modifier
@@ -685,11 +742,23 @@ fun VideoMultiTrimPanel(
             .testTag("panel_video_multi_trim"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "Video Multi trim",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Video Multi trim",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            FeatureGuideButton(
+                featureTitle = "Video Multi trim",
+                onClick = { onOpenFeatureGuide?.invoke() ?: run { showGuide = true } },
+                testTag = "btn_feature_guide_multi_trim"
+            )
+        }
         Text(
             text = "Set Start and Finish around each clip you want to keep, then press Add clip.",
             style = MaterialTheme.typography.bodySmall,
@@ -698,12 +767,14 @@ fun VideoMultiTrimPanel(
 
         MovePlayMoveRow(
             onMoveStartNow = {
-                val (s, e) = VideoCutMath.clampStartCutMarker(currentPositionMs, finishMs, safeDuration)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampStartCutMarker(nowPos, latestFinish, latestSafeDuration)
                 startMs = s; finishMs = e
             },
-            onPlay = { onPlaySelection(startMs, finishMs) },
+            onPlay = { onPlaySelection(latestStart, latestFinish) },
             onMoveFinishNow = {
-                val (s, e) = VideoCutMath.clampEndCutMarker(startMs, currentPositionMs, safeDuration)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampEndCutMarker(latestStart, nowPos, latestSafeDuration)
                 startMs = s; finishMs = e
             },
             tagPrefix = "multi_trim"
@@ -808,6 +879,13 @@ fun VideoMultiTrimPanel(
             }
         }
     }
+
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.VIDEO_MULTI_TRIM,
+            onDismiss = { showGuide = false }
+        )
+    }
 }
 
 /**
@@ -820,15 +898,26 @@ fun VideoDeletePartPanel(
     cutSegments: List<VideoCutSegment>,
     onUpdateCutSegments: (List<VideoCutSegment>) -> Unit,
     onPlaySelection: (Long, Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPositionMsProvider: (() -> Long)? = null,
+    onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val safeDuration = durationMs.coerceAtLeast(1000L)
     var stepMs by remember { mutableStateOf(1000L) }
+    var showGuide by remember { mutableStateOf(false) }
     val existing = cutSegments.firstOrNull()
-    var startMs by remember(durationMs, existing?.id) { mutableStateOf(existing?.startMs ?: 0L) }
-    var finishMs by remember(durationMs, existing?.id) {
+    val segmentId = remember(durationMs) { existing?.id ?: java.util.UUID.randomUUID().toString() }
+    var startMs by remember(durationMs) { mutableStateOf(existing?.startMs ?: 0L) }
+    var finishMs by remember(durationMs) {
         mutableStateOf(existing?.endMs ?: (safeDuration / 3L).coerceAtLeast(1000L))
     }
+
+    val latestPosProvider by rememberUpdatedState(currentPositionMsProvider)
+    val latestCurrentPos by rememberUpdatedState(currentPositionMs)
+    val latestSafeDuration by rememberUpdatedState(safeDuration)
+    val latestStart by rememberUpdatedState(startMs)
+    val latestFinish by rememberUpdatedState(finishMs)
+    val latestOnUpdateCutSegments by rememberUpdatedState(onUpdateCutSegments)
 
     Column(
         modifier = modifier
@@ -836,11 +925,23 @@ fun VideoDeletePartPanel(
             .testTag("panel_video_delete_part"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "Video Delete part",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Video Delete part",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            FeatureGuideButton(
+                featureTitle = "Video Delete part",
+                onClick = { onOpenFeatureGuide?.invoke() ?: run { showGuide = true } },
+                testTag = "btn_feature_guide_delete_part"
+            )
+        }
         Text(
             text = "Set Start and Finish around the part you want to remove from the video.",
             style = MaterialTheme.typography.bodySmall,
@@ -849,15 +950,17 @@ fun VideoDeletePartPanel(
 
         MovePlayMoveRow(
             onMoveStartNow = {
-                val (s, e) = VideoCutMath.clampStartCutMarker(currentPositionMs, finishMs, safeDuration)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampStartCutMarker(nowPos, latestFinish, latestSafeDuration)
                 startMs = s; finishMs = e
-                onUpdateCutSegments(listOf(VideoCutSegment(startMs = s, endMs = e)))
+                latestOnUpdateCutSegments(listOf(VideoCutSegment(id = segmentId, startMs = s, endMs = e)))
             },
-            onPlay = { onPlaySelection(startMs, finishMs) },
+            onPlay = { onPlaySelection(latestStart, latestFinish) },
             onMoveFinishNow = {
-                val (s, e) = VideoCutMath.clampEndCutMarker(startMs, currentPositionMs, safeDuration)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampEndCutMarker(latestStart, nowPos, latestSafeDuration)
                 startMs = s; finishMs = e
-                onUpdateCutSegments(listOf(VideoCutSegment(startMs = s, endMs = e)))
+                latestOnUpdateCutSegments(listOf(VideoCutSegment(id = segmentId, startMs = s, endMs = e)))
             },
             tagPrefix = "delete_part"
         )
@@ -872,7 +975,7 @@ fun VideoDeletePartPanel(
             onValueChange = {
                 val (s, e) = VideoCutMath.clampStartCutMarker(it, finishMs, safeDuration)
                 startMs = s; finishMs = e
-                onUpdateCutSegments(listOf(VideoCutSegment(startMs = s, endMs = e)))
+                onUpdateCutSegments(listOf(VideoCutSegment(id = segmentId, startMs = s, endMs = e)))
             },
             testTagPrefix = "delete_part_start"
         )
@@ -893,7 +996,7 @@ fun VideoDeletePartPanel(
             onValueChange = {
                 val (s, e) = VideoCutMath.clampEndCutMarker(startMs, it, safeDuration)
                 startMs = s; finishMs = e
-                onUpdateCutSegments(listOf(VideoCutSegment(startMs = s, endMs = e)))
+                onUpdateCutSegments(listOf(VideoCutSegment(id = segmentId, startMs = s, endMs = e)))
             },
             testTagPrefix = "delete_part_finish"
         )
@@ -910,13 +1013,20 @@ fun VideoDeletePartPanel(
             onEditStartMs = {
                 val (s, e) = VideoCutMath.clampStartCutMarker(it, finishMs, safeDuration)
                 startMs = s; finishMs = e
-                onUpdateCutSegments(listOf(VideoCutSegment(startMs = s, endMs = e)))
+                onUpdateCutSegments(listOf(VideoCutSegment(id = segmentId, startMs = s, endMs = e)))
             },
             onEditFinishMs = {
                 val (s, e) = VideoCutMath.clampEndCutMarker(startMs, it, safeDuration)
                 startMs = s; finishMs = e
-                onUpdateCutSegments(listOf(VideoCutSegment(startMs = s, endMs = e)))
+                onUpdateCutSegments(listOf(VideoCutSegment(id = segmentId, startMs = s, endMs = e)))
             }
+        )
+    }
+
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.VIDEO_DELETE_PART,
+            onDismiss = { showGuide = false }
         )
     }
 }
@@ -931,12 +1041,21 @@ fun VideoMultiDeletePanel(
     cutSegments: List<VideoCutSegment>,
     onUpdateCutSegments: (List<VideoCutSegment>) -> Unit,
     onPlaySelection: (Long, Long) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPositionMsProvider: (() -> Long)? = null,
+    onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val safeDuration = durationMs.coerceAtLeast(1000L)
     var stepMs by remember { mutableStateOf(1000L) }
+    var showGuide by remember { mutableStateOf(false) }
     var startMs by remember(durationMs) { mutableStateOf(0L) }
     var finishMs by remember(durationMs) { mutableStateOf((safeDuration / 3L).coerceAtLeast(1000L)) }
+
+    val latestPosProvider by rememberUpdatedState(currentPositionMsProvider)
+    val latestCurrentPos by rememberUpdatedState(currentPositionMs)
+    val latestSafeDuration by rememberUpdatedState(safeDuration)
+    val latestStart by rememberUpdatedState(startMs)
+    val latestFinish by rememberUpdatedState(finishMs)
 
     Column(
         modifier = modifier
@@ -944,11 +1063,23 @@ fun VideoMultiDeletePanel(
             .testTag("panel_video_multi_delete"),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = "Video Multi delete",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Video Multi delete",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            FeatureGuideButton(
+                featureTitle = "Video Multi delete",
+                onClick = { onOpenFeatureGuide?.invoke() ?: run { showGuide = true } },
+                testTag = "btn_feature_guide_multi_delete"
+            )
+        }
         Text(
             text = "Set Start and Finish around each part to remove, then press Add part.",
             style = MaterialTheme.typography.bodySmall,
@@ -957,12 +1088,14 @@ fun VideoMultiDeletePanel(
 
         MovePlayMoveRow(
             onMoveStartNow = {
-                val (s, e) = VideoCutMath.clampStartCutMarker(currentPositionMs, finishMs, safeDuration)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampStartCutMarker(nowPos, latestFinish, latestSafeDuration)
                 startMs = s; finishMs = e
             },
-            onPlay = { onPlaySelection(startMs, finishMs) },
+            onPlay = { onPlaySelection(latestStart, latestFinish) },
             onMoveFinishNow = {
-                val (s, e) = VideoCutMath.clampEndCutMarker(startMs, currentPositionMs, safeDuration)
+                val nowPos = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+                val (s, e) = VideoCutMath.clampEndCutMarker(latestStart, nowPos, latestSafeDuration)
                 startMs = s; finishMs = e
             },
             tagPrefix = "multi_delete"
@@ -1066,5 +1199,12 @@ fun VideoMultiDeletePanel(
                 }
             }
         }
+    }
+
+    if (showGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.VIDEO_MULTI_DELETE,
+            onDismiss = { showGuide = false }
+        )
     }
 }

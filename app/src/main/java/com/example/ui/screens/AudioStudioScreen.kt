@@ -113,12 +113,14 @@ import com.example.ui.components.AudioStudioCommand
 import com.example.ui.components.AudioVisualMode
 import com.example.ui.components.MusicRebalancePanel
 import com.example.ui.components.OpenProjectsTabBar
+import com.example.ui.components.FeatureGuideButton
+import com.example.ui.components.FeatureGuideTopic
+import com.example.ui.components.SingleFeatureGuideDialog
 import com.example.ui.components.StudioAudioPropertiesDialog
 import com.example.ui.components.StudioAudioStatsDialog
 import com.example.ui.components.StudioBlankProjectDialog
 import com.example.ui.components.StudioCuePointsDialog
 import com.example.ui.components.StudioEffectsRackDialog
-import com.example.ui.components.StudioFeatureGuideDialog
 import com.example.ui.components.StudioGainDialog
 import com.example.ui.components.StudioInsertSilenceDialog
 import com.example.ui.components.StudioMixAudioDialog
@@ -375,7 +377,7 @@ fun AudioStudioScreen(
     var proSuiteCategoryIndex by remember { mutableIntStateOf(0) }
     var isApplyingProFx by remember { mutableStateOf(false) }
     var showMusicRebalanceDialog by remember { mutableStateOf(false) }
-    var showFeatureGuideDialog by remember { mutableStateOf(false) }
+    var activeGuideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
 
     LaunchedEffect(
         showEffectsRackDialog,
@@ -1371,7 +1373,7 @@ fun AudioStudioScreen(
                 showProSuiteDialog = true
             }
             AudioStudioCommand.OpenMusicRebalance -> showMusicRebalanceDialog = true
-            AudioStudioCommand.OpenFeatureGuide -> showFeatureGuideDialog = true
+            AudioStudioCommand.OpenFeatureGuide -> activeGuideTopic = FeatureGuideTopic.AUDIO_TRIM_CUT
 
             // Transport
             AudioStudioCommand.Play1Selection -> safePlaySelection(loopSegment = false)
@@ -1472,9 +1474,9 @@ fun AudioStudioScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         IconButton(
-                            onClick = { showFeatureGuideDialog = true },
+                            onClick = { activeGuideTopic = FeatureGuideTopic.AUDIO_TRIM_CUT },
                             modifier = Modifier.size(48.dp).testTag("btn_header_audio_guide")
-                                .semantics { contentDescription = "Open Feature Guide and Studio Quality Help" }
+                                .semantics { contentDescription = "Open Audio Trim and Cut Feature Guide" }
                         ) {
                             Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         }
@@ -1866,6 +1868,23 @@ fun AudioStudioScreen(
                             .padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Microphone Recorder",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.weight(1f)
+                            )
+                            FeatureGuideButton(
+                                featureTitle = "Voice Recording Studio",
+                                onClick = { activeGuideTopic = FeatureGuideTopic.AUDIO_VOICE_RECORDER },
+                                testTag = "btn_feature_guide_studio_recorder"
+                            )
+                        }
                         if (isRecording) {
                             Button(
                                 onClick = { stopMicRecording() },
@@ -2897,7 +2916,7 @@ fun AudioStudioScreen(
                                     }
                                 }
                             },
-                            onOpenGuide = { showFeatureGuideDialog = true }
+                            onOpenGuide = { activeGuideTopic = FeatureGuideTopic.AUDIO_MUSIC_REBALANCE }
                         )
                         Spacer(Modifier.height(12.dp))
                     }
@@ -2919,8 +2938,11 @@ fun AudioStudioScreen(
         }
     }
 
-    if (showFeatureGuideDialog) {
-        StudioFeatureGuideDialog(onDismiss = { showFeatureGuideDialog = false })
+    activeGuideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { activeGuideTopic = null }
+        )
     }
 }
 

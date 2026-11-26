@@ -127,6 +127,7 @@ fun StudioEffectsRackDialog(
     val isHighContrast = LocalHighContrast.current
     val effectTabs = listOf("Echo & Reverb", "Noise Reduction", "Tone & EQ", "Speed & Reverse", "Studio Pro Rack")
     var selectedSingleEffect by remember(initialSingleEffect) { mutableStateOf(initialSingleEffect) }
+    var activeRackGuideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -341,6 +342,11 @@ fun StudioEffectsRackDialog(
                                             modifier = Modifier.testTag("switch_noise_gate_enabled")
                                         )
                                     }
+                                    FeatureGuideButton(
+                                        featureTitle = "Noise Gate",
+                                        onClick = { activeRackGuideTopic = FeatureGuideTopic.AUDIO_EFFECT_NOISE_GATE },
+                                        testTag = "btn_feature_guide_noise_gate"
+                                    )
                                     AnimatedVisibility(visible = noiseGateEnabled) {
                                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                             EffectPresetDropdown(
@@ -392,6 +398,11 @@ fun StudioEffectsRackDialog(
                                             modifier = Modifier.testTag("switch_tone_eq_expanded")
                                         )
                                     }
+                                    FeatureGuideButton(
+                                        featureTitle = "Equalizer & Tone Shaping",
+                                        onClick = { activeRackGuideTopic = FeatureGuideTopic.AUDIO_EFFECT_TONE_EQ },
+                                        testTag = "btn_feature_guide_tone_eq"
+                                    )
                                     AnimatedVisibility(visible = toneExpanded) {
                                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                             EffectPresetDropdown(
@@ -471,6 +482,11 @@ fun StudioEffectsRackDialog(
                                             modifier = Modifier.testTag("switch_speed_expanded")
                                         )
                                     }
+                                    FeatureGuideButton(
+                                        featureTitle = "Playback Speed & Reverse",
+                                        onClick = { activeRackGuideTopic = FeatureGuideTopic.AUDIO_EFFECT_SPEED_REVERSE },
+                                        testTag = "btn_feature_guide_speed_reverse"
+                                    )
                                     AnimatedVisibility(visible = speedExpanded) {
                                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                             EffectPresetDropdown(
@@ -551,6 +567,13 @@ fun StudioEffectsRackDialog(
             }
         }
     }
+
+    activeRackGuideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { activeRackGuideTopic = null }
+        )
+    }
 }
 
 enum class VoiceOverSourceChoice {
@@ -602,6 +625,7 @@ fun StudioVoiceOverDialog(
     var musicVolume by remember { mutableFloatStateOf(selectedPreset.musicVolume) }
     var loopMusic by remember { mutableStateOf(true) }
     var syncOffsetMs by remember { mutableStateOf(0L) }
+    var showVoiceOverGuide by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -618,6 +642,11 @@ fun StudioVoiceOverDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                FeatureGuideButton(
+                    featureTitle = "Voice Over & Auto-Ducking",
+                    onClick = { showVoiceOverGuide = true },
+                    testTag = "btn_feature_guide_voice_over"
+                )
                 // 1. Add Audio / Music File or Use Clipboard
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
@@ -880,6 +909,13 @@ fun StudioVoiceOverDialog(
             }
         }
     )
+
+    if (showVoiceOverGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_VOICE_OVER,
+            onDismiss = { showVoiceOverGuide = false }
+        )
+    }
 }
 
 @Composable
@@ -893,6 +929,8 @@ fun StudioCuePointsDialog(
     onDeleteCue: (CuePoint) -> Unit,
     onDismiss: () -> Unit
 ) {
+    var showCueGuide by remember { mutableStateOf(false) }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -913,6 +951,11 @@ fun StudioCuePointsDialog(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                FeatureGuideButton(
+                    featureTitle = "Cue Points & Bookmarks",
+                    onClick = { showCueGuide = true },
+                    testTag = "btn_feature_guide_cue_points"
+                )
                 StudioCuePointsSection(
                     cuePoints = cuePoints,
                     currentMs = currentMs,
@@ -930,6 +973,13 @@ fun StudioCuePointsDialog(
                 }
             }
         }
+    }
+
+    if (showCueGuide) {
+        SingleFeatureGuideDialog(
+            topic = FeatureGuideTopic.AUDIO_CUE_POINTS,
+            onDismiss = { showCueGuide = false }
+        )
     }
 }
 

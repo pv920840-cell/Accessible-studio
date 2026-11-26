@@ -116,20 +116,24 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.4.0 — Precision Timeline Tools, Accessible Video Picker & Streaming Music Rebalance:\n\n" +
-            "1. Precision Timeline, Multi-Trim, Multi-Delete, Splitter & Auto Splitter:\n" +
-            "• Swipe UP/DOWN on the playback slider to scrub with live preview or double-tap to Play/Pause; double-tap Move Start/Finish/Point to now playing to snap markers.\n" +
-            "• Standardized Step slider defaults to 1 second and scales UP to 10s / 1min or DOWN to 100ms / 10ms / 1ms; double-tap any time readout to enter exact Minutes, Seconds, and Milliseconds.\n\n" +
-            "2. Accessible Video Picker & Crash-Free RX-Style Music Rebalance:\n" +
-            "• Zero-permission Choose video browser with Search by name, All files, Folders, Sort (Newest first), and Open file manager.\n" +
-            "• Streaming STFT Music Rebalance & 2–6 Stem Separation writes WAV stems directly to disk for crash-free processing on long songs."
+        "What's New in Version 1.5.0 — Per-Feature Guides, Live Marker Sync, Full-Length Playback Slider & Saved Project Details:\n\n" +
+            "1. Dedicated \"Feature Guide\" Inside Every Feature:\n" +
+            "• Every Audio, Video, Effects, Music Rebalance, Recorder, and Batch tool now has its own \"Feature Guide\" button showing instructions exclusively for that feature.\n\n" +
+            "2. Live \"Move Start / Finish / Point slider to now playing\" & Full Video Length Seeking:\n" +
+            "• Double-tapping or tapping Move to now playing reads the live playback head immediately to update Start, Finish, Point, and Clip Duration.\n" +
+            "• Playback / position sliders now cover full 5+ minute video lengths smoothly without a 1-minute cap, while keeping ms/s/min Step slider precision intact.\n\n" +
+            "3. Saved Projects Location Info in Settings & Auto-Updates:\n" +
+            "• Settings now explains where saved workflow projects appear (Home Screen -> Existing Projects) alongside Exports."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.4.0 में नया क्या है — प्रिसिज़न टाइमलाइन टूल्स, एक्सेसिबल वीडियो पिकर और स्ट्रीमिंग म्यूज़िक रीबैलेंस:\n\n" +
-            "1. प्रिसिज़न वीडियो ट्रिमर, मल्टी ट्रिम, डिलीट पार्ट, स्प्लिटर और ऑटो स्प्लिटर:\n" +
-            "• प्लेबैक स्लाइडर पर ऊपर/नीचे स्वाइप करके प्रीव्यू स्क्रब करें या डबल-टैप से Play/Pause करें; किसी भी टाइम डिस्प्ले पर डबल-टैप करके मिनट, सेकंड और मिलीसेकंड सेट करें।\n\n" +
-            "2. एक्सेसिबल वीडियो पिकर और क्रैश-मुक्त Music Rebalance:\n" +
-            "• बिना अतिरिक्त परमिशन वाला Choose video पिकर (Search by name, All files, Folders, Sort और Open file manager) तथा बड़ी ऑडियो फ़ाइलों के लिए 2 से 6 स्टेम सेपरेशन।"
+        "Version 1.5.0 में नया क्या है — हर फ़ीचर के अंदर Feature Guide, लाइव मार्कर सिंक और फुल-लेंथ प्लेबैक स्लाइडर:\n\n" +
+            "1. हर फ़ीचर में अलग \"Feature Guide\" बटन:\n" +
+            "• अब हर ऑडियो, वीडियो, इफ़ेक्ट्स, Music Rebalance और स्प्लिटिंग फ़ीचर में अपना खुद का Feature Guide बटन है जो सिर्फ उसी फ़ीचर की जानकारी दिखाता है।\n\n" +
+            "2. लाइव Move Start / Finish / Point स्लाइडर और फुल वीडियो लेंथ स्क्रबिंग:\n" +
+            "• Move to now playing दबाने या डबल-टैप करने पर Start, Finish और Point मार्कर तुरंत लाइव प्लेबैक पोज़िशन पर सेट होते हैं।\n" +
+            "• प्लेबैक स्लाइडर अब 5 मिनट या उससे बड़े वीडियो की पूरी लंबाई को कवर करता है (1 मिनट की सीमा हट गई है) और Step स्लाइडर भी पूरी तरह काम करता है।\n\n" +
+            "3. सेव किए गए प्रोजेक्ट्स की लोकेशन जानकारी:\n" +
+            "• Settings में अब स्पष्ट रूप से बताया गया है कि Save किए गए प्रोजेक्ट्स Home Screen -> Existing Projects में दिखते हैं।"
 }
 
 @Composable

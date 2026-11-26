@@ -81,6 +81,7 @@ fun VideoTransformPanel(
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
+    var guideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
     var widthStr by remember(customWidth) { mutableStateOf(customWidth.toString()) }
     var heightStr by remember(customHeight) { mutableStateOf(customHeight.toString()) }
 
@@ -98,7 +99,9 @@ fun VideoTransformPanel(
         SectionToolCard(
             title = "Speed Changer",
             subtitle = "Adjust playback speed (0.25x–4.0x) with optional pitch correction",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_SPEED_CHANGER },
+            featureGuideTag = "btn_feature_guide_speed"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f).forEach { spd ->
@@ -138,7 +141,9 @@ fun VideoTransformPanel(
         SectionToolCard(
             title = "Resize & Resolution",
             subtitle = "Downscale to 1080p, 720p, 480p, 360p or Custom with aspect ratio lock",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_RESIZE_RESOLUTION },
+            featureGuideTag = "btn_feature_guide_resize"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 VideoResolutionPreset.values().forEach { res ->
@@ -197,7 +202,9 @@ fun VideoTransformPanel(
         SectionToolCard(
             title = "Aspect Ratio Changer",
             subtitle = "Letterbox or Center-Crop videos to fit 16:9, 1:1, or 9:16",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_ASPECT_RATIO },
+            featureGuideTag = "btn_feature_guide_aspect_ratio"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 VideoAspectRatio.values().forEach { ratio ->
@@ -225,7 +232,9 @@ fun VideoTransformPanel(
         SectionToolCard(
             title = "Rotate, Flip & Reverse Video",
             subtitle = "Fix orientation (90°/180°/270°), mirror horizontally/vertically, or play backwards",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_ROTATE_FLIP_REVERSE },
+            featureGuideTag = "btn_feature_guide_rotate_flip_reverse"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 VideoRotation.values().forEach { rot ->
@@ -254,6 +263,13 @@ fun VideoTransformPanel(
         }
         }
     }
+
+    guideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { guideTopic = null }
+        )
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -277,6 +293,7 @@ fun VideoConvertAndMetaPanel(
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
+    var guideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
     var silenceThresholdDb by remember { mutableFloatStateOf(-35f) }
     var gifFps by remember { mutableIntStateOf(8) }
     var frameIntervalSec by remember { mutableIntStateOf(2) }
@@ -300,7 +317,9 @@ fun VideoConvertAndMetaPanel(
         SectionToolCard(
             title = "Silence Remover",
             subtitle = "Auto-detect silent pauses and jump-cut both video and audio",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_SILENCE_REMOVER },
+            featureGuideTag = "btn_feature_guide_silence_remover"
         ) {
             AccessibleEffectSlider(
                 title = "Silence Threshold",
@@ -328,7 +347,9 @@ fun VideoConvertAndMetaPanel(
         SectionToolCard(
             title = "Video Compressor (H.264 CRF)",
             subtitle = "Reduce file size with High / Medium / Low / Custom bitrate presets",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_COMPRESSOR },
+            featureGuideTag = "btn_feature_guide_compressor"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 CompressorQuality.values().forEach { q ->
@@ -367,7 +388,9 @@ fun VideoConvertAndMetaPanel(
         SectionToolCard(
             title = "Format Converter",
             subtitle = "Convert videos across MP4, MKV, MOV, AVI, and WEBM",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_FORMAT_CONVERTER },
+            featureGuideTag = "btn_feature_guide_format_converter"
         ) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 VideoFormatOption.values().forEach { fmt ->
@@ -394,7 +417,9 @@ fun VideoConvertAndMetaPanel(
         SectionToolCard(
             title = "Video to GIF & Frame Extractor",
             subtitle = "Convert short clips to animated GIF or extract JPEG frames to Pictures/Accessible Studio",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_GIF_FRAME_EXTRACTOR },
+            featureGuideTag = "btn_feature_guide_gif_frames"
         ) {
             AccessibleEffectSlider(
                 title = "GIF Frame Rate",
@@ -450,7 +475,9 @@ fun VideoConvertAndMetaPanel(
         SectionToolCard(
             title = "Video Metadata & Tags",
             subtitle = "Inspect technical specifications and edit Title, Artist, Album & Genre tags",
-            isHighContrast = isHighContrast
+            isHighContrast = isHighContrast,
+            onFeatureGuide = { guideTopic = FeatureGuideTopic.VIDEO_METADATA_TAGS },
+            featureGuideTag = "btn_feature_guide_metadata"
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -474,5 +501,12 @@ fun VideoConvertAndMetaPanel(
             }
         }
         }
+    }
+
+    guideTopic?.let { topic ->
+        SingleFeatureGuideDialog(
+            topic = topic,
+            onDismiss = { guideTopic = null }
+        )
     }
 }

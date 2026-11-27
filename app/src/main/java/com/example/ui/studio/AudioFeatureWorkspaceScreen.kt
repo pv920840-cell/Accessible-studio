@@ -10,6 +10,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -507,10 +508,46 @@ fun AudioFeatureWorkspaceScreen(
                 positionFlow = playerManager.currentPositionMs
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
+            val activeSpeedLabel = StudioPreferences.formatScrubSpeedLabel(scrubSpeed)
+            val isRewActive = activeScrubDirection == ScrubDirection.REWIND
+            val isFwdActive = activeScrubDirection == ScrubDirection.FORWARD
+
+            @Composable
+            fun TransportRewindButton(buttonModifier: Modifier) {
+                OutlinedButton(
+                    onClick = {
+                        if (workingPcm.isNotEmpty()) {
+                            playerManager.toggleScrub(ScrubDirection.REWIND)
+                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
+                        }
+                    },
+                    modifier = buttonModifier
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_workspace_rewind_scrub")
+                        .semantics {
+                            contentDescription = if (isRewActive) {
+                                "Rewinding at $activeSpeedLabel speed. Press to resume normal playback."
+                            } else {
+                                "Rewind at $activeSpeedLabel speed"
+                            }
+                        },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (isRewActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                    )
+                ) {
+                    Icon(Icons.Default.FastRewind, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (isRewActive) "Rew $activeSpeedLabel" else "Rewind $activeSpeedLabel",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            @Composable
+            fun TransportPlayPauseButton(buttonModifier: Modifier) {
                 Button(
                     onClick = {
                         if (isPlaying) {
@@ -523,24 +560,126 @@ fun AudioFeatureWorkspaceScreen(
                             }
                         }
                     },
-                    modifier = Modifier.weight(1f).height(48.dp).testTag("btn_workspace_play_pause")
+                    modifier = buttonModifier
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_workspace_play_pause")
+                        .semantics {
+                            contentDescription = if (isPlaying) "Pause audio" else "Play audio"
+                        }
                 ) {
-                    Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(if (isPlaying) "Pause" else "Play Preview", fontWeight = FontWeight.Bold)
+                    Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (isPlaying) "Pause" else "Play", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                 }
+            }
+
+            @Composable
+            fun TransportForwardButton(buttonModifier: Modifier) {
+                OutlinedButton(
+                    onClick = {
+                        if (workingPcm.isNotEmpty()) {
+                            playerManager.toggleScrub(ScrubDirection.FORWARD)
+                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
+                        }
+                    },
+                    modifier = buttonModifier
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_workspace_forward_scrub")
+                        .semantics {
+                            contentDescription = if (isFwdActive) {
+                                "Fast forwarding at $activeSpeedLabel speed. Press to resume normal playback."
+                            } else {
+                                "Fast forward at $activeSpeedLabel speed"
+                            }
+                        },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (isFwdActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                    )
+                ) {
+                    Icon(Icons.Default.FastForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = if (isFwdActive) "FF $activeSpeedLabel" else "Forward $activeSpeedLabel",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        maxLines = 1
+                    )
+                }
+            }
+
+            @Composable
+            fun TransportStopButton(buttonModifier: Modifier) {
                 OutlinedButton(
                     onClick = {
                         playerManager.stop()
                         playerManager.seekTo(0L)
                     },
-                    modifier = Modifier.height(48.dp).testTag("btn_workspace_stop")
+                    modifier = buttonModifier
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_workspace_stop")
+                        .semantics {
+                            contentDescription = "Stop audio playback"
+                        }
                 ) {
-                    Icon(Icons.Default.Stop, contentDescription = null)
+                    Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Stop", fontWeight = FontWeight.Bold)
+                    Text("Stop", fontWeight = FontWeight.Bold, fontSize = 13.sp, maxLines = 1)
                 }
             }
+
+            BoxWithConstraints(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("row_workspace_transport_controls")
+            ) {
+                if (maxWidth >= 480.dp) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TransportRewindButton(Modifier.weight(1f))
+                        TransportPlayPauseButton(Modifier.weight(1f))
+                        TransportForwardButton(Modifier.weight(1f))
+                        TransportStopButton(Modifier.weight(1f))
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TransportRewindButton(Modifier.weight(1f))
+                            TransportPlayPauseButton(Modifier.weight(1f))
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            TransportForwardButton(Modifier.weight(1f))
+                            TransportStopButton(Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            AccessiblePreviewPlaybackSlider(
+                currentPositionMs = currentPositionMs,
+                durationMs = durationMs,
+                onSeekTo = { playerManager.seekTo(it) },
+                isPlaying = isPlaying,
+                onTogglePlayPause = {
+                    if (isPlaying) {
+                        playerManager.pause()
+                    } else if (workingPcm.isNotEmpty()) {
+                        playerManager.play()
+                    }
+                },
+                onScrubPreviewPulse = { playerManager.scrubPreviewAt(it) },
+                testTag = "slider_audio_workspace_preview"
+            )
 
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
@@ -625,23 +764,7 @@ fun AudioFeatureWorkspaceScreen(
                 )
             }
 
-            AccessiblePreviewPlaybackSlider(
-                currentPositionMs = currentPositionMs,
-                durationMs = durationMs,
-                onSeekTo = { playerManager.seekTo(it) },
-                isPlaying = isPlaying,
-                onTogglePlayPause = {
-                    if (isPlaying) {
-                        playerManager.pause()
-                    } else if (workingPcm.isNotEmpty()) {
-                        playerManager.play()
-                    }
-                },
-                onScrubPreviewPulse = { playerManager.scrubPreviewAt(it) },
-                testTag = "slider_audio_workspace_preview"
-            )
-
-            // Rewind / Fast-Forward & Scrub Speed Controls for Audio Editing
+            // Rewind / Fast-Forward Scrub Speed Selector for Audio Editing
             Card(
                 modifier = Modifier.fillMaxWidth().testTag("card_workspace_scrub_controls"),
                 colors = CardDefaults.cardColors(
@@ -653,67 +776,6 @@ fun AudioFeatureWorkspaceScreen(
                     modifier = Modifier.fillMaxWidth().padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val activeSpeedLabel = StudioPreferences.formatScrubSpeedLabel(scrubSpeed)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        val isRewActive = activeScrubDirection == ScrubDirection.REWIND
-                        val isFwdActive = activeScrubDirection == ScrubDirection.FORWARD
-                        OutlinedButton(
-                            onClick = {
-                                if (workingPcm.isNotEmpty()) {
-                                    playerManager.toggleScrub(ScrubDirection.REWIND)
-                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
-                                }
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("btn_workspace_rewind_scrub")
-                                .semantics {
-                                    contentDescription = if (isRewActive) {
-                                        "Rewinding at $activeSpeedLabel speed. Press to resume normal playback."
-                                    } else {
-                                        "Rewind at $activeSpeedLabel speed"
-                                    }
-                                },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = if (isRewActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                            )
-                        ) {
-                            Icon(Icons.Default.FastRewind, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (isRewActive) "Rew $activeSpeedLabel" else "Rewind $activeSpeedLabel", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                        OutlinedButton(
-                            onClick = {
-                                if (workingPcm.isNotEmpty()) {
-                                    playerManager.toggleScrub(ScrubDirection.FORWARD)
-                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
-                                }
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("btn_workspace_forward_scrub")
-                                .semantics {
-                                    contentDescription = if (isFwdActive) {
-                                        "Fast forwarding at $activeSpeedLabel speed. Press to resume normal playback."
-                                    } else {
-                                        "Fast forward at $activeSpeedLabel speed"
-                                    }
-                                },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = if (isFwdActive) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                            )
-                        ) {
-                            Icon(Icons.Default.FastForward, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text(if (isFwdActive) "FF $activeSpeedLabel" else "Forward $activeSpeedLabel", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                    }
-
                     FlowRow(
                         modifier = Modifier
                             .fillMaxWidth()

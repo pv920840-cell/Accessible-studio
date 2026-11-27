@@ -202,7 +202,22 @@ class HomeCategoryNavigationTest {
             }
             composeRule.waitForIdle()
 
-            // 1. TRIM_CUT exposes Cut, Copy, Paste Cursor/End, Mix Paste, Insert Silence, Cue Points, Play/Loop Selection
+            // 1. TRIM_CUT places transport buttons together in exact order: Rewind -> Play/Pause -> Forward -> Stop
+            composeRule.onNodeWithTag("row_workspace_transport_controls").assertIsDisplayed()
+            val rewBounds = composeRule.onNodeWithTag("btn_workspace_rewind_scrub").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val playBounds = composeRule.onNodeWithTag("btn_workspace_play_pause").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val fwdBounds = composeRule.onNodeWithTag("btn_workspace_forward_scrub").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val stopBounds = composeRule.onNodeWithTag("btn_workspace_stop").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            val orderedSingleRow = rewBounds.top == fwdBounds.top &&
+                rewBounds.left < playBounds.left &&
+                playBounds.left < fwdBounds.left &&
+                fwdBounds.left < stopBounds.left
+            val orderedTwoRows = rewBounds.left < playBounds.left &&
+                fwdBounds.left < stopBounds.left &&
+                playBounds.bottom <= fwdBounds.top
+            assertTrue("Expected transport order Rewind -> Play/Pause -> Forward -> Stop", orderedSingleRow || orderedTwoRows)
+
+            // TRIM_CUT also exposes Cut, Copy, Paste Cursor/End, Mix Paste, Insert Silence, Cue Points, Play/Loop Selection
             listOf(
                 "btn_workspace_play_selection",
                 "btn_workspace_loop_selection",

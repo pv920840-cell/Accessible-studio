@@ -116,24 +116,24 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.5.0 — Per-Feature Guides, Live Marker Sync, Full-Length Playback Slider & Saved Project Details:\n\n" +
-            "1. Dedicated \"Feature Guide\" Inside Every Feature:\n" +
-            "• Every Audio, Video, Effects, Music Rebalance, Recorder, and Batch tool now has its own \"Feature Guide\" button showing instructions exclusively for that feature.\n\n" +
-            "2. Live \"Move Start / Finish / Point slider to now playing\" & Full Video Length Seeking:\n" +
-            "• Double-tapping or tapping Move to now playing reads the live playback head immediately to update Start, Finish, Point, and Clip Duration.\n" +
-            "• Playback / position sliders now cover full 5+ minute video lengths smoothly without a 1-minute cap, while keeping ms/s/min Step slider precision intact.\n\n" +
-            "3. Saved Projects Location Info in Settings & Auto-Updates:\n" +
-            "• Settings now explains where saved workflow projects appear (Home Screen -> Existing Projects) alongside Exports."
+        "What's New in Version 1.5.1 — Uninstall Old Build Fix, App Info Fallback & Update Reliability:\n\n" +
+            "1. Fixed \"Uninstall Old Build\" Button on Package Conflict:\n" +
+            "• Added Android's REQUEST_DELETE_PACKAGES permission so tapping Uninstall Old Build opens the system uninstall prompt properly without silent failure.\n" +
+            "• Saving the update APK to Downloads now runs smoothly in the background before launching uninstall.\n\n" +
+            "2. New \"Open App Info to Uninstall\" Button:\n" +
+            "• Added a direct Open App Info to Uninstall button inside the Package Conflict card for guaranteed 1-tap access on any device.\n\n" +
+            "3. GitHub Releases Download & 404 Recovery:\n" +
+            "• Automatic asset fallback lookup, Open Releases Page fallback button on download errors, and persistent CI signing keys for smoother future upgrades."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.5.0 में नया क्या है — हर फ़ीचर के अंदर Feature Guide, लाइव मार्कर सिंक और फुल-लेंथ प्लेबैक स्लाइडर:\n\n" +
-            "1. हर फ़ीचर में अलग \"Feature Guide\" बटन:\n" +
-            "• अब हर ऑडियो, वीडियो, इफ़ेक्ट्स, Music Rebalance और स्प्लिटिंग फ़ीचर में अपना खुद का Feature Guide बटन है जो सिर्फ उसी फ़ीचर की जानकारी दिखाता है।\n\n" +
-            "2. लाइव Move Start / Finish / Point स्लाइडर और फुल वीडियो लेंथ स्क्रबिंग:\n" +
-            "• Move to now playing दबाने या डबल-टैप करने पर Start, Finish और Point मार्कर तुरंत लाइव प्लेबैक पोज़िशन पर सेट होते हैं।\n" +
-            "• प्लेबैक स्लाइडर अब 5 मिनट या उससे बड़े वीडियो की पूरी लंबाई को कवर करता है (1 मिनट की सीमा हट गई है) और Step स्लाइडर भी पूरी तरह काम करता है।\n\n" +
-            "3. सेव किए गए प्रोजेक्ट्स की लोकेशन जानकारी:\n" +
-            "• Settings में अब स्पष्ट रूप से बताया गया है कि Save किए गए प्रोजेक्ट्स Home Screen -> Existing Projects में दिखते हैं।"
+        "Version 1.5.1 में नया क्या है — Uninstall Old Build बटन फ़िक्स और अपडेट सुधार:\n\n" +
+            "1. \"Uninstall Old Build\" बटन अब सही से काम करता है:\n" +
+            "• Android की REQUEST_DELETE_PACKAGES परमिशन जोड़ी गई है ताकि पुराने बिल्ड को अनइंस्टॉल करने का सिस्टम प्रॉम्प्ट तुरंत खुले।\n" +
+            "• अनइंस्टॉल से पहले नया APK बैकग्राउंड में Downloads फ़ोल्डर में सेव हो जाता है।\n\n" +
+            "2. नया \"Open App Info to Uninstall\" बटन:\n" +
+            "• Package Conflict कार्ड में सीधे Android App Info खोलने का बटन जोड़ा गया है ताकि किसी भी फ़ोन पर एक टैप में अनइंस्टॉल किया जा सके।\n\n" +
+            "3. GitHub Releases डाउनलोड और 404 रिकवरी:\n" +
+            "• अपडेट डाउनलोड में ऑटोमैटिक 404 फ़ॉलबैक, Open Releases Page बटन और लगातार सही साइन किए गए अपडेट बिल्ड शामिल हैं।"
 }
 
 @Composable

@@ -599,18 +599,39 @@ class MainActivity : ComponentActivity() {
                         onUninstallCurrentApp = {
                             if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
                             val conflictApk = (updateFlowState as? InAppUpdateFlowState.PackageConflict)?.apkFile
-                            val savedPath = conflictApk?.let { AppUpdateChecker.saveApkToDownloads(applicationContext, it) }
-                            if (savedPath != null) {
-                                val msg = "Saved update APK to $savedPath before uninstalling."
-                                android.widget.Toast.makeText(activityContext, msg, android.widget.Toast.LENGTH_LONG).show()
-                                AccessibilityHelper.announceForAccessibility(activityContext, msg)
+                            appCoroutineScope.launch {
+                                val savedPath = conflictApk?.let { apk ->
+                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                        AppUpdateChecker.saveApkToDownloads(applicationContext, apk)
+                                    }
+                                }
+                                if (savedPath != null) {
+                                    val msg = "Saved update APK to $savedPath before uninstalling."
+                                    android.widget.Toast.makeText(activityContext, msg, android.widget.Toast.LENGTH_LONG).show()
+                                    AccessibilityHelper.announceForAccessibility(activityContext, msg)
+                                }
+                                if (!AppUpdateChecker.uninstallCurrentApp(activityContext)) {
+                                    android.widget.Toast.makeText(
+                                        activityContext,
+                                        "Open Android App Info to uninstall the older build.",
+                                        android.widget.Toast.LENGTH_SHORT
+                                    ).show()
+                                }
                             }
-                            if (!AppUpdateChecker.uninstallCurrentApp(activityContext)) {
+                        },
+                        onOpenAppInfoForUninstall = {
+                            if (isHapticsEnabled) AccessibilityHelper.vibrate(activityContext, VibrationType.CLICK)
+                            if (!AppUpdateChecker.openAppInfoForUninstall(activityContext)) {
                                 android.widget.Toast.makeText(
                                     activityContext,
-                                    "Open Android App Info to uninstall the older build.",
+                                    "Could not open Android App Info.",
                                     android.widget.Toast.LENGTH_SHORT
                                 ).show()
+                            } else {
+                                AccessibilityHelper.announceForAccessibility(
+                                    activityContext,
+                                    "Opening Android App Info. Tap Uninstall, then install the saved APK from Downloads."
+                                )
                             }
                         },
                         onShareApkLink = {

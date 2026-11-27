@@ -69,7 +69,8 @@ fun AppUpdateAvailableDialog(
     onUninstallCurrentApp: () -> Unit = {},
     onSaveApkToDownloads: (File) -> Unit = {},
     onShareApkLink: () -> Unit = {},
-    onOpenReleasesPage: () -> Unit = {}
+    onOpenReleasesPage: () -> Unit = {},
+    onOpenAppInfoForUninstall: () -> Unit = {}
 ) {
     val isHighContrast = LocalHighContrast.current
     val isDownloading = flowState is InAppUpdateFlowState.Downloading
@@ -274,6 +275,21 @@ fun AppUpdateAvailableDialog(
                                         Text("Save APK to Downloads", fontWeight = FontWeight.Bold)
                                     }
                                 }
+                                OutlinedButton(
+                                    onClick = onOpenAppInfoForUninstall,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(min = 48.dp)
+                                        .testTag("btn_dialog_open_app_info_uninstall")
+                                        .semantics {
+                                            contentDescription = "Open Android App Info to uninstall the older build manually"
+                                        },
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Open App Info to Uninstall", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -376,7 +392,7 @@ fun AppUpdateAvailableDialog(
                             .heightIn(min = 48.dp)
                             .testTag("btn_dialog_uninstall_existing")
                             .semantics {
-                                contentDescription = "Uninstall existing conflicting build of Accessible Studio so you can install the new update cleanly."
+                                contentDescription = "Uninstall Old Build. Removes the older conflicting version so you can install the new update."
                             }
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {

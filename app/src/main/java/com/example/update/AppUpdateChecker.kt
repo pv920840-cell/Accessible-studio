@@ -826,8 +826,33 @@ object AppUpdateChecker {
     }
 
     fun createUninstallCurrentAppIntent(context: Context): Intent {
-        return Intent(Intent.ACTION_DELETE, Uri.parse("package:${context.packageName}")).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return Intent(
+            Intent.ACTION_DELETE,
+            Uri.fromParts("package", context.packageName, null)
+        ).apply {
+            if (context !is android.app.Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+    }
+
+    fun createAppDetailsSettingsIntent(context: Context): Intent {
+        return Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.fromParts("package", context.packageName, null)
+        ).apply {
+            if (context !is android.app.Activity) {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        }
+    }
+
+    fun openAppInfoForUninstall(context: Context): Boolean {
+        return try {
+            context.startActivity(createAppDetailsSettingsIntent(context))
+            true
+        } catch (_: Exception) {
+            false
         }
     }
 
@@ -874,10 +899,15 @@ object AppUpdateChecker {
 
     fun uninstallCurrentApp(context: Context): Boolean {
         return try {
-            context.startActivity(createUninstallCurrentAppIntent(context))
-            true
+            val deleteIntent = createUninstallCurrentAppIntent(context)
+            if (deleteIntent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(deleteIntent)
+                true
+            } else {
+                openAppInfoForUninstall(context)
+            }
         } catch (_: Exception) {
-            false
+            openAppInfoForUninstall(context)
         }
     }
 

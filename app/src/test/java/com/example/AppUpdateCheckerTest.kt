@@ -706,6 +706,7 @@ class AppUpdateCheckerTest {
         }
         var uninstallClicks = 0
         var saveApkClicks = 0
+        var appInfoUninstallClicks = 0
         var dialogShareClicks = 0
         var settingsShareClicks = 0
         var showDialog by mutableStateOf(true)
@@ -724,7 +725,8 @@ class AppUpdateCheckerTest {
                     onLater = { showDialog = false },
                     onUninstallCurrentApp = { uninstallClicks++ },
                     onSaveApkToDownloads = { saveApkClicks++ },
-                    onShareApkLink = { dialogShareClicks++ }
+                    onShareApkLink = { dialogShareClicks++ },
+                    onOpenAppInfoForUninstall = { appInfoUninstallClicks++ }
                 )
             } else {
                 AccessibilitySettingsSheet(
@@ -743,10 +745,12 @@ class AppUpdateCheckerTest {
         composeRule.onNodeWithTag("txt_update_package_conflict")
             .assertTextContains("different signing key", substring = true)
         composeRule.onNodeWithTag("btn_dialog_save_apk_downloads").performScrollTo().assertExists().performClick()
+        composeRule.onNodeWithTag("btn_dialog_open_app_info_uninstall").performScrollTo().assertExists().performClick()
         composeRule.onNodeWithTag("btn_dialog_uninstall_existing").assertExists().performClick()
         composeRule.onNodeWithTag("btn_dialog_share_apk_link").performScrollTo().assertExists().performClick()
         composeRule.waitForIdle()
         assertEquals(1, saveApkClicks)
+        assertEquals(1, appInfoUninstallClicks)
         assertEquals(1, uninstallClicks)
         assertEquals(1, dialogShareClicks)
 
@@ -860,5 +864,22 @@ class AppUpdateCheckerTest {
             .performClick()
         composeRule.waitForIdle()
         assertEquals(1, openReleasesClicks)
+    }
+
+    @Test
+    fun manifestDeclaresRequestDeletePackages_andAppDetailsIntentTargetsCurrentPackage() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        @Suppress("DEPRECATION")
+        val pkgInfo = context.packageManager.getPackageInfo(
+            context.packageName,
+            android.content.pm.PackageManager.GET_PERMISSIONS
+        )
+        val requested = pkgInfo.requestedPermissions?.toList().orEmpty()
+        assertTrue(requested.contains(android.Manifest.permission.REQUEST_DELETE_PACKAGES))
+        assertTrue(requested.contains(android.Manifest.permission.REQUEST_INSTALL_PACKAGES))
+
+        val appInfoIntent = AppUpdateChecker.createAppDetailsSettingsIntent(context)
+        assertEquals(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, appInfoIntent.action)
+        assertEquals("package:${context.packageName}", appInfoIntent.dataString)
     }
 }

@@ -116,22 +116,22 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.5.2 — Accessible Category Navigation, Audio Editor Flow & Always-Available Save Project:\n\n" +
-            "1. Button-Based Home & Category Navigation:\n" +
-            "• Added dedicated Audio Editor and Video Editor category buttons right on Home alongside Create Project and Existing Projects.\n\n" +
-            "2. Linear Audio Editor Feature Flow:\n" +
-            "• Tapping Audio Editor opens separate, TalkBack-friendly buttons for Trim, Mix, Effects, Batch Processing, Music Rebalance & Stems, and Voice Recorder — clean and linear without heavy desktop DAW clutter.\n\n" +
-            "3. Always-Accessible Save Project & Audio Export:\n" +
-            "• \"Save Project\" remains available at every point of editing, while final audio and video export workflows work just as cleanly as before."
+        "What's New in Version 1.5.3 — All Audio Editor Tools Restored in Clean Accessible Navigation:\n\n" +
+            "1. Voice Over, Auto-Ducking & Pro Audio Tools Restored:\n" +
+            "• Audio Editor now includes Voice Over & Auto-Ducking as well as Tone/Noise Generator, Insert Silence, Cue Points & Bookmarks, Peak/RMS Statistics, Time Stretch & Pitch/Pro DSP.\n\n" +
+            "2. Full Clipboard, Loop Playback & Pro Recorder Controls:\n" +
+            "• Cut, Copy, Paste at Cursor/End, Mix Paste, Redo, Loop Selection, Append Recording, Punch-In Recording, Mic Gain, and Buffer size controls are all directly accessible.\n\n" +
+            "3. Complete Filters, Effects, Batch Processing & Always-Ready Save:\n" +
+            "• Added Fade In/Out, Custom Gain ±dB, Normalize RMS, Expander, High-Pass, Low-Pass, Band-Pass, Mechanize, plus Batch Processing, Save Project, and Final Export."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.5.2 में नया क्या है — नया Audio Editor और आसान बटन नेविगेशन:\n\n" +
-            "1. होम स्क्रीन पर बटन-आधारित नेविगेशन:\n" +
-            "• होम स्क्रीन पर Create Project के साथ अलग Audio Editor और Video Editor कैटेगरी बटन जोड़े गए हैं।\n\n" +
-            "2. Audio Editor में अलग-अलग फ़ीचर बटन:\n" +
-            "• Audio Editor खोलने पर Trim, Mix, Effects, Batch Processing, Music Rebalance & Stems और Voice Recorder के स्पष्ट बटन सीधे मिलते हैं।\n\n" +
-            "3. हर समय उपलब्ध Save Project और Export:\n" +
-            "• अब एडिटिंग के किसी भी समय \"Save Project\" और फाइनल ऑडियो/वीडियो Export पहले की तरह आसानी से काम करते हैं।"
+        "Version 1.5.3 में नया क्या है — Audio Editor के सभी फीचर्स वापस जोड़े गए:\n\n" +
+            "1. Voice Over, Auto-Ducking और Audio Tools:\n" +
+            "• Audio Editor में अब Voice Over & Auto-Ducking के साथ Tone Generator, Insert Silence, Cue Points, Peak/RMS Stats, Time Stretch और Pro DSP टूल भी सीधे उपलब्ध हैं।\n\n" +
+            "2. Clipboard, Loop Selection और पूरा Voice Recorder:\n" +
+            "• Cut, Copy, Paste, Mix Paste, Redo, Loop Selection, Append व Punch-In रिकॉर्डिंग और Mic Gain/Buffer नियंत्रण भी आसानी से मिलते हैं।\n\n" +
+            "3. सभी फ़िल्टर, Batch Processing, Save Project और Export:\n" +
+            "• Fade In/Out, RMS Normalize, Expander, High-Pass/Low-Pass/Band-Pass, Mechanize, Batch Processing, Save Project और फाइनल Export पूरी तरह सुरक्षित हैं।"
 }
 
 @Composable

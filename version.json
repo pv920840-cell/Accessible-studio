@@ -1,10 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 27,
-  "versionName": "1.5.2",
-  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.2/AccessibleStudio_V1.5.2.apk",
+  "versionCode": 28,
+  "versionName": "1.5.3",
+  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.3/AccessibleStudio_V1.5.3.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 20770513,
-  "changelog": "Added accessible button-based Audio Editor & Video Editor categories on Home, separate linear Audio Editor feature buttons (Trim, Mix, Effects, Batch Processing, Music Rebalance, Voice Recorder), and an always-available Save Project action while keeping all existing processing and final export intact.",
-  "releaseNotes": "Added accessible button-based Audio Editor & Video Editor categories on Home, separate linear Audio Editor feature buttons (Trim, Mix, Effects, Batch Processing, Music Rebalance, Voice Recorder), and an always-available Save Project action while keeping all existing processing and final export intact."
+  "apkSizeBytes": 20852429,
+  "changelog": "Restored all Audio Editor tools in clean accessible workspaces: Voice Over & Auto-Ducking, Tone/Noise Generator, Insert Silence, Cue Points & Bookmarks, Peak/RMS Statistics, Cut/Copy/Paste/Mix Paste Clipboard, Record Append & Punch-In with Mic Gain/Buffer, Fade In/Out, RMS Normalize, Expander, High/Low/Band-Pass Filters, Mechanize, Time Stretch & Pro DSP Suite, Loop Selection, and Redo — keeping Save Project and Final Export intact.",
+  "releaseNotes": "Restored all Audio Editor tools in clean accessible workspaces: Voice Over & Auto-Ducking, Tone/Noise Generator, Insert Silence, Cue Points & Bookmarks, Peak/RMS Statistics, Cut/Copy/Paste/Mix Paste Clipboard, Record Append & Punch-In with Mic Gain/Buffer, Fade In/Out, RMS Normalize, Expander, High/Low/Band-Pass Filters, Mechanize, Time Stretch & Pro DSP Suite, Loop Selection, and Redo — keeping Save Project and Final Export intact."
 }

@@ -281,9 +281,11 @@ object FeatureGuideCatalog {
     fun forAudioTool(tool: AudioFeatureTool): FeatureGuideTopic = when (tool) {
         AudioFeatureTool.TRIM_CUT -> FeatureGuideTopic.AUDIO_TRIM_CUT
         AudioFeatureTool.MIX_TRACKS -> FeatureGuideTopic.AUDIO_MIX_OVERDUB
+        AudioFeatureTool.VOICE_OVER -> FeatureGuideTopic.AUDIO_VOICE_OVER
         AudioFeatureTool.EFFECTS_CLEANING -> FeatureGuideTopic.AUDIO_EFFECTS_CLEANING
         AudioFeatureTool.MUSIC_REBALANCE -> FeatureGuideTopic.AUDIO_MUSIC_REBALANCE
         AudioFeatureTool.RECORD_VOICE -> FeatureGuideTopic.AUDIO_VOICE_RECORDER
+        AudioFeatureTool.AUDIO_GENERATORS_TOOLS -> FeatureGuideTopic.AUDIO_CUE_POINTS
         AudioFeatureTool.FULL_DAW_STUDIO -> FeatureGuideTopic.AUDIO_TRIM_CUT
     }
 

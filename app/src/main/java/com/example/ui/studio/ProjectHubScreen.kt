@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GraphicEq
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Transform
@@ -331,6 +333,7 @@ fun ProjectHubScreen(
                         listOf(
                             AudioFeatureTool.TRIM_CUT,
                             AudioFeatureTool.MIX_TRACKS,
+                            AudioFeatureTool.VOICE_OVER,
                             AudioFeatureTool.EFFECTS_CLEANING
                         ),
                         key = { it.name }
@@ -357,7 +360,8 @@ fun ProjectHubScreen(
                     items(
                         listOf(
                             AudioFeatureTool.MUSIC_REBALANCE,
-                            AudioFeatureTool.RECORD_VOICE
+                            AudioFeatureTool.RECORD_VOICE,
+                            AudioFeatureTool.AUDIO_GENERATORS_TOOLS
                         ),
                         key = { it.name }
                     ) { tool ->
@@ -560,9 +564,11 @@ private fun AudioLinearFeatureButtonCard(
 private fun audioToolIcon(tool: AudioFeatureTool): ImageVector = when (tool) {
     AudioFeatureTool.TRIM_CUT -> Icons.Default.ContentCut
     AudioFeatureTool.MIX_TRACKS -> Icons.Default.Layers
+    AudioFeatureTool.VOICE_OVER -> Icons.Default.RecordVoiceOver
     AudioFeatureTool.EFFECTS_CLEANING -> Icons.Default.GraphicEq
     AudioFeatureTool.MUSIC_REBALANCE -> Icons.Default.Tune
     AudioFeatureTool.RECORD_VOICE -> Icons.Default.Mic
+    AudioFeatureTool.AUDIO_GENERATORS_TOOLS -> Icons.Default.Bookmarks
     AudioFeatureTool.FULL_DAW_STUDIO -> Icons.Default.Audiotrack
 }
 

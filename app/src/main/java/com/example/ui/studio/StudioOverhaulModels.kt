@@ -51,17 +51,22 @@ enum class AudioFeatureTool(
 ) {
     TRIM_CUT(
         title = "Trim",
-        subtitle = "Set start/end markers, preview, crop, cut & mute selection",
+        subtitle = "Set start/end markers, crop, cut, copy, paste, mute, silence & loop preview",
         tag = "hub_feature_audio_trim"
     ),
     MIX_TRACKS(
         title = "Mix",
-        subtitle = "Blend another audio track with balance & peak limiter",
+        subtitle = "Blend another audio track or clipboard with volume balance & peak limiter",
         tag = "hub_feature_audio_mix"
+    ),
+    VOICE_OVER(
+        title = "Voice Over & Auto-Ducking",
+        subtitle = "Blend voice & background music with smart auto-ducking & sync",
+        tag = "hub_feature_audio_voice_over"
     ),
     EFFECTS_CLEANING(
         title = "Effects",
-        subtitle = "Auto Gain, Adaptive De-Noise, EQ, Compressor, Echo & Reverb",
+        subtitle = "Auto Gain, De-Noise, EQ, Filters, Fades, Compressor, Echo, Reverb & Pro DSP",
         tag = "hub_feature_audio_effects"
     ),
     MUSIC_REBALANCE(
@@ -71,8 +76,13 @@ enum class AudioFeatureTool(
     ),
     RECORD_VOICE(
         title = "Voice Recorder",
-        subtitle = "Capture live microphone audio or punch-in over selection",
+        subtitle = "Record replacement, punch-in over selection, append to end & mic gain",
         tag = "hub_feature_audio_record"
+    ),
+    AUDIO_GENERATORS_TOOLS(
+        title = "Tone, Silence, Cues & Stats",
+        subtitle = "Synthesize tone/noise, insert silence, cue markers, speed/pitch & RMS stats",
+        tag = "hub_feature_audio_tools"
     ),
     FULL_DAW_STUDIO(
         title = "Full DAW Timeline",
@@ -84,9 +94,11 @@ enum class AudioFeatureTool(
 fun accessibleAudioTools(): List<AudioFeatureTool> = listOf(
     AudioFeatureTool.TRIM_CUT,
     AudioFeatureTool.MIX_TRACKS,
+    AudioFeatureTool.VOICE_OVER,
     AudioFeatureTool.EFFECTS_CLEANING,
     AudioFeatureTool.MUSIC_REBALANCE,
-    AudioFeatureTool.RECORD_VOICE
+    AudioFeatureTool.RECORD_VOICE,
+    AudioFeatureTool.AUDIO_GENERATORS_TOOLS
 )
 
 enum class VideoFeatureTool(
@@ -166,6 +178,8 @@ data class AudioProjectSessionState(
     val fxSettings: StudioFxSettings = StudioFxSettings(),
     val selectedEq: EqPreset = EqPreset.NORMAL,
     val appliedQuickEffects: List<String> = emptyList(),
+    val clipboardPcm: ShortArray? = null,
+    val cuePoints: List<com.example.audio.CuePoint> = emptyList(),
     val hasUnsavedChanges: Boolean = false
 )
 

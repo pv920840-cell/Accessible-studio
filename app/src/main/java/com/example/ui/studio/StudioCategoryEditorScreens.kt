@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FolderOpen
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Transform
@@ -181,7 +183,7 @@ fun AudioEditorScreen(
                 item(key = "audio_tool_trim") {
                     CategoryFeatureButton(
                         title = "Trim",
-                        subtitle = "Set start and end markers, preview, crop, cut & mute selection",
+                        subtitle = AudioFeatureTool.TRIM_CUT.subtitle,
                         icon = Icons.Default.ContentCut,
                         isHighContrast = isHighContrast,
                         tag = "btn_audio_editor_trim",
@@ -192,7 +194,7 @@ fun AudioEditorScreen(
                 item(key = "audio_tool_mix") {
                     CategoryFeatureButton(
                         title = "Mix",
-                        subtitle = "Blend a second audio track with volume balance & peak limiter",
+                        subtitle = AudioFeatureTool.MIX_TRACKS.subtitle,
                         icon = Icons.Default.Layers,
                         isHighContrast = isHighContrast,
                         tag = "btn_audio_editor_mix",
@@ -200,10 +202,21 @@ fun AudioEditorScreen(
                     )
                 }
 
+                item(key = "audio_tool_voice_over") {
+                    CategoryFeatureButton(
+                        title = "Voice Over & Auto-Ducking",
+                        subtitle = AudioFeatureTool.VOICE_OVER.subtitle,
+                        icon = Icons.Default.RecordVoiceOver,
+                        isHighContrast = isHighContrast,
+                        tag = "btn_audio_editor_voice_over",
+                        onClick = { onOpenAudioTool(AudioFeatureTool.VOICE_OVER) }
+                    )
+                }
+
                 item(key = "audio_tool_effects") {
                     CategoryFeatureButton(
                         title = "Effects",
-                        subtitle = "Auto Gain, Adaptive De-Noise, EQ, Compressor, Echo & Reverb",
+                        subtitle = AudioFeatureTool.EFFECTS_CLEANING.subtitle,
                         icon = Icons.Default.GraphicEq,
                         isHighContrast = isHighContrast,
                         tag = "btn_audio_editor_effects",
@@ -225,7 +238,7 @@ fun AudioEditorScreen(
                 item(key = "audio_tool_rebalance") {
                     CategoryFeatureButton(
                         title = "Music Rebalance & Stems",
-                        subtitle = "Adjust vocals, bass, percussion & instruments or separate 2–6 stems",
+                        subtitle = AudioFeatureTool.MUSIC_REBALANCE.subtitle,
                         icon = Icons.Default.Tune,
                         isHighContrast = isHighContrast,
                         tag = "btn_audio_editor_music_rebalance",
@@ -236,11 +249,22 @@ fun AudioEditorScreen(
                 item(key = "audio_tool_record") {
                     CategoryFeatureButton(
                         title = "Voice Recorder",
-                        subtitle = "Record microphone audio or punch-in over a selected region",
+                        subtitle = AudioFeatureTool.RECORD_VOICE.subtitle,
                         icon = Icons.Default.Mic,
                         isHighContrast = isHighContrast,
                         tag = "btn_audio_editor_record",
                         onClick = { onOpenAudioTool(AudioFeatureTool.RECORD_VOICE) }
+                    )
+                }
+
+                item(key = "audio_tool_generators_tools") {
+                    CategoryFeatureButton(
+                        title = "Tone, Silence, Cues & Stats",
+                        subtitle = AudioFeatureTool.AUDIO_GENERATORS_TOOLS.subtitle,
+                        icon = Icons.Default.Bookmarks,
+                        isHighContrast = isHighContrast,
+                        tag = "btn_audio_editor_tools",
+                        onClick = { onOpenAudioTool(AudioFeatureTool.AUDIO_GENERATORS_TOOLS) }
                     )
                 }
 

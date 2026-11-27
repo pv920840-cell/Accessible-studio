@@ -16,8 +16,8 @@ android {
     applicationId = "com.aistudio.accessiblestudio.qmztxp"
     minSdk = 24
     targetSdk = 36
-    versionCode = 27
-    versionName = "1.5.2"
+    versionCode = 28
+    versionName = "1.5.3"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

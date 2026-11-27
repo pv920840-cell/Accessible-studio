@@ -81,6 +81,7 @@ class WelcomePreferenceTest {
         assertFalse(whatsNewCombined.contains("Version 1.4.0"))
         assertFalse(whatsNewCombined.contains("Version 1.5.0"))
         assertFalse(whatsNewCombined.contains("Version 1.5.1"))
+        assertFalse(whatsNewCombined.contains("Version 1.5.2"))
     }
 
     @Test
@@ -156,7 +157,7 @@ class WelcomePreferenceTest {
 
         composeRule.onNodeWithTag("accessibility_settings_sheet").assertExists()
         composeRule.onNodeWithTag("card_about_accessible_studio").performScrollTo().assertExists()
-        assertEquals("1.5.2", com.example.BuildConfig.VERSION_NAME)
+        assertEquals("1.5.3", com.example.BuildConfig.VERSION_NAME)
         composeRule.onNodeWithText("Version ${com.example.BuildConfig.VERSION_NAME} • 100% Free & Open Accessible Studio • 100% Offline").performScrollTo().assertExists()
 
         // First button inside About: User Guide

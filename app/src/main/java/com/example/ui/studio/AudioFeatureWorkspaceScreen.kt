@@ -29,10 +29,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentCut
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Crop
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
@@ -43,8 +49,15 @@ import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.RecordVoiceOver
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Waves
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -66,6 +79,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,9 +104,14 @@ import com.example.accessibility.AccessibilityHelper
 import com.example.accessibility.VibrationType
 import com.example.audio.AdaptiveSpectralDenoiser
 import com.example.audio.AudioEditSettings
+import com.example.audio.AudioEffectsProEngine
 import com.example.audio.AudioPlayerManager
 import com.example.audio.AudioRecorderManager
+import com.example.audio.CuePoint
+import com.example.ui.components.AccessibleProSuiteSection
 import com.example.ui.components.AdaptiveNoiseReductionPanel
+import com.example.ui.components.AudioControlDeckCard
+import com.example.ui.components.AudioVisualMode
 import com.example.ui.components.ChorusEffectCard
 import com.example.ui.components.CompressorEffectCard
 import com.example.ui.components.DistortionEffectCard
@@ -132,7 +151,13 @@ import com.example.ui.components.FeatureGuideCatalog
 import com.example.ui.components.FeatureGuideTopic
 import com.example.ui.components.MusicRebalancePanel
 import com.example.ui.components.SingleFeatureGuideDialog
+import com.example.ui.components.StudioAudioStatsDialog
+import com.example.ui.components.StudioCuePointsDialog
 import com.example.ui.components.StudioDawTopBar
+import com.example.ui.components.StudioGainDialog
+import com.example.ui.components.StudioInsertSilenceDialog
+import com.example.ui.components.StudioToneGeneratorDialog
+import com.example.ui.components.VoiceOverSourceChoice
 import com.example.ui.screens.AudioStudioScreen
 import com.example.storage.StorageExportManager
 import com.example.ui.theme.LocalHighContrast
@@ -187,7 +212,20 @@ fun AudioFeatureWorkspaceScreen(
         mutableStateOf(session.trimStartMs > 0L || (session.trimEndMs in 1L until totalMs))
     }
 
+    var clipboardPcm by remember(session.projectId) { mutableStateOf(session.clipboardPcm) }
+    var cuePoints by remember(session.projectId) { mutableStateOf(session.cuePoints) }
+    var isLoopSelection by remember(session.projectId, tool) { mutableStateOf(false) }
+    var showInsertSilenceDialog by remember { mutableStateOf(false) }
+    var showToneGeneratorDialog by remember { mutableStateOf(false) }
+    var showCuePointsDialog by remember { mutableStateOf(false) }
+    var showGainDialog by remember { mutableStateOf(false) }
+    var showStatsDialog by remember { mutableStateOf(false) }
+    var currentAudioStats by remember { mutableStateOf<StudioAudioProcessor.AudioStats?>(null) }
+    var showSpeedDeck by remember(session.projectId, tool) { mutableStateOf(false) }
+    var visualMode by remember(session.projectId) { mutableStateOf(AudioVisualMode.WAVEFORM) }
+
     val undoHistory = remember(session.projectId, tool) { mutableStateListOf<ShortArray>() }
+    val redoHistory = remember(session.projectId, tool) { mutableStateListOf<ShortArray>() }
     var isApplyingTransform by remember(session.projectId, tool) { mutableStateOf(false) }
     var activeWorkspaceGuideTopic by remember { mutableStateOf<FeatureGuideTopic?>(null) }
 
@@ -195,6 +233,8 @@ fun AudioFeatureWorkspaceScreen(
     val durationMs by playerManager.durationMs.collectAsState()
     val currentPositionMs by playerManager.currentPositionMs.collectAsState()
     val activeScrubDirection by playerManager.scrubDirection.collectAsState()
+    val livePlaybackRate by playerManager.playbackRate.collectAsState()
+    val liveVolumeLevel by playerManager.volumeLevel.collectAsState()
     var scrubSpeed by remember(recordingSettings?.audioScrubSpeed) {
         mutableFloatStateOf(
             recordingSettings?.audioScrubSpeed ?: StudioPreferences.loadSettings(context).audioScrubSpeed
@@ -214,27 +254,37 @@ fun AudioFeatureWorkspaceScreen(
         } catch (_: Throwable) {}
     }
 
-    fun pushUndoSnapshotSafely(snapshot: ShortArray) {
+    fun pushSnapshotTo(targetList: MutableList<ShortArray>, snapshot: ShortArray) {
         try {
             val maxTotalSamples = 40_000_000L
-            while (undoHistory.size >= 6 || (undoHistory.isNotEmpty() && undoHistory.sumOf { it.size.toLong() } + snapshot.size.toLong() > maxTotalSamples)) {
-                undoHistory.removeAt(0)
+            while (targetList.size >= 6 || (targetList.isNotEmpty() && targetList.sumOf { it.size.toLong() } + snapshot.size.toLong() > maxTotalSamples)) {
+                targetList.removeAt(0)
             }
             if (snapshot.size.toLong() <= maxTotalSamples) {
-                undoHistory.add(snapshot.clone())
+                targetList.add(snapshot.clone())
             }
         } catch (_: OutOfMemoryError) {
-            undoHistory.clear()
+            targetList.clear()
         }
     }
 
-    fun pushUndoAndApply(label: String, preserveSelection: Boolean = false, transform: (ShortArray) -> ShortArray) {
+    fun pushUndoSnapshotSafely(snapshot: ShortArray) {
+        pushSnapshotTo(undoHistory, snapshot)
+        redoHistory.clear()
+    }
+
+    fun pushUndoAndApply(
+        label: String,
+        preserveSelection: Boolean = false,
+        allowEmptyInput: Boolean = false,
+        transform: (ShortArray) -> ShortArray
+    ) {
         if (isApplyingTransform) {
             Toast.makeText(context, "Processing in progress, please wait...", Toast.LENGTH_SHORT).show()
             return
         }
         val current = workingPcm
-        if (current.isEmpty()) {
+        if (!allowEmptyInput && current.isEmpty()) {
             Toast.makeText(context, "Audio track is empty.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -268,6 +318,20 @@ fun AudioFeatureWorkspaceScreen(
                 isApplyingTransform = false
             }
         }
+    }
+
+    fun playSelectionRange(loopSegment: Boolean) {
+        if (workingPcm.isEmpty()) {
+            Toast.makeText(context, "Audio track is empty.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val safeDur = durationMs.coerceAtLeast(1L)
+        val start = trimStartMs.coerceIn(0L, safeDur)
+        val rawEnd = trimEndMs.coerceIn(start, safeDur)
+        val end = if (rawEnd > start) rawEnd else safeDur
+        playerManager.stop()
+        playerManager.seekTo(start)
+        playerManager.play(startFromMs = start, endLimitMs = end, loopSegment = loopSegment)
     }
 
     fun commitAndSave() {
@@ -309,6 +373,8 @@ fun AudioFeatureWorkspaceScreen(
                 trimEndMs = finalTrimEnd,
                 editSettings = editSettings.copy(eqPreset = selectedEq),
                 selectedEq = selectedEq,
+                clipboardPcm = clipboardPcm,
+                cuePoints = cuePoints,
                 hasUnsavedChanges = session.hasUnsavedChanges || finalModified
             )
         )
@@ -398,8 +464,19 @@ fun AudioFeatureWorkspaceScreen(
             canUndo = undoHistory.isNotEmpty(),
             onUndo = {
                 if (undoHistory.isNotEmpty()) {
+                    pushSnapshotTo(redoHistory, workingPcm)
                     workingPcm = undoHistory.removeAt(undoHistory.lastIndex)
+                    localModified = true
                     AccessibilityHelper.announceForAccessibility(context, "Undid last change")
+                }
+            },
+            canRedo = redoHistory.isNotEmpty(),
+            onRedo = {
+                if (redoHistory.isNotEmpty()) {
+                    pushSnapshotTo(undoHistory, workingPcm)
+                    workingPcm = redoHistory.removeAt(redoHistory.lastIndex)
+                    localModified = true
+                    AccessibilityHelper.announceForAccessibility(context, "Redid change")
                 }
             },
             onBack = {
@@ -439,7 +516,11 @@ fun AudioFeatureWorkspaceScreen(
                         if (isPlaying) {
                             playerManager.pause()
                         } else if (workingPcm.isNotEmpty()) {
-                            playerManager.play()
+                            if (isLoopSelection && trimEndMs > trimStartMs) {
+                                playSelectionRange(loopSegment = true)
+                            } else {
+                                playerManager.play()
+                            }
                         }
                     },
                     modifier = Modifier.weight(1f).height(48.dp).testTag("btn_workspace_play_pause")
@@ -459,6 +540,89 @@ fun AudioFeatureWorkspaceScreen(
                     Spacer(Modifier.width(4.dp))
                     Text("Stop", fontWeight = FontWeight.Bold)
                 }
+            }
+
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        isLoopSelection = false
+                        playSelectionRange(loopSegment = false)
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_play_selection")
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Play Selection", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                if (isLoopSelection) {
+                    Button(
+                        onClick = {
+                            isLoopSelection = false
+                            if (isPlaying) playerManager.pause()
+                            AccessibilityHelper.announceForAccessibility(context, "Selection loop turned off")
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_loop_selection")
+                    ) {
+                        Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Loop On", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = {
+                            isLoopSelection = true
+                            playSelectionRange(loopSegment = true)
+                            AccessibilityHelper.announceForAccessibility(context, "Looping selection")
+                        },
+                        modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_loop_selection")
+                    ) {
+                        Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Loop Selection", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+                OutlinedButton(
+                    onClick = { playerManager.seekTo(0L) },
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_jump_start")
+                ) {
+                    Icon(Icons.Default.SkipPrevious, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Start", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = { playerManager.seekTo(durationMs) },
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_jump_end")
+                ) {
+                    Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("End", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                OutlinedButton(
+                    onClick = { showSpeedDeck = !showSpeedDeck },
+                    modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_toggle_speed_deck")
+                ) {
+                    Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text(if (showSpeedDeck) "Hide Speed & Vol" else "Speed & Volume", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+            }
+
+            if (showSpeedDeck) {
+                AudioControlDeckCard(
+                    playbackRate = livePlaybackRate,
+                    masterVolume = liveVolumeLevel,
+                    sampleRateHz = sampleRate,
+                    visualMode = visualMode,
+                    onPlaybackRateChange = { r ->
+                        playerManager.setPlaybackRate(r)
+                        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
+                    },
+                    onMasterVolumeChange = { v -> playerManager.setVolumeLevel(v) }
+                )
             }
 
             AccessiblePreviewPlaybackSlider(
@@ -608,6 +772,12 @@ fun AudioFeatureWorkspaceScreen(
                         trimStartMs = trimStartMs,
                         trimEndMs = trimEndMs,
                         samples = workingPcm,
+                        visualMode = visualMode,
+                        onToggleVisualMode = {
+                            val modes = AudioVisualMode.values()
+                            visualMode = modes[(visualMode.ordinal + 1) % modes.size]
+                            AccessibilityHelper.announceForAccessibility(context, "Visual display switched to ${visualMode.displayName}")
+                        },
                         visualModeEnabled = visualModeEnabled,
                         showWaveformDisplay = showWaveformDisplay,
                         showZoomControls = showZoomControls,
@@ -709,6 +879,162 @@ fun AudioFeatureWorkspaceScreen(
                             Text("Select All", fontWeight = FontWeight.Bold)
                         }
                     }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth().testTag("card_trim_clipboard_silence"),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val clipSecText = clipboardPcm?.let { clip ->
+                                if (clip.isNotEmpty()) "Clipboard Ready (${"%.1f".format(clip.size.toFloat() / sampleRate)}s)" else null
+                            } ?: "Clipboard Empty"
+                            Text(
+                                text = "Cut, Copy, Paste, Silence & Cues • $clipSecText",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Black
+                            )
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val s = trimStartMs; val e = trimEndMs
+                                        if (workingPcm.isNotEmpty() && e > s) {
+                                            val cutClip = StudioAudioProcessor.cropToSelection(workingPcm, s, e, sampleRate)
+                                            if (cutClip.isNotEmpty()) clipboardPcm = cutClip
+                                            hasPendingTrimRange = false
+                                            pushUndoAndApply("Cut selection to clipboard") {
+                                                StudioAudioProcessor.deleteSelection(it, s, e)
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "Select an audio range first.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_cut")
+                                ) {
+                                    Icon(Icons.Default.ContentCut, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Cut", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        val s = trimStartMs; val e = trimEndMs
+                                        if (workingPcm.isNotEmpty() && e > s) {
+                                            val copied = StudioAudioProcessor.cropToSelection(workingPcm, s, e, sampleRate)
+                                            if (copied.isNotEmpty()) {
+                                                clipboardPcm = copied
+                                                localModified = true
+                                                val msg = "Copied ${"%.1f".format(copied.size.toFloat() / sampleRate)}s to clipboard"
+                                                AccessibilityHelper.announceForAccessibility(context, msg)
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "Select an audio range first.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_copy")
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Copy", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        val clip = clipboardPcm
+                                        if (clip == null || clip.isEmpty()) {
+                                            Toast.makeText(context, "Clipboard is empty. Copy or Cut audio first.", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            val cursorMs = playerManager.currentPositionMs.value
+                                            pushUndoAndApply("Pasted clipboard at cursor", allowEmptyInput = true) { pcm ->
+                                                val pos = if (pcm.isEmpty()) 0 else ((cursorMs.toDouble() / 1000.0) * sampleRate).toInt().coerceIn(0, pcm.size)
+                                                ShortArray(pcm.size + clip.size).also { out ->
+                                                    System.arraycopy(pcm, 0, out, 0, pos)
+                                                    System.arraycopy(clip, 0, out, pos, clip.size)
+                                                    System.arraycopy(pcm, pos, out, pos + clip.size, pcm.size - pos)
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_paste_cursor")
+                                ) {
+                                    Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Paste Cursor", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        val clip = clipboardPcm
+                                        if (clip == null || clip.isEmpty()) {
+                                            Toast.makeText(context, "Clipboard is empty. Copy or Cut audio first.", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            pushUndoAndApply("Pasted clipboard at end", allowEmptyInput = true) { pcm ->
+                                                ShortArray(pcm.size + clip.size).also { out ->
+                                                    System.arraycopy(pcm, 0, out, 0, pcm.size)
+                                                    System.arraycopy(clip, 0, out, pcm.size, clip.size)
+                                                }
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_paste_end")
+                                ) {
+                                    Text("Paste End", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        val clip = clipboardPcm
+                                        if (clip == null || clip.isEmpty()) {
+                                            Toast.makeText(context, "Clipboard is empty. Copy or Cut audio first.", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            val cursorMs = playerManager.currentPositionMs.value
+                                            pushUndoAndApply("Mix pasted clipboard at cursor", allowEmptyInput = true) { pcm ->
+                                                StudioAudioProcessor.mixAudioTracks(
+                                                    main = pcm,
+                                                    overlay = clip,
+                                                    startMs = cursorMs,
+                                                    mainVolume = 1.0f,
+                                                    overlayVolume = 0.85f,
+                                                    applyPeakLimiter = true,
+                                                    sampleRate = sampleRate
+                                                )
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_mix_paste")
+                                ) {
+                                    Text("Mix Paste", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showInsertSilenceDialog = true },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_insert_silence")
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Insert Silence", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showCuePointsDialog = true },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_cue_points")
+                                ) {
+                                    Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Cue Points (${cuePoints.size})", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { playerManager.seekTo(trimStartMs) },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_go_sel_start")
+                                ) {
+                                    Text("Go Sel Start", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { playerManager.seekTo(trimEndMs) },
+                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_go_sel_end")
+                                ) {
+                                    Text("Go Sel End", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 AudioFeatureTool.MIX_TRACKS -> {
@@ -787,6 +1113,21 @@ fun AudioFeatureWorkspaceScreen(
                                 Icon(Icons.Default.FolderOpen, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
                                 Text(mixOverlayTitle ?: "Browse Audio File to Mix", fontWeight = FontWeight.Bold)
+                            }
+                            val clipForMix = clipboardPcm
+                            if (clipForMix != null && clipForMix.isNotEmpty()) {
+                                OutlinedButton(
+                                    onClick = {
+                                        mixOverlayPcm = clipForMix
+                                        mixOverlayTitle = "Clipboard Audio (${"%.1f".format(clipForMix.size.toFloat() / sampleRate)}s)"
+                                        AccessibilityHelper.announceForAccessibility(context, "Loaded clipboard audio ready to mix")
+                                    },
+                                    modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_mix_use_clipboard")
+                                ) {
+                                    Icon(Icons.Default.ContentPaste, contentDescription = null)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Use Clipboard Audio (${"%.1f".format(clipForMix.size.toFloat() / sampleRate)}s)", fontWeight = FontWeight.Bold)
+                                }
                             }
                             AccessibleEffectSlider(
                                 title = "Main Track Volume",
@@ -1040,6 +1381,48 @@ fun AudioFeatureWorkspaceScreen(
                                     onClick = { pushUndoAndApply("Reversed Audio") { StudioAudioProcessor.reverseAudio(it) } },
                                     modifier = Modifier.height(48.dp).testTag("btn_fx_reverse")
                                 ) { Text("Reverse", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = {
+                                        val s = trimStartMs; val e = trimEndMs
+                                        pushUndoAndApply("Applied Fade In") { StudioAudioProcessor.fadeInSelection(it, s, e) }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_fade_in")
+                                ) { Text("Fade In", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = {
+                                        val s = trimStartMs; val e = trimEndMs
+                                        pushUndoAndApply("Applied Fade Out") { StudioAudioProcessor.fadeOutSelection(it, s, e) }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_fade_out")
+                                ) { Text("Fade Out", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { showGainDialog = true },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_custom_gain")
+                                ) { Text("Custom Gain ±dB", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Normalized Loudness (-16 LUFS / RMS)") { StudioAudioProcessor.normalizeRms(it, -16f) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_normalize_rms")
+                                ) { Text("Normalize RMS", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied Dynamic Expander") { StudioAudioProcessor.applyExpander(it, -28f, 2.0f) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_expander")
+                                ) { Text("Expander", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied 300 Hz High-Pass Rumble Filter") { StudioAudioProcessor.applyHighPassFilter(it, 300f) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_highpass")
+                                ) { Text("High-Pass 300Hz", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied 3000 Hz Low-Pass Warm Filter") { StudioAudioProcessor.applyLowPassFilter(it, 3000f) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_lowpass")
+                                ) { Text("Low-Pass 3kHz", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied Radio / Telephone Band-Pass") { StudioAudioProcessor.applyBandPassFilter(it, 1800f, 3000f) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_bandpass")
+                                ) { Text("Band-Pass Voice", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Applied Mechanize Robot Voice") { StudioAudioProcessor.applyMechanize(it, 120f, 0.85f) } },
+                                    modifier = Modifier.height(48.dp).testTag("btn_fx_mechanize")
+                                ) { Text("Mechanize Robot", fontWeight = FontWeight.Bold) }
                             }
 
                             HorizontalDivider()
@@ -1061,7 +1444,8 @@ fun AudioFeatureWorkspaceScreen(
                                     "chorus" to "Chorus (Multi-Voice)",
                                     "distortion" to "Overdrive & Distortion",
                                     "eq7band" to "7-Band Graphic EQ",
-                                    "pitch_polarity" to "Pitch & Polarity"
+                                    "pitch_polarity" to "Pitch & Polarity",
+                                    "pro_suite" to "Time Stretch, Pitch & Pro DSP"
                                 ).forEach { (key, title) ->
                                     val selected = focusedEffectPanel == key
                                     val tag = "btn_fx_tab_${key ?: "all"}"
@@ -1634,6 +2018,68 @@ fun AudioFeatureWorkspaceScreen(
                         }
                     )
 
+                    if (focusedEffectPanel == "pro_suite") {
+                        var fxProCategoryIndex by remember(session.projectId, tool) { mutableIntStateOf(0) }
+                        AccessibleProSuiteSection(
+                            selectedCategoryIndex = fxProCategoryIndex,
+                            onSelectCategoryIndex = { idx ->
+                                fxProCategoryIndex = idx
+                                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
+                            },
+                            hasClipboard = clipboardPcm != null && clipboardPcm!!.isNotEmpty(),
+                            trimStartMs = trimStartMs,
+                            trimEndMs = trimEndMs,
+                            currentPositionMs = playerManager.currentPositionMs.value,
+                            currentSampleRate = sampleRate,
+                            currentPlaybackRate = livePlaybackRate,
+                            clipboardPcm = clipboardPcm,
+                            onApplyPcmTransform = { msg, fn ->
+                                pushUndoAndApply(msg, transform = fn)
+                            },
+                            onSetSampleRate = { sr -> playerManager.setWorkingSampleRate(sr) },
+                            onSetPlaybackRate = { rate -> playerManager.setPlaybackRate(rate) },
+                            onOpenEchoReverbTab = { focusedEffectPanel = "echo" },
+                            onOpenNoiseTab = { focusedEffectPanel = "denoise" },
+                            onOpenEqTab = { focusedEffectPanel = "eq" },
+                            onOpenGainDialog = { showGainDialog = true },
+                            onApplyEcho = {
+                                pushUndoAndApply("Applied Echo (${echoDelayMs}ms)") { pcm ->
+                                    audioProcessor.applyEcho(pcm, echoDelayMs, echoFeedback, echoMix)
+                                }
+                            },
+                            onApplyReverb = {
+                                pushUndoAndApply("Applied Acoustic Reverb") { pcm ->
+                                    audioProcessor.applyReverb(pcm, reverbRoomSize, reverbDamping, reverbMix)
+                                }
+                            },
+                            onApplyNoiseGate = {
+                                pushUndoAndApply("Applied Noise Gate") { pcm ->
+                                    audioProcessor.applyNoiseGate(pcm, 0.08f)
+                                }
+                            },
+                            onApplyNoiseReduction = {
+                                val applied = denoiseParams.copy(bypass = false).clamped()
+                                val profile = learnedNoiseProfile
+                                liveDenoiseArmed = false
+                                playerManager.setRealtimeDenoiseEnabled(false)
+                                pushUndoAndApply("Applied Studio Adaptive De-Noise") { pcm ->
+                                    AdaptiveSpectralDenoiser.processOffline(
+                                        samples = pcm,
+                                        sampleRate = sampleRate,
+                                        channels = 1,
+                                        params = applied,
+                                        noiseProfile = profile
+                                    )
+                                }
+                            },
+                            onApplyEqualizer = {
+                                pushUndoAndApply("Applied EQ (${selectedEq.name})") { pcm ->
+                                    audioProcessor.processPcm(pcm, editSettings.copy(eqPreset = selectedEq), sampleRate)
+                                }
+                            }
+                        )
+                    }
+
                     // Audition Preview (non-destructive audition using current settings)
                     OutlinedButton(
                         onClick = {
@@ -1731,24 +2177,55 @@ fun AudioFeatureWorkspaceScreen(
                     val isRecording by recorderManager.isRecording.collectAsState()
                     val recDurMs by recorderManager.recordedDurationMs.collectAsState()
                     val recAmp by recorderManager.amplitude.collectAsState()
+                    val isTooLoud by recorderManager.isTooLoudWarning.collectAsState()
                     val resolvedRecConfig by recorderManager.resolvedConfig.collectAsState()
+                    var recordMode by remember(session.projectId, tool) { mutableStateOf("replace") }
                     var autoGain by remember {
                         mutableStateOf(recordingSettings?.recordingAutoGainEnabled ?: recorderManager.autoGainEnabled)
+                    }
+                    var micBufferSize by remember { mutableIntStateOf(recorderManager.bufferSizeOption) }
+                    var micGain by remember {
+                        mutableFloatStateOf(recordingSettings?.recordingInputGain ?: recorderManager.micGainVolume)
                     }
                     LaunchedEffect(recordingSettings) {
                         if (recordingSettings != null) {
                             recorderManager.applySettings(recordingSettings)
                             autoGain = recordingSettings.recordingAutoGainEnabled
+                            micGain = StudioPreferences.normalizeInputGain(recordingSettings.recordingInputGain)
                         }
                     }
 
                     val micPermLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
                         if (granted) {
+                            recorderManager.bufferSizeOption = micBufferSize
                             recorderManager.autoGainEnabled = autoGain
-                            recordingSettings?.let { recorderManager.applySettings(it.copy(recordingAutoGainEnabled = autoGain)) }
+                            recorderManager.micGainVolume = micGain
                             recorderManager.startRecording(onSuccess = {}, onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() })
                         } else {
                             Toast.makeText(context, "Microphone permission required.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+
+                    fun startWorkspaceRecording(mode: String) {
+                        recordMode = mode
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                            recorderManager.bufferSizeOption = micBufferSize
+                            recorderManager.autoGainEnabled = autoGain
+                            recorderManager.micGainVolume = micGain
+                            recorderManager.startRecording(
+                                onSuccess = {
+                                    if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.HEAVY_CLICK)
+                                    val msg = when (mode) {
+                                        "append" -> "Append recording started"
+                                        "punch_in" -> "Punch-In recording started over selection"
+                                        else -> "Voice recording started"
+                                    }
+                                    AccessibilityHelper.announceForAccessibility(context, msg)
+                                },
+                                onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
+                            )
+                        } else {
+                            micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
                         }
                     }
 
@@ -1775,7 +2252,7 @@ fun AudioFeatureWorkspaceScreen(
                                 )
                             }
                             Text(
-                                text = "Active Profile: ${resolvedRecConfig.summaryLabel()} • Input Gain ${(recorderManager.micGainVolume * 100).toInt()}%",
+                                text = "Active Profile: ${resolvedRecConfig.summaryLabel()} • Input Gain ${(micGain * 100).toInt()}% • Buffer $micBufferSize",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.testTag("txt_workspace_rec_profile")
@@ -1786,19 +2263,65 @@ fun AudioFeatureWorkspaceScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text("Auto-Gain & Anti-Crackle", fontWeight = FontWeight.Bold)
-                                Switch(checked = autoGain, onCheckedChange = { autoGain = it; recorderManager.autoGainEnabled = it })
+                                Switch(
+                                    checked = autoGain,
+                                    onCheckedChange = {
+                                        autoGain = it
+                                        recorderManager.autoGainEnabled = it
+                                    },
+                                    modifier = Modifier.testTag("switch_workspace_rec_auto_gain")
+                                )
                             }
                             if (isRecording) {
-                                LinearProgressIndicator(progress = { recAmp }, modifier = Modifier.fillMaxWidth().height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = if (isTooLoud) "CLIPPING" else "MIC",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Black,
+                                        color = if (isTooLoud) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                    LinearProgressIndicator(
+                                        progress = { recAmp },
+                                        modifier = Modifier.weight(1f).height(8.dp),
+                                        color = if (isTooLoud) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 Button(
                                     onClick = {
                                         val recorded = recorderManager.stopRecording()
                                         if (recorded != null && recorded.isNotEmpty()) {
                                             val cleaned = StudioAudioProcessor.gentleCleanup(recorded)
                                             pushUndoSnapshotSafely(workingPcm)
-                                            workingPcm = cleaned
-                                            workingTitle = "Voice Recording (${AccessibilityHelper.formatTimeVisual(recDurMs)})"
+                                            when {
+                                                recordMode == "punch_in" && workingPcm.isNotEmpty() && trimEndMs > trimStartMs -> {
+                                                    val sIdx = ((trimStartMs.toDouble() / 1000.0) * sampleRate).toInt().coerceIn(0, workingPcm.size)
+                                                    val eIdx = ((trimEndMs.toDouble() / 1000.0) * sampleRate).toInt().coerceIn(sIdx, workingPcm.size)
+                                                    val merged = ShortArray(sIdx + cleaned.size + (workingPcm.size - eIdx))
+                                                    System.arraycopy(workingPcm, 0, merged, 0, sIdx)
+                                                    System.arraycopy(cleaned, 0, merged, sIdx, cleaned.size)
+                                                    System.arraycopy(workingPcm, eIdx, merged, sIdx + cleaned.size, workingPcm.size - eIdx)
+                                                    workingPcm = merged
+                                                    AccessibilityHelper.announceForAccessibility(context, "Punch-in recording spliced into track.")
+                                                }
+                                                recordMode == "append" && workingPcm.isNotEmpty() -> {
+                                                    val combined = ShortArray(workingPcm.size + cleaned.size)
+                                                    System.arraycopy(workingPcm, 0, combined, 0, workingPcm.size)
+                                                    System.arraycopy(cleaned, 0, combined, workingPcm.size, cleaned.size)
+                                                    workingPcm = combined
+                                                    AccessibilityHelper.announceForAccessibility(context, "Appended recording to track end.")
+                                                }
+                                                else -> {
+                                                    workingPcm = cleaned
+                                                    workingTitle = "Voice Recording (${AccessibilityHelper.formatTimeVisual(recDurMs)})"
+                                                    AccessibilityHelper.announceForAccessibility(context, "Recorded new voice track cleanly.")
+                                                }
+                                            }
                                             localModified = true
+                                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth().height(52.dp).testTag("btn_workspace_stop_record"),
@@ -1806,25 +2329,81 @@ fun AudioFeatureWorkspaceScreen(
                                 ) {
                                     Icon(Icons.Default.Stop, contentDescription = null)
                                     Spacer(Modifier.width(8.dp))
-                                    Text("Stop Recording (${AccessibilityHelper.formatTimeVisual(recDurMs)})", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = when (recordMode) {
+                                            "punch_in" -> "Stop Punch-In (${AccessibilityHelper.formatTimeVisual(recDurMs)})"
+                                            "append" -> "Stop Append (${AccessibilityHelper.formatTimeVisual(recDurMs)})"
+                                            else -> "Stop Recording (${AccessibilityHelper.formatTimeVisual(recDurMs)})"
+                                        },
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             } else {
                                 Button(
-                                    onClick = {
-                                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-                                            recorderManager.autoGainEnabled = autoGain
-                                            recorderManager.startRecording(onSuccess = {}, onError = { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() })
-                                        } else {
-                                            micPermLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                        }
-                                    },
+                                    onClick = { startWorkspaceRecording("replace") },
                                     modifier = Modifier.fillMaxWidth().height(52.dp).testTag("btn_workspace_start_record")
                                 ) {
                                     Icon(Icons.Default.Mic, contentDescription = null)
                                     Spacer(Modifier.width(8.dp))
-                                    Text("Start Recording", fontWeight = FontWeight.Bold)
+                                    Text("Start Recording (New / Replace)", fontWeight = FontWeight.Bold)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedButton(
+                                        onClick = { startWorkspaceRecording("append") },
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("btn_workspace_append_record")
+                                    ) {
+                                        Text("Append to End", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { startWorkspaceRecording("punch_in") },
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("btn_workspace_punch_in_record")
+                                    ) {
+                                        Text("Punch-In Range", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                    }
                                 }
                             }
+
+                            HorizontalDivider()
+
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    "Mic Buffer:",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.align(Alignment.CenterVertically)
+                                )
+                                listOf(1024, 2048, 4096).forEach { size ->
+                                    FilterChip(
+                                        selected = micBufferSize == size,
+                                        onClick = {
+                                            micBufferSize = size
+                                            recorderManager.bufferSizeOption = size
+                                        },
+                                        label = { Text(if (size == 2048) "$size (Default)" else "$size", fontSize = 11.sp) },
+                                        modifier = Modifier.testTag("chip_workspace_buffer_$size")
+                                    )
+                                }
+                            }
+
+                            AccessibleEffectSlider(
+                                title = "Mic Input Gain",
+                                value = micGain,
+                                onValueChange = {
+                                    micGain = it
+                                    recorderManager.micGainVolume = it
+                                },
+                                valueRange = 0.2f..2.0f,
+                                step = 0.1f,
+                                displayValue = "${(micGain * 100).toInt()}%",
+                                spokenDescription = "Microphone input gain ${(micGain * 100).toInt()} percent",
+                                testTag = "slider_workspace_mic_gain"
+                            )
                         }
                     }
                 }
@@ -1952,9 +2531,544 @@ fun AudioFeatureWorkspaceScreen(
                     )
                 }
 
+                AudioFeatureTool.VOICE_OVER -> {
+                    var selectedPreset by remember(session.projectId, tool) {
+                        mutableStateOf(AudioEffectsProEngine.VoiceOverPreset.TUTORIAL)
+                    }
+                    var sourceChoice by remember(session.projectId, tool) {
+                        mutableStateOf(VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC)
+                    }
+                    var pickedVoPcm by remember(session.projectId, tool) { mutableStateOf<ShortArray?>(null) }
+                    var pickedVoTitle by remember(session.projectId, tool) { mutableStateOf<String?>(null) }
+                    var autoDuckEnabled by remember(session.projectId, tool) { mutableStateOf(selectedPreset.autoDuckEnabled) }
+                    var duckFactor by remember(session.projectId, tool) { mutableFloatStateOf(selectedPreset.duckFactor) }
+                    var voiceGain by remember(session.projectId, tool) { mutableFloatStateOf(selectedPreset.voiceGain) }
+                    var musicVolume by remember(session.projectId, tool) { mutableFloatStateOf(selectedPreset.musicVolume) }
+                    var loopMusic by remember(session.projectId, tool) { mutableStateOf(true) }
+                    var syncOffsetMs by remember(session.projectId, tool) { mutableLongStateOf(0L) }
+                    var showVoPickerDialog by remember { mutableStateOf(false) }
+                    val voExportedFiles by mediaRepository.exportedFiles.collectAsState()
+
+                    if (showVoPickerDialog) {
+                        AccessibleAudioPickerDialog(
+                            exportedAudios = voExportedFiles,
+                            onSelectAudio = { uri, title ->
+                                showVoPickerDialog = false
+                                scope.launch {
+                                    try {
+                                        val decodedRaw = audioProcessor.decodeUriToPcm(uri)
+                                        val decoded = if (decodedRaw.isNotEmpty() && sampleRate != 44100) {
+                                            StudioAudioProcessor.resamplePcmLinear(decodedRaw, 44100, sampleRate)
+                                        } else {
+                                            decodedRaw
+                                        }
+                                        if (decoded.isNotEmpty()) {
+                                            pickedVoPcm = decoded
+                                            pickedVoTitle = title?.takeIf { it.isNotBlank() }
+                                                ?: audioProcessor.queryAudioDisplayName(uri)
+                                                ?: "Music / Voice Track"
+                                        } else {
+                                            Toast.makeText(context, "Could not decode selected audio.", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } catch (t: Throwable) {
+                                        if (t is CancellationException) throw t
+                                        Toast.makeText(context, "Voice Over load error: ${t.localizedMessage ?: "Unsupported file"}", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
+                            onDismiss = { showVoPickerDialog = false }
+                        )
+                    }
+
+                    fun buildVoiceOverResult(basePcm: ShortArray, cursorPosMs: Long): ShortArray {
+                        val pickedPcm = pickedVoPcm
+                        val clip = clipboardPcm
+                        return when {
+                            sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC && pickedPcm != null && pickedPcm.isNotEmpty() -> {
+                                AudioEffectsProEngine.applySmartMusicBedAutoDuck(
+                                    voiceTrack = basePcm,
+                                    musicPcm = pickedPcm,
+                                    duckLevel = duckFactor,
+                                    voiceGain = voiceGain,
+                                    musicBaseVolume = musicVolume,
+                                    autoDuckEnabled = autoDuckEnabled,
+                                    loopMusic = loopMusic,
+                                    sampleRate = sampleRate,
+                                    startOffsetMs = syncOffsetMs
+                                )
+                            }
+                            sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_CLIP && pickedPcm != null && pickedPcm.isNotEmpty() -> {
+                                AudioEffectsProEngine.applyVoiceOverDuck(
+                                    mainTrack = basePcm,
+                                    voiceClip = pickedPcm,
+                                    insertAtMs = cursorPosMs + syncOffsetMs,
+                                    musicDuckFactor = if (autoDuckEnabled) duckFactor else 1.0f,
+                                    voiceGain = voiceGain,
+                                    sampleRate = sampleRate
+                                )
+                            }
+                            sourceChoice == VoiceOverSourceChoice.CLIPBOARD_CLIP && clip != null && clip.isNotEmpty() -> {
+                                AudioEffectsProEngine.applyVoiceOverDuck(
+                                    mainTrack = basePcm,
+                                    voiceClip = clip,
+                                    insertAtMs = cursorPosMs + syncOffsetMs,
+                                    musicDuckFactor = if (autoDuckEnabled) duckFactor else 1.0f,
+                                    voiceGain = voiceGain,
+                                    sampleRate = sampleRate
+                                )
+                            }
+                            else -> {
+                                AudioEffectsProEngine.applyShapeVolume(
+                                    samples = basePcm,
+                                    startMs = trimStartMs,
+                                    endMs = trimEndMs,
+                                    shapeType = AudioEffectsProEngine.VolumeShapeType.DUCK_VALLEY,
+                                    depth = (1f - duckFactor).coerceIn(0.1f, 0.95f),
+                                    sampleRate = sampleRate
+                                )
+                            }
+                        }
+                    }
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth().testTag("card_workspace_voice_over"),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Voice Over & Auto-Ducking",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeatureGuideButton(
+                                    featureTitle = "Voice Over & Auto-Ducking",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_VOICE_OVER },
+                                    testTag = "btn_feature_guide_voice_over"
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = { showVoPickerDialog = true },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_vo_workspace_pick_audio")
+                            ) {
+                                Icon(Icons.Default.FolderOpen, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(pickedVoTitle ?: "Browse Audio File (Music or Voice Clip)", fontWeight = FontWeight.Bold)
+                            }
+
+                            if (pickedVoPcm != null) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    FilterChip(
+                                        selected = sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC,
+                                        onClick = { sourceChoice = VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC },
+                                        label = { Text("As Background Music") },
+                                        modifier = Modifier.testTag("chip_vo_workspace_role_music")
+                                    )
+                                    FilterChip(
+                                        selected = sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_CLIP,
+                                        onClick = { sourceChoice = VoiceOverSourceChoice.ADD_AUDIO_AS_CLIP },
+                                        label = { Text("Insert Voice Clip") },
+                                        modifier = Modifier.testTag("chip_vo_workspace_role_clip")
+                                    )
+                                }
+                            }
+
+                            val voClip = clipboardPcm
+                            OutlinedButton(
+                                onClick = { sourceChoice = VoiceOverSourceChoice.CLIPBOARD_CLIP },
+                                enabled = voClip != null && voClip.isNotEmpty(),
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_vo_workspace_use_clipboard")
+                            ) {
+                                Icon(Icons.Default.ContentPaste, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = if (voClip != null && voClip.isNotEmpty()) {
+                                        if (sourceChoice == VoiceOverSourceChoice.CLIPBOARD_CLIP) "Using Clipboard Audio (Selected)"
+                                        else "Use Clipboard Audio (${"%.1f".format(voClip.size.toFloat() / sampleRate)}s)"
+                                    } else {
+                                        "Clipboard Empty (Copy audio first or Browse above)"
+                                    },
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            Text("Voice-Over Presets", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleSmall)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                AudioEffectsProEngine.VoiceOverPreset.values().forEach { preset ->
+                                    FilterChip(
+                                        selected = selectedPreset == preset,
+                                        onClick = {
+                                            selectedPreset = preset
+                                            voiceGain = preset.voiceGain
+                                            musicVolume = preset.musicVolume
+                                            duckFactor = preset.duckFactor
+                                            autoDuckEnabled = preset.autoDuckEnabled
+                                        },
+                                        label = { Text(preset.displayName, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.testTag("chip_vo_workspace_preset_${preset.name}")
+                                    )
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Auto-Ducking", fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "Automatically dips background music during speech",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = autoDuckEnabled,
+                                    onCheckedChange = { autoDuckEnabled = it },
+                                    modifier = Modifier.testTag("switch_vo_workspace_auto_duck")
+                                )
+                            }
+
+                            if (autoDuckEnabled) {
+                                AccessibleEffectSlider(
+                                    title = "Background Duck Level",
+                                    value = duckFactor,
+                                    onValueChange = { duckFactor = it },
+                                    valueRange = 0.10f..0.85f,
+                                    step = 0.05f,
+                                    displayValue = "${(duckFactor * 100).toInt()}%",
+                                    spokenDescription = "Background volume dipped to ${(duckFactor * 100).toInt()} percent during speech",
+                                    testTag = "slider_vo_workspace_duck"
+                                )
+                            }
+
+                            AccessibleEffectSlider(
+                                title = "Voice Gain",
+                                value = voiceGain,
+                                onValueChange = { voiceGain = it },
+                                valueRange = 0.70f..1.80f,
+                                step = 0.05f,
+                                displayValue = "${(voiceGain * 100).toInt()}%",
+                                spokenDescription = "Voice gain ${(voiceGain * 100).toInt()} percent",
+                                testTag = "slider_vo_workspace_gain"
+                            )
+
+                            if (sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC) {
+                                AccessibleEffectSlider(
+                                    title = "Background Music Volume",
+                                    value = musicVolume,
+                                    onValueChange = { musicVolume = it },
+                                    valueRange = 0.10f..1.00f,
+                                    step = 0.05f,
+                                    displayValue = "${(musicVolume * 100).toInt()}%",
+                                    spokenDescription = "Background music volume ${(musicVolume * 100).toInt()} percent",
+                                    testTag = "slider_vo_workspace_music_vol"
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Loop Music to Match Voice", fontWeight = FontWeight.Bold)
+                                    Switch(
+                                        checked = loopMusic,
+                                        onCheckedChange = { loopMusic = it },
+                                        modifier = Modifier.testTag("switch_vo_workspace_loop")
+                                    )
+                                }
+                            }
+
+                            if (pickedVoPcm != null || (voClip != null && voClip.isNotEmpty() && sourceChoice == VoiceOverSourceChoice.CLIPBOARD_CLIP)) {
+                                MixSyncOffsetControl(
+                                    offsetMs = syncOffsetMs,
+                                    onOffsetChange = { syncOffsetMs = it },
+                                    baseStartMs = if (sourceChoice == VoiceOverSourceChoice.ADD_AUDIO_AS_MUSIC) 0L else currentPositionMs,
+                                    title = "Added Audio Sync Timing"
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (workingPcm.isEmpty()) {
+                                        Toast.makeText(context, "Track is empty.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val curPos = playerManager.currentPositionMs.value
+                                        scope.launch {
+                                            try {
+                                                playerManager.stop()
+                                                val preview = withContext(Dispatchers.Default) {
+                                                    buildVoiceOverResult(workingPcm, curPos)
+                                                }
+                                                playerManager.loadPcmData(preview, sampleRate)
+                                                playerManager.play()
+                                            } catch (t: Throwable) {
+                                                if (t is CancellationException) throw t
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_vo_workspace_preview")
+                            ) {
+                                Icon(Icons.Default.PlayArrow, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Preview Voice Over", fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
+                                onClick = {
+                                    val curPos = playerManager.currentPositionMs.value
+                                    pushUndoAndApply("Applied ${selectedPreset.displayName} Voice Over") { pcm ->
+                                        buildVoiceOverResult(pcm, curPos)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_vo_workspace_apply")
+                            ) {
+                                Icon(Icons.Default.RecordVoiceOver, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Apply Voice Over", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                AudioFeatureTool.AUDIO_GENERATORS_TOOLS -> {
+                    var toolsProCategoryIndex by remember(session.projectId, tool) { mutableIntStateOf(0) }
+                    Card(
+                        modifier = Modifier.fillMaxWidth().testTag("card_workspace_audio_tools"),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Tone Generator, Silence, Cues & Stats",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeatureGuideButton(
+                                    featureTitle = "Tone, Silence, Cues & Stats",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_CUE_POINTS },
+                                    testTag = "btn_feature_guide_audio_tools"
+                                )
+                            }
+
+                            Button(
+                                onClick = { showToneGeneratorDialog = true },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_tone_generator")
+                            ) {
+                                Icon(Icons.Default.Waves, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Synthesize Tone / Noise", fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { showInsertSilenceDialog = true },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_insert_silence")
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Insert Digital Silence at Playhead", fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { showCuePointsDialog = true },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_cue_points")
+                            ) {
+                                Icon(Icons.Default.BookmarkAdd, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Cue Points & Bookmarks (${cuePoints.size})", fontWeight = FontWeight.Bold)
+                            }
+
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val posMs = playerManager.currentPositionMs.value
+                                        val cueNum = cuePoints.size + 1
+                                        val newCue = CuePoint(
+                                            positionMs = posMs,
+                                            name = "Cue $cueNum (${AccessibilityHelper.formatTimeMMSS(posMs)})"
+                                        )
+                                        cuePoints = (cuePoints + newCue).sortedBy { it.positionMs }
+                                        localModified = true
+                                        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                                        AccessibilityHelper.announceForAccessibility(context, "Dropped cue point $cueNum")
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_tools_drop_cue")
+                                ) { Text("Drop Cue Here", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = {
+                                        val posMs = playerManager.currentPositionMs.value
+                                        cuePoints.filter { it.positionMs < posMs - 150L }.maxByOrNull { it.positionMs }?.let { prev ->
+                                            playerManager.seekTo(prev.positionMs)
+                                            AccessibilityHelper.announceForAccessibility(context, "Jumped to ${prev.name}")
+                                        }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_tools_prev_cue")
+                                ) { Text("Prev Cue", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = {
+                                        val posMs = playerManager.currentPositionMs.value
+                                        cuePoints.filter { it.positionMs > posMs + 150L }.minByOrNull { it.positionMs }?.let { next ->
+                                            playerManager.seekTo(next.positionMs)
+                                            AccessibilityHelper.announceForAccessibility(context, "Jumped to ${next.name}")
+                                        }
+                                    },
+                                    modifier = Modifier.height(48.dp).testTag("btn_tools_next_cue")
+                                ) { Text("Next Cue", fontWeight = FontWeight.Bold) }
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    if (workingPcm.isEmpty()) {
+                                        Toast.makeText(context, "Track is empty.", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        currentAudioStats = StudioAudioProcessor.computeStatistics(workingPcm)
+                                        showStatsDialog = true
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_audio_stats")
+                            ) {
+                                Icon(Icons.Default.Tune, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Peak Level & RMS Statistics", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    AccessibleProSuiteSection(
+                        selectedCategoryIndex = toolsProCategoryIndex,
+                        onSelectCategoryIndex = { idx ->
+                            toolsProCategoryIndex = idx
+                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
+                        },
+                        hasClipboard = clipboardPcm != null && clipboardPcm!!.isNotEmpty(),
+                        trimStartMs = trimStartMs,
+                        trimEndMs = trimEndMs,
+                        currentPositionMs = playerManager.currentPositionMs.value,
+                        currentSampleRate = sampleRate,
+                        currentPlaybackRate = livePlaybackRate,
+                        clipboardPcm = clipboardPcm,
+                        onApplyPcmTransform = { msg, fn ->
+                            pushUndoAndApply(msg, transform = fn)
+                        },
+                        onSetSampleRate = { sr -> playerManager.setWorkingSampleRate(sr) },
+                        onSetPlaybackRate = { rate -> playerManager.setPlaybackRate(rate) },
+                        onOpenEchoReverbTab = {},
+                        onOpenNoiseTab = {},
+                        onOpenEqTab = {},
+                        onOpenGainDialog = { showGainDialog = true }
+                    )
+                }
+
                 AudioFeatureTool.FULL_DAW_STUDIO -> Unit
             }
         }
+    }
+
+    if (showInsertSilenceDialog) {
+        val silenceInsertPosMs = playerManager.currentPositionMs.value
+        StudioInsertSilenceDialog(
+            currentPositionMs = silenceInsertPosMs,
+            onDismiss = { showInsertSilenceDialog = false },
+            onConfirmInsert = { seconds ->
+                showInsertSilenceDialog = false
+                pushUndoAndApply("Inserted $seconds seconds of silence", allowEmptyInput = true) { pcm ->
+                    StudioAudioProcessor.insertSilence(pcm, silenceInsertPosMs, seconds)
+                }
+            }
+        )
+    }
+
+    if (showToneGeneratorDialog) {
+        StudioToneGeneratorDialog(
+            onDismiss = { showToneGeneratorDialog = false },
+            onConfirmGenerate = { type, freq, durationSec ->
+                showToneGeneratorDialog = false
+                pushUndoAndApply("Synthesized $type (${durationSec}s)", allowEmptyInput = true) { _ ->
+                    StudioAudioProcessor.generateTone(type, freq, durationSec)
+                }
+                workingTitle = "Generated: $type (${durationSec}s)"
+                workingBaseName = null
+            }
+        )
+    }
+
+    if (showCuePointsDialog) {
+        val cueDialogPosMs by playerManager.currentPositionMs.collectAsState()
+        StudioCuePointsDialog(
+            cuePoints = cuePoints,
+            currentMs = cueDialogPosMs,
+            onDropCue = {
+                val posMs = playerManager.currentPositionMs.value
+                val cueNum = cuePoints.size + 1
+                val newCue = CuePoint(
+                    positionMs = posMs,
+                    name = "Cue $cueNum (${AccessibilityHelper.formatTimeMMSS(posMs)})"
+                )
+                cuePoints = (cuePoints + newCue).sortedBy { it.positionMs }
+                localModified = true
+                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+                AccessibilityHelper.announceForAccessibility(context, "Dropped cue point $cueNum")
+            },
+            onJumpPrevCue = {
+                val posMs = playerManager.currentPositionMs.value
+                cuePoints.filter { it.positionMs < posMs - 150L }.maxByOrNull { it.positionMs }?.let { prev ->
+                    playerManager.seekTo(prev.positionMs)
+                }
+            },
+            onJumpNextCue = {
+                val posMs = playerManager.currentPositionMs.value
+                cuePoints.filter { it.positionMs > posMs + 150L }.minByOrNull { it.positionMs }?.let { next ->
+                    playerManager.seekTo(next.positionMs)
+                }
+            },
+            onSeekToCue = { cue -> playerManager.seekTo(cue.positionMs) },
+            onDeleteCue = { cue ->
+                cuePoints = cuePoints.filter { it.id != cue.id }
+                localModified = true
+            },
+            onDismiss = { showCuePointsDialog = false }
+        )
+    }
+
+    if (showGainDialog) {
+        StudioGainDialog(
+            onDismiss = { showGainDialog = false },
+            onConfirmGain = { gainDb ->
+                showGainDialog = false
+                val hasSelection = trimEndMs > trimStartMs && trimEndMs < durationMs
+                val s = trimStartMs
+                val e = trimEndMs
+                pushUndoAndApply("Applied %+.1f dB gain".format(gainDb)) { pcm ->
+                    if (hasSelection) StudioAudioProcessor.applyGainDb(pcm, gainDb, s, e)
+                    else StudioAudioProcessor.applyGainDb(pcm, gainDb)
+                }
+            }
+        )
+    }
+
+    if (showStatsDialog && currentAudioStats != null) {
+        StudioAudioStatsDialog(
+            stats = currentAudioStats!!,
+            onDismiss = { showStatsDialog = false }
+        )
     }
 
     activeWorkspaceGuideTopic?.let { topic ->
@@ -1971,6 +3085,8 @@ fun WorkspaceHeaderBar(
     subtitle: String,
     canUndo: Boolean,
     onUndo: () -> Unit,
+    canRedo: Boolean = false,
+    onRedo: () -> Unit = {},
     onBack: () -> Unit,
     onSave: () -> Unit,
     onHelp: (() -> Unit)? = null
@@ -2042,6 +3158,18 @@ fun WorkspaceHeaderBar(
                         .semantics { contentDescription = "Undo last change in workspace" }
                 ) {
                     Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = null)
+                }
+            }
+
+            if (canRedo) {
+                IconButton(
+                    onClick = onRedo,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .testTag("btn_workspace_redo")
+                        .semantics { contentDescription = "Redo last undone change in workspace" }
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Redo, contentDescription = null)
                 }
             }
 

@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.MediaRepository
@@ -244,9 +245,9 @@ class HomeCategoryNavigationTest {
             ).forEach { tag ->
                 composeRule.onNodeWithTag(tag).assertExists()
             }
-            composeRule.onNodeWithTag("btn_fx_tab_pro_suite").performClick()
+            composeRule.onNodeWithTag("btn_fx_tab_pro_suite").performScrollTo().performClick()
             composeRule.waitForIdle()
-            composeRule.onNodeWithTag("card_pro_audio_suite").assertExists()
+            composeRule.onNodeWithTag("card_pro_audio_suite").performScrollTo().assertExists()
 
             // 4. RECORD_VOICE exposes Replace, Append, Punch-In, Buffer chips & Mic Gain slider
             composeRule.runOnUiThread { activeToolState.value = com.example.ui.studio.AudioFeatureTool.RECORD_VOICE }

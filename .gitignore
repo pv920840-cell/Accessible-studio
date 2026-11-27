@@ -19,3 +19,4 @@ debug.keystore
 *.apk
 .build-outputs/
 RELEASE_NOTES.md
+.ci-signing/

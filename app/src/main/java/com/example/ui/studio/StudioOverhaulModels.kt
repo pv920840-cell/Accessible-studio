@@ -138,6 +138,14 @@ enum class VideoFeatureTool(
     )
 }
 
+fun accessibleVideoTools(): List<VideoFeatureTool> = listOf(
+    VideoFeatureTool.TRIM_TIMELINE,
+    VideoFeatureTool.AUDIO_MUSIC,
+    VideoFeatureTool.OVERLAYS_VFX,
+    VideoFeatureTool.TRANSFORM_SPEED,
+    VideoFeatureTool.CONVERT_TOOLS
+)
+
 sealed class ActiveFeatureWorkspace {
     data class AudioTool(val tool: AudioFeatureTool) : ActiveFeatureWorkspace()
     data class VideoTool(

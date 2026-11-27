@@ -26,6 +26,7 @@ import com.example.ui.studio.StudioHomeScreen
 import com.example.ui.studio.StudioProjectSummary
 import com.example.ui.studio.StudioRootCoordinator
 import com.example.ui.studio.VideoFeatureTool
+import com.example.ui.studio.accessibleVideoTools
 import com.example.ui.theme.AccessibleStudioTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -184,10 +185,11 @@ class UiOverhaulFlowTest {
         assertTrue(backClicked)
 
         composeRule.onNodeWithTag("hub_project_title").assertExists()
-        VideoFeatureTool.values().forEach { tool ->
+        accessibleVideoTools().forEach { tool ->
             composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag(tool.tag))
             composeRule.onNodeWithTag(tool.tag).assertExists()
         }
+        composeRule.onNodeWithTag(VideoFeatureTool.FULL_VIDEO_STUDIO.tag).assertDoesNotExist()
         composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag(VideoFeatureTool.OVERLAYS_VFX.tag))
         composeRule.onNodeWithTag(VideoFeatureTool.OVERLAYS_VFX.tag).performClick()
         assertEquals(VideoFeatureTool.OVERLAYS_VFX, openedVideoTool)

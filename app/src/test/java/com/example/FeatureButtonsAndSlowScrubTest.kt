@@ -101,10 +101,11 @@ class FeatureButtonsAndSlowScrubTest {
         composeRule.onNodeWithTag("hub_video_feature_color_filters").assertIsDisplayed().performClick()
         assertEquals(VideoStudioFeatureButton.COLOR_FILTERS, openedFeature)
 
+        composeRule.onNodeWithTag("hub_feature_video_full").assertDoesNotExist()
         composeRule.onNodeWithTag("hub_features_grid")
-            .performScrollToNode(hasTestTag("hub_feature_video_full"))
-        composeRule.onNodeWithTag("hub_feature_video_full").performClick()
-        assertEquals(VideoFeatureTool.FULL_VIDEO_STUDIO, openedTool)
+            .performScrollToNode(hasTestTag("hub_feature_video_trim"))
+        composeRule.onNodeWithTag("hub_feature_video_trim").performClick()
+        assertEquals(VideoFeatureTool.TRIM_TIMELINE, openedTool)
     }
 
     @Test

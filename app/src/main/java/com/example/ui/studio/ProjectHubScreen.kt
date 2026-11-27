@@ -282,7 +282,7 @@ fun ProjectHubScreen(
                 }
 
                 if (isVideo) {
-                    items(VideoFeatureTool.values().toList(), key = { it.name }) { tool ->
+                    items(accessibleVideoTools(), key = { it.name }) { tool ->
                         FeatureHubCard(
                             title = tool.title,
                             subtitle = tool.subtitle,

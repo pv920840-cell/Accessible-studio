@@ -423,7 +423,7 @@ fun VideoEditorScreen(
                     }
                 }
 
-                items(VideoFeatureTool.entries, key = { it.name }) { tool ->
+                items(accessibleVideoTools(), key = { it.name }) { tool ->
                     CategoryFeatureButton(
                         title = tool.title,
                         subtitle = tool.subtitle,

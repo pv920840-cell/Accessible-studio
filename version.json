@@ -1,10 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 28,
-  "versionName": "1.5.3",
-  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.3/AccessibleStudio_V1.5.3.apk",
+  "versionCode": 29,
+  "versionName": "1.5.4",
+  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.4/AccessibleStudio_V1.5.4.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 20852429,
-  "changelog": "Restored all Audio Editor tools in clean accessible workspaces: Voice Over & Auto-Ducking, Tone/Noise Generator, Insert Silence, Cue Points & Bookmarks, Peak/RMS Statistics, Cut/Copy/Paste/Mix Paste Clipboard, Record Append & Punch-In with Mic Gain/Buffer, Fade In/Out, RMS Normalize, Expander, High/Low/Band-Pass Filters, Mechanize, Time Stretch & Pro DSP Suite, Loop Selection, and Redo — keeping Save Project and Final Export intact.",
-  "releaseNotes": "Restored all Audio Editor tools in clean accessible workspaces: Voice Over & Auto-Ducking, Tone/Noise Generator, Insert Silence, Cue Points & Bookmarks, Peak/RMS Statistics, Cut/Copy/Paste/Mix Paste Clipboard, Record Append & Punch-In with Mic Gain/Buffer, Fade In/Out, RMS Normalize, Expander, High/Low/Band-Pass Filters, Mechanize, Time Stretch & Pro DSP Suite, Loop Selection, and Redo — keeping Save Project and Final Export intact."
+  "apkSizeBytes": 20868813,
+  "changelog": "Upgraded Audio Trim & Editor playback transport controls to exact sequential order (Rewind -> Play/Pause -> Forward -> Stop), removed Full Video Workspace clutter from Video Editor & Project Hub, and kept all Audio/Video tools, Save Project, and Final Export intact.",
+  "releaseNotes": "Upgraded Audio Trim & Editor playback transport controls to exact sequential order (Rewind -> Play/Pause -> Forward -> Stop), removed Full Video Workspace clutter from Video Editor & Project Hub, and kept all Audio/Video tools, Save Project, and Final Export intact."
 }

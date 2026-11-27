@@ -87,13 +87,23 @@ class HomeCategoryNavigationTest {
         composeRule.onNodeWithTag("audio_editor_tools_list").performScrollToNode(hasTestTag("btn_audio_editor_tools"))
         composeRule.onNodeWithTag("btn_audio_editor_tools").assertExists()
 
-        // Verify negative constraints: NO heavy desktop DAW, NO Save fast/exact, NO Format/Size/Length file info
+        // Verify negative constraints: NO heavy desktop DAW, NO Full Video Workspace, NO Save fast/exact, NO Format/Size/Length file info
         assertTrue(composeRule.onAllNodesWithText("Full DAW Timeline", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Save fast", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Save exact, slow", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Format:", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("File Size:", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Length:", substring = true).fetchSemanticsNodes().isEmpty())
+
+        // Navigate Home -> Video Editor and verify Full Video Workspace is removed while Trim & Timeline remains
+        composeRule.onNodeWithTag("btn_audio_editor_back").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("btn_home_video_editor").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("video_editor_title").assertIsDisplayed()
+        composeRule.onNodeWithTag("btn_video_editor_trim_timeline").assertExists()
+        composeRule.onNodeWithTag("btn_video_editor_full_video_studio").assertDoesNotExist()
+        assertTrue(composeRule.onAllNodesWithText("Full Video Workspace", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
     }
 
     @Test

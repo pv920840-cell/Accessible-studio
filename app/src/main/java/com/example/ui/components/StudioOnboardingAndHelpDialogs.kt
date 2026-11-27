@@ -116,22 +116,22 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.5.3 — All Audio Editor Tools Restored in Clean Accessible Navigation:\n\n" +
-            "1. Voice Over, Auto-Ducking & Pro Audio Tools Restored:\n" +
-            "• Audio Editor now includes Voice Over & Auto-Ducking as well as Tone/Noise Generator, Insert Silence, Cue Points & Bookmarks, Peak/RMS Statistics, Time Stretch & Pitch/Pro DSP.\n\n" +
-            "2. Full Clipboard, Loop Playback & Pro Recorder Controls:\n" +
-            "• Cut, Copy, Paste at Cursor/End, Mix Paste, Redo, Loop Selection, Append Recording, Punch-In Recording, Mic Gain, and Buffer size controls are all directly accessible.\n\n" +
-            "3. Complete Filters, Effects, Batch Processing & Always-Ready Save:\n" +
-            "• Added Fade In/Out, Custom Gain ±dB, Normalize RMS, Expander, High-Pass, Low-Pass, Band-Pass, Mechanize, plus Batch Processing, Save Project, and Final Export."
+        "What's New in Version 1.5.4 — Sequential Audio Transport Controls & Cleaner Video Editor Navigation:\n\n" +
+            "1. Sequential Playback Transport Controls (Trim & Audio Editor):\n" +
+            "• Audio Trim and all Audio Editor workspaces now place playback buttons together right below the time readout in exact order: Rewind -> Play/Pause -> Forward -> Stop.\n\n" +
+            "2. Cleaner Video Editor & Project Hub Navigation:\n" +
+            "• Removed the cluttering Full Video Workspace option so Video Editor and Video Project Hub show only clean, dedicated feature buttons.\n\n" +
+            "3. All Audio Editor Features, Batch Processing & Export Preserved:\n" +
+            "• Trim, Mix, Voice Over & Auto-Ducking, Effects, Batch Processing, Music Rebalance, Voice Recorder, Tone/Silence/Cues/Stats, Save Project, and Final Export all remain intact."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.5.3 में नया क्या है — Audio Editor के सभी फीचर्स वापस जोड़े गए:\n\n" +
-            "1. Voice Over, Auto-Ducking और Audio Tools:\n" +
-            "• Audio Editor में अब Voice Over & Auto-Ducking के साथ Tone Generator, Insert Silence, Cue Points, Peak/RMS Stats, Time Stretch और Pro DSP टूल भी सीधे उपलब्ध हैं।\n\n" +
-            "2. Clipboard, Loop Selection और पूरा Voice Recorder:\n" +
-            "• Cut, Copy, Paste, Mix Paste, Redo, Loop Selection, Append व Punch-In रिकॉर्डिंग और Mic Gain/Buffer नियंत्रण भी आसानी से मिलते हैं।\n\n" +
-            "3. सभी फ़िल्टर, Batch Processing, Save Project और Export:\n" +
-            "• Fade In/Out, RMS Normalize, Expander, High-Pass/Low-Pass/Band-Pass, Mechanize, Batch Processing, Save Project और फाइनल Export पूरी तरह सुरक्षित हैं।"
+        "Version 1.5.4 में नया क्या है — आसान प्लेबैक बटन क्रम और साफ़ Video Editor नेविगेशन:\n\n" +
+            "1. ऑडियो ट्रिम व एडिटर में नए क्रमबद्ध कंट्रोल बटन:\n" +
+            "• Audio Trim और Audio Editor स्क्रीन में प्लेबैक बटन अब एक साथ सही क्रम में मिलते हैं: पहले Rewind, फिर Play/Pause, फिर Forward और फिर Stop।\n\n" +
+            "2. Video Editor से Full Video Workspace विकल्प हटाया गया:\n" +
+            "• Video Editor और Video Project Hub में अब बिना किसी भारी वर्कस्पेस के सीधे अलग-अलग आसान फ़ीचर बटन दिखाई देते हैं।\n\n" +
+            "3. सभी Audio Editor फ़ीचर्स, Batch Processing, Save और Export सुरक्षित:\n" +
+            "• Trim, Mix, Voice Over, Effects, Batch Processing, Music Rebalance, Voice Recorder, Tone/Silence/Cues/Stats, Save Project और फाइनल Export पहले की तरह उपलब्ध हैं।"
 }
 
 @Composable

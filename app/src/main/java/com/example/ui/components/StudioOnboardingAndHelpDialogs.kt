@@ -116,24 +116,22 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.5.1 — Uninstall Old Build Fix, App Info Fallback & Update Reliability:\n\n" +
-            "1. Fixed \"Uninstall Old Build\" Button on Package Conflict:\n" +
-            "• Added Android's REQUEST_DELETE_PACKAGES permission so tapping Uninstall Old Build opens the system uninstall prompt properly without silent failure.\n" +
-            "• Saving the update APK to Downloads now runs smoothly in the background before launching uninstall.\n\n" +
-            "2. New \"Open App Info to Uninstall\" Button:\n" +
-            "• Added a direct Open App Info to Uninstall button inside the Package Conflict card for guaranteed 1-tap access on any device.\n\n" +
-            "3. GitHub Releases Download & 404 Recovery:\n" +
-            "• Automatic asset fallback lookup, Open Releases Page fallback button on download errors, and persistent CI signing keys for smoother future upgrades."
+        "What's New in Version 1.5.2 — Accessible Category Navigation, Audio Editor Flow & Always-Available Save Project:\n\n" +
+            "1. Button-Based Home & Category Navigation:\n" +
+            "• Added dedicated Audio Editor and Video Editor category buttons right on Home alongside Create Project and Existing Projects.\n\n" +
+            "2. Linear Audio Editor Feature Flow:\n" +
+            "• Tapping Audio Editor opens separate, TalkBack-friendly buttons for Trim, Mix, Effects, Batch Processing, Music Rebalance & Stems, and Voice Recorder — clean and linear without heavy desktop DAW clutter.\n\n" +
+            "3. Always-Accessible Save Project & Audio Export:\n" +
+            "• \"Save Project\" remains available at every point of editing, while final audio and video export workflows work just as cleanly as before."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.5.1 में नया क्या है — Uninstall Old Build बटन फ़िक्स और अपडेट सुधार:\n\n" +
-            "1. \"Uninstall Old Build\" बटन अब सही से काम करता है:\n" +
-            "• Android की REQUEST_DELETE_PACKAGES परमिशन जोड़ी गई है ताकि पुराने बिल्ड को अनइंस्टॉल करने का सिस्टम प्रॉम्प्ट तुरंत खुले।\n" +
-            "• अनइंस्टॉल से पहले नया APK बैकग्राउंड में Downloads फ़ोल्डर में सेव हो जाता है।\n\n" +
-            "2. नया \"Open App Info to Uninstall\" बटन:\n" +
-            "• Package Conflict कार्ड में सीधे Android App Info खोलने का बटन जोड़ा गया है ताकि किसी भी फ़ोन पर एक टैप में अनइंस्टॉल किया जा सके।\n\n" +
-            "3. GitHub Releases डाउनलोड और 404 रिकवरी:\n" +
-            "• अपडेट डाउनलोड में ऑटोमैटिक 404 फ़ॉलबैक, Open Releases Page बटन और लगातार सही साइन किए गए अपडेट बिल्ड शामिल हैं।"
+        "Version 1.5.2 में नया क्या है — नया Audio Editor और आसान बटन नेविगेशन:\n\n" +
+            "1. होम स्क्रीन पर बटन-आधारित नेविगेशन:\n" +
+            "• होम स्क्रीन पर Create Project के साथ अलग Audio Editor और Video Editor कैटेगरी बटन जोड़े गए हैं।\n\n" +
+            "2. Audio Editor में अलग-अलग फ़ीचर बटन:\n" +
+            "• Audio Editor खोलने पर Trim, Mix, Effects, Batch Processing, Music Rebalance & Stems और Voice Recorder के स्पष्ट बटन सीधे मिलते हैं।\n\n" +
+            "3. हर समय उपलब्ध Save Project और Export:\n" +
+            "• अब एडिटिंग के किसी भी समय \"Save Project\" और फाइनल ऑडियो/वीडियो Export पहले की तरह आसानी से काम करते हैं।"
 }
 
 @Composable

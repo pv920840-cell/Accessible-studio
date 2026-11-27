@@ -36,6 +36,8 @@ enum class ProjectMediaType(val label: String) {
 
 enum class StudioRootDestination {
     HOME,
+    AUDIO_EDITOR,
+    VIDEO_EDITOR,
     CREATE_PROJECT,
     PROJECT_HUB,
     FEATURE_WORKSPACE,
@@ -48,18 +50,18 @@ enum class AudioFeatureTool(
     val tag: String
 ) {
     TRIM_CUT(
-        title = "Trim & Selection",
+        title = "Trim",
         subtitle = "Set start/end markers, preview, crop, cut & mute selection",
         tag = "hub_feature_audio_trim"
     ),
     MIX_TRACKS(
-        title = "Mix & Overdub",
+        title = "Mix",
         subtitle = "Blend another audio track with balance & peak limiter",
         tag = "hub_feature_audio_mix"
     ),
     EFFECTS_CLEANING(
-        title = "Effects & Cleaning",
-        subtitle = "Normalize, de-hum, noise reduction, compressor, echo & reverb",
+        title = "Effects",
+        subtitle = "Auto Gain, Adaptive De-Noise, EQ, Compressor, Echo & Reverb",
         tag = "hub_feature_audio_effects"
     ),
     MUSIC_REBALANCE(
@@ -78,6 +80,14 @@ enum class AudioFeatureTool(
         tag = "hub_feature_audio_full"
     )
 }
+
+fun accessibleAudioTools(): List<AudioFeatureTool> = listOf(
+    AudioFeatureTool.TRIM_CUT,
+    AudioFeatureTool.MIX_TRACKS,
+    AudioFeatureTool.EFFECTS_CLEANING,
+    AudioFeatureTool.MUSIC_REBALANCE,
+    AudioFeatureTool.RECORD_VOICE
+)
 
 enum class VideoFeatureTool(
     val title: String,

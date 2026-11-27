@@ -170,6 +170,11 @@ fun StudioRootCoordinator(
     var activeAudioSession by remember { mutableStateOf<AudioProjectSessionState?>(null) }
     var activeVideoSession by remember { mutableStateOf<VideoProjectSessionState?>(null) }
     var activeFeatureWorkspace by remember { mutableStateOf<ActiveFeatureWorkspace?>(null) }
+    var pendingAudioToolAfterLoad by remember { mutableStateOf<AudioFeatureTool?>(null) }
+    var pendingVideoToolAfterLoad by remember { mutableStateOf<VideoFeatureTool?>(null) }
+    var showAudioToolSourcePrompt by remember { mutableStateOf<AudioFeatureTool?>(null) }
+    var showVideoToolSourcePrompt by remember { mutableStateOf<VideoFeatureTool?>(null) }
+    var createBackDestination by remember { mutableStateOf(StudioRootDestination.HOME) }
 
     // Step 2 Create Flow State
     var createSelectedType by remember { mutableStateOf<ProjectMediaType?>(ProjectMediaType.AUDIO) }
@@ -235,7 +240,11 @@ fun StudioRootCoordinator(
         activeProject = summary
     }
 
-    fun openAudioProjectIntoHub(project: StudioProjectSummary, preloadedPcm: ShortArray? = null) {
+    fun openAudioProjectIntoHub(
+        project: StudioProjectSummary,
+        preloadedPcm: ShortArray? = null,
+        targetAudioTool: AudioFeatureTool? = null
+    ) {
         scope.launch {
             try {
                 audioPlayer.stop()
@@ -261,7 +270,12 @@ fun StudioRootCoordinator(
                 )
                 activeVideoSession = null
                 upsertSessionProject(project.copy(durationMillis = durMs))
-                destination = StudioRootDestination.PROJECT_HUB
+                if (targetAudioTool != null) {
+                    activeFeatureWorkspace = ActiveFeatureWorkspace.AudioTool(targetAudioTool)
+                    destination = StudioRootDestination.FEATURE_WORKSPACE
+                } else {
+                    destination = StudioRootDestination.PROJECT_HUB
+                }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 Toast.makeText(
@@ -273,7 +287,10 @@ fun StudioRootCoordinator(
         }
     }
 
-    fun openVideoProjectIntoHub(project: StudioProjectSummary) {
+    fun openVideoProjectIntoHub(
+        project: StudioProjectSummary,
+        targetVideoTool: VideoFeatureTool? = null
+    ) {
         scope.launch {
             try {
                 audioPlayer.stop()
@@ -297,12 +314,131 @@ fun StudioRootCoordinator(
                 )
                 activeAudioSession = null
                 upsertSessionProject(project.copy(durationMillis = resolvedDur))
-                destination = StudioRootDestination.PROJECT_HUB
+                if (targetVideoTool != null) {
+                    activeFeatureWorkspace = ActiveFeatureWorkspace.VideoTool(targetVideoTool)
+                    destination = StudioRootDestination.FEATURE_WORKSPACE
+                } else {
+                    destination = StudioRootDestination.PROJECT_HUB
+                }
             } catch (t: Throwable) {
                 if (t is CancellationException) throw t
                 Toast.makeText(
                     context,
                     "Could not open video project: ${t.localizedMessage ?: "Unsupported or unreadable file"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    fun saveCurrentAudioProject() {
+        val proj = activeProject ?: return
+        val aSession = activeAudioSession
+        val stampNow = System.currentTimeMillis()
+        if (aSession != null) {
+            activeAudioSession = aSession.copy(hasUnsavedChanges = false)
+        }
+        val optimistic = proj.copy(
+            lastModifiedMillis = stampNow,
+            statusBadge = "Saved"
+        )
+        upsertSessionProject(optimistic)
+        scope.launch {
+            val savedSummary = withContext(Dispatchers.IO) {
+                StudioProjectStorage.saveAudioProject(
+                    context = context,
+                    project = optimistic,
+                    pcm = aSession?.pcm ?: ShortArray(0),
+                    sampleRate = aSession?.sampleRate ?: StudioAudioProcessor.SAMPLE_RATE,
+                    writeWav = { file, samples, sr, ch ->
+                        audioProcessor.writeWavFile(file, samples, sr, ch)
+                    }
+                )
+            }
+            upsertSessionProject(savedSummary)
+        }
+        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+        AccessibilityHelper.announceForAccessibility(context, "Project saved")
+        Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
+    }
+
+    fun saveCurrentVideoProject() {
+        val proj = activeProject ?: return
+        val vSession = activeVideoSession
+        val stampNow = System.currentTimeMillis()
+        if (vSession != null) {
+            activeVideoSession = vSession.copy(hasUnsavedChanges = false)
+        }
+        val optimistic = proj.copy(
+            sourceUri = vSession?.sourceUri ?: proj.sourceUri,
+            durationMillis = (vSession?.durationMs ?: 0L).takeIf { it > 0L } ?: proj.durationMillis,
+            lastModifiedMillis = stampNow,
+            statusBadge = "Saved"
+        )
+        upsertSessionProject(optimistic)
+        scope.launch {
+            val savedSummary = withContext(Dispatchers.IO) {
+                StudioProjectStorage.saveVideoProject(
+                    context = context,
+                    project = optimistic,
+                    sourceUri = vSession?.sourceUri,
+                    durationMs = vSession?.durationMs ?: optimistic.durationMillis
+                )
+            }
+            upsertSessionProject(savedSummary)
+        }
+        if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
+        AccessibilityHelper.announceForAccessibility(context, "Project saved")
+        Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
+    }
+
+    fun startBlankAudioProject(targetAudioTool: AudioFeatureTool? = null) {
+        val blank = ShortArray(5 * StudioAudioProcessor.SAMPLE_RATE)
+        val title = createNameDraft.trim().ifBlank { "Blank Audio Project" }
+        val summary = StudioProjectSummary(
+            id = "audio_blank_${UUID.randomUUID()}",
+            title = title,
+            mediaType = ProjectMediaType.AUDIO,
+            sourceUri = null,
+            filePath = null,
+            durationMillis = 5000L,
+            fileSizeBytes = blank.size * 2L,
+            lastModifiedMillis = System.currentTimeMillis(),
+            statusBadge = "Blank"
+        )
+        createNameDraft = ""
+        openAudioProjectIntoHub(summary, preloadedPcm = blank, targetAudioTool = targetAudioTool)
+    }
+
+    fun startDemoVideoProject(targetVideoTool: VideoFeatureTool? = null) {
+        scope.launch {
+            try {
+                isCreateLoading = true
+                createLoadingMsg = "Generating demo video clip..."
+                val demoFile = videoProcessor.generateDemoVideoClip(settings = VideoEditSettings(), durationSec = 6) {}
+                isCreateLoading = false
+                createLoadingMsg = ""
+                val title = createNameDraft.trim().ifBlank { "Demo Video Project" }
+                val summary = StudioProjectSummary(
+                    id = "video_demo_${UUID.randomUUID()}",
+                    title = title,
+                    mediaType = ProjectMediaType.VIDEO,
+                    sourceUri = Uri.fromFile(demoFile),
+                    filePath = demoFile.absolutePath,
+                    durationMillis = 6000L,
+                    fileSizeBytes = demoFile.length(),
+                    lastModifiedMillis = System.currentTimeMillis(),
+                    statusBadge = "Demo"
+                )
+                createNameDraft = ""
+                openVideoProjectIntoHub(summary, targetVideoTool = targetVideoTool)
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                isCreateLoading = false
+                createLoadingMsg = ""
+                Toast.makeText(
+                    context,
+                    "Could not create demo video: ${t.localizedMessage ?: "Encoder unavailable"}",
                     Toast.LENGTH_LONG
                 ).show()
             }
@@ -316,6 +452,8 @@ fun StudioRootCoordinator(
                 android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
         } catch (_: Throwable) {}
+        val nextTool = pendingAudioToolAfterLoad
+        pendingAudioToolAfterLoad = null
         scope.launch {
             try {
                 isCreateLoading = true
@@ -341,7 +479,7 @@ fun StudioRootCoordinator(
                         statusBadge = "Active"
                     )
                     createNameDraft = ""
-                    openAudioProjectIntoHub(summary, preloadedPcm = pcm)
+                    openAudioProjectIntoHub(summary, preloadedPcm = pcm, targetAudioTool = nextTool)
                 } else {
                     Toast.makeText(context, "Could not decode selected audio file.", Toast.LENGTH_LONG).show()
                 }
@@ -427,6 +565,9 @@ fun StudioRootCoordinator(
                     StudioHomeScreen(
                         projects = allProjects,
                         onCreateNewProject = {
+                            pendingAudioToolAfterLoad = null
+                            pendingVideoToolAfterLoad = null
+                            createBackDestination = StudioRootDestination.HOME
                             createNameDraft = ""
                             createSelectedType = ProjectMediaType.AUDIO
                             destination = StudioRootDestination.CREATE_PROJECT
@@ -443,7 +584,111 @@ fun StudioRootCoordinator(
                         onOpenAbout = onOpenAbout,
                         onOpenSettings = onOpenSettings,
                         onOpenWhatsNew = onOpenWhatsNew,
-                        onOpenHelp = onOpenHelp
+                        onOpenHelp = onOpenHelp,
+                        onOpenAudioEditor = {
+                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
+                            destination = StudioRootDestination.AUDIO_EDITOR
+                        },
+                        onOpenVideoEditor = {
+                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
+                            destination = StudioRootDestination.VIDEO_EDITOR
+                        },
+                        hasActiveProject = activeProject != null,
+                        activeProjectTitle = activeProject?.title,
+                        onSaveActiveProject = {
+                            val proj = activeProject
+                            if (proj?.mediaType == ProjectMediaType.VIDEO) {
+                                saveCurrentVideoProject()
+                            } else {
+                                saveCurrentAudioProject()
+                            }
+                        },
+                        onResumeActiveProject = {
+                            if (activeProject != null) {
+                                destination = StudioRootDestination.PROJECT_HUB
+                            }
+                        }
+                    )
+                }
+
+                StudioRootDestination.AUDIO_EDITOR -> {
+                    val activeAudioSummary = activeProject?.takeIf { it.mediaType == ProjectMediaType.AUDIO }
+                    val audioProjects = allProjects.filter { it.mediaType == ProjectMediaType.AUDIO }
+                    AudioEditorScreen(
+                        activeAudioProject = activeAudioSummary,
+                        hasUnsavedChanges = activeAudioSession?.hasUnsavedChanges ?: false,
+                        audioProjects = audioProjects,
+                        onBack = { destination = StudioRootDestination.HOME },
+                        onCreateOrPickAudioProject = {
+                            pendingAudioToolAfterLoad = null
+                            createBackDestination = StudioRootDestination.AUDIO_EDITOR
+                            createNameDraft = ""
+                            createSelectedType = ProjectMediaType.AUDIO
+                            destination = StudioRootDestination.CREATE_PROJECT
+                        },
+                        onOpenExistingAudioProject = { proj ->
+                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
+                            openAudioProjectIntoHub(proj)
+                        },
+                        onOpenAudioTool = { tool ->
+                            audioPlayer.stop()
+                            if (activeAudioSession != null && activeProject?.mediaType == ProjectMediaType.AUDIO) {
+                                activeFeatureWorkspace = ActiveFeatureWorkspace.AudioTool(tool)
+                                destination = StudioRootDestination.FEATURE_WORKSPACE
+                            } else {
+                                showAudioToolSourcePrompt = tool
+                            }
+                        },
+                        onOpenBatchProcessing = onOpenBatchProcessing,
+                        onSaveProject = { saveCurrentAudioProject() },
+                        onExportAudio = {
+                            val aSession = activeAudioSession
+                            if (aSession == null || aSession.pcm.isEmpty()) {
+                                Toast.makeText(context, "Audio track is empty. Record or import audio first.", Toast.LENGTH_SHORT).show()
+                            } else {
+                                hubExportedFile = null
+                                showHubExportDialog = true
+                            }
+                        }
+                    )
+                }
+
+                StudioRootDestination.VIDEO_EDITOR -> {
+                    val activeVideoSummary = activeProject?.takeIf { it.mediaType == ProjectMediaType.VIDEO }
+                    val videoProjects = allProjects.filter { it.mediaType == ProjectMediaType.VIDEO }
+                    VideoEditorScreen(
+                        activeVideoProject = activeVideoSummary,
+                        hasUnsavedChanges = activeVideoSession?.hasUnsavedChanges ?: false,
+                        videoProjects = videoProjects,
+                        onBack = { destination = StudioRootDestination.HOME },
+                        onCreateOrPickVideoProject = {
+                            pendingVideoToolAfterLoad = null
+                            createBackDestination = StudioRootDestination.VIDEO_EDITOR
+                            createNameDraft = ""
+                            createSelectedType = ProjectMediaType.VIDEO
+                            destination = StudioRootDestination.CREATE_PROJECT
+                        },
+                        onOpenExistingVideoProject = { proj ->
+                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.CLICK)
+                            openVideoProjectIntoHub(proj)
+                        },
+                        onOpenVideoTool = { tool ->
+                            videoPlayer.pause()
+                            videoMultiMusicPreview.stopAll()
+                            if (activeVideoSession != null && activeProject?.mediaType == ProjectMediaType.VIDEO) {
+                                activeFeatureWorkspace = ActiveFeatureWorkspace.VideoTool(tool)
+                                destination = StudioRootDestination.FEATURE_WORKSPACE
+                            } else {
+                                showVideoToolSourcePrompt = tool
+                            }
+                        },
+                        onSaveProject = { saveCurrentVideoProject() },
+                        onExportVideo = {
+                            videoPlayer.pause()
+                            videoMultiMusicPreview.stopAll()
+                            hubExportedFile = null
+                            showHubExportDialog = true
+                        }
                     )
                 }
 
@@ -465,60 +710,23 @@ fun StudioRootCoordinator(
                         onStartQuickBlankOrDemo = {
                             when (createSelectedType) {
                                 ProjectMediaType.AUDIO -> {
-                                    val blank = ShortArray(5 * StudioAudioProcessor.SAMPLE_RATE)
-                                    val title = createNameDraft.trim().ifBlank { "Blank Audio Project" }
-                                    val summary = StudioProjectSummary(
-                                        id = "audio_blank_${UUID.randomUUID()}",
-                                        title = title,
-                                        mediaType = ProjectMediaType.AUDIO,
-                                        sourceUri = null,
-                                        filePath = null,
-                                        durationMillis = 5000L,
-                                        fileSizeBytes = blank.size * 2L,
-                                        lastModifiedMillis = System.currentTimeMillis(),
-                                        statusBadge = "Blank"
-                                    )
-                                    createNameDraft = ""
-                                    openAudioProjectIntoHub(summary, preloadedPcm = blank)
+                                    val target = pendingAudioToolAfterLoad
+                                    pendingAudioToolAfterLoad = null
+                                    startBlankAudioProject(targetAudioTool = target)
                                 }
                                 ProjectMediaType.VIDEO -> {
-                                    scope.launch {
-                                        try {
-                                            isCreateLoading = true
-                                            createLoadingMsg = "Generating demo video clip..."
-                                            val demoFile = videoProcessor.generateDemoVideoClip(settings = VideoEditSettings(), durationSec = 6) {}
-                                            isCreateLoading = false
-                                            createLoadingMsg = ""
-                                            val title = createNameDraft.trim().ifBlank { "Demo Video Project" }
-                                            val summary = StudioProjectSummary(
-                                                id = "video_demo_${UUID.randomUUID()}",
-                                                title = title,
-                                                mediaType = ProjectMediaType.VIDEO,
-                                                sourceUri = Uri.fromFile(demoFile),
-                                                filePath = demoFile.absolutePath,
-                                                durationMillis = 6000L,
-                                                fileSizeBytes = demoFile.length(),
-                                                lastModifiedMillis = System.currentTimeMillis(),
-                                                statusBadge = "Demo"
-                                            )
-                                            createNameDraft = ""
-                                            openVideoProjectIntoHub(summary)
-                                        } catch (t: Throwable) {
-                                            if (t is CancellationException) throw t
-                                            isCreateLoading = false
-                                            createLoadingMsg = ""
-                                            Toast.makeText(
-                                                context,
-                                                "Could not create demo video: ${t.localizedMessage ?: "Encoder unavailable"}",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        }
-                                    }
+                                    val target = pendingVideoToolAfterLoad
+                                    pendingVideoToolAfterLoad = null
+                                    startDemoVideoProject(targetVideoTool = target)
                                 }
                                 null -> Unit
                             }
                         },
-                        onBack = { destination = StudioRootDestination.HOME }
+                        onBack = {
+                            pendingAudioToolAfterLoad = null
+                            pendingVideoToolAfterLoad = null
+                            destination = createBackDestination
+                        }
                     )
                 }
 
@@ -554,33 +762,7 @@ fun StudioRootCoordinator(
                                 activeFeatureWorkspace = ActiveFeatureWorkspace.VideoTool(feat.toParentTool(), feat)
                                 destination = StudioRootDestination.FEATURE_WORKSPACE
                             },
-                            onSaveProject = {
-                                val stampNow = System.currentTimeMillis()
-                                if (vSession != null) {
-                                    activeVideoSession = vSession.copy(hasUnsavedChanges = false)
-                                }
-                                val optimistic = proj.copy(
-                                    sourceUri = vSession?.sourceUri ?: proj.sourceUri,
-                                    durationMillis = (vSession?.durationMs ?: 0L).takeIf { it > 0L } ?: proj.durationMillis,
-                                    lastModifiedMillis = stampNow,
-                                    statusBadge = "Saved"
-                                )
-                                upsertSessionProject(optimistic)
-                                scope.launch {
-                                    val savedSummary = withContext(Dispatchers.IO) {
-                                        StudioProjectStorage.saveVideoProject(
-                                            context = context,
-                                            project = optimistic,
-                                            sourceUri = vSession?.sourceUri,
-                                            durationMs = vSession?.durationMs ?: optimistic.durationMillis
-                                        )
-                                    }
-                                    upsertSessionProject(savedSummary)
-                                }
-                                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                                AccessibilityHelper.announceForAccessibility(context, "Project saved")
-                                Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
-                            },
+                            onSaveProject = { saveCurrentVideoProject() },
                             onExportProject = {
                                 videoPlayer.pause()
                                 videoMultiMusicPreview.stopSoloPreview()
@@ -618,34 +800,8 @@ fun StudioRootCoordinator(
                                 destination = StudioRootDestination.FEATURE_WORKSPACE
                             },
                             onOpenVideoTool = {},
-                            onSaveProject = {
-                                val stampNow = System.currentTimeMillis()
-                                if (aSession != null) {
-                                    activeAudioSession = aSession.copy(hasUnsavedChanges = false)
-                                }
-                                val optimistic = proj.copy(
-                                    lastModifiedMillis = stampNow,
-                                    statusBadge = "Saved"
-                                )
-                                upsertSessionProject(optimistic)
-                                scope.launch {
-                                    val savedSummary = withContext(Dispatchers.IO) {
-                                        StudioProjectStorage.saveAudioProject(
-                                            context = context,
-                                            project = optimistic,
-                                            pcm = aSession?.pcm ?: ShortArray(0),
-                                            sampleRate = aSession?.sampleRate ?: StudioAudioProcessor.SAMPLE_RATE,
-                                            writeWav = { file, samples, sr, ch ->
-                                                audioProcessor.writeWavFile(file, samples, sr, ch)
-                                            }
-                                        )
-                                    }
-                                    upsertSessionProject(savedSummary)
-                                }
-                                if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.SUCCESS)
-                                AccessibilityHelper.announceForAccessibility(context, "Project saved")
-                                Toast.makeText(context, "Project saved", Toast.LENGTH_SHORT).show()
-                            },
+                            onOpenBatchProcessing = onOpenBatchProcessing,
+                            onSaveProject = { saveCurrentAudioProject() },
                             onExportProject = {
                                 if (aSession == null || aSession.pcm.isEmpty()) {
                                     Toast.makeText(context, "Audio track is empty. Record or import audio first.", Toast.LENGTH_SHORT).show()
@@ -1079,6 +1235,40 @@ fun StudioRootCoordinator(
         )
     }
 
+    showAudioToolSourcePrompt?.let { promptTool ->
+        AudioToolSourcePromptDialog(
+            selectedTool = promptTool,
+            onPickAudioFile = {
+                pendingAudioToolAfterLoad = promptTool
+                showAudioToolSourcePrompt = null
+                showCreateAudioPickerDialog = true
+            },
+            onStartBlankAudio = {
+                showAudioToolSourcePrompt = null
+                pendingAudioToolAfterLoad = null
+                startBlankAudioProject(targetAudioTool = promptTool)
+            },
+            onDismiss = { showAudioToolSourcePrompt = null }
+        )
+    }
+
+    showVideoToolSourcePrompt?.let { promptTool ->
+        VideoToolSourcePromptDialog(
+            selectedTool = promptTool,
+            onPickVideoFile = {
+                pendingVideoToolAfterLoad = promptTool
+                showVideoToolSourcePrompt = null
+                showCreateVideoPickerDialog = true
+            },
+            onStartDemoVideo = {
+                showVideoToolSourcePrompt = null
+                pendingVideoToolAfterLoad = null
+                startDemoVideoProject(targetVideoTool = promptTool)
+            },
+            onDismiss = { showVideoToolSourcePrompt = null }
+        )
+    }
+
     if (showCreateAudioPickerDialog) {
         AccessibleAudioPickerDialog(
             exportedAudios = exportedMedia,
@@ -1086,7 +1276,10 @@ fun StudioRootCoordinator(
                 showCreateAudioPickerDialog = false
                 handleSelectedCreateAudioUri(uri, displayName)
             },
-            onDismiss = { showCreateAudioPickerDialog = false }
+            onDismiss = {
+                pendingAudioToolAfterLoad = null
+                showCreateAudioPickerDialog = false
+            }
         )
     }
 
@@ -1095,6 +1288,8 @@ fun StudioRootCoordinator(
             exportedVideos = exportedMedia,
             onSelectVideo = { uri, displayName ->
                 showCreateVideoPickerDialog = false
+                val nextVideoTool = pendingVideoToolAfterLoad
+                pendingVideoToolAfterLoad = null
                 val chosenTitle = createNameDraft.trim().ifBlank { displayName.ifBlank { "Video Project" } }
                 val summary = StudioProjectSummary(
                     id = "video_${UUID.randomUUID()}",
@@ -1108,9 +1303,12 @@ fun StudioRootCoordinator(
                     statusBadge = "Active"
                 )
                 createNameDraft = ""
-                openVideoProjectIntoHub(summary)
+                openVideoProjectIntoHub(summary, targetVideoTool = nextVideoTool)
             },
-            onDismiss = { showCreateVideoPickerDialog = false }
+            onDismiss = {
+                pendingVideoToolAfterLoad = null
+                showCreateVideoPickerDialog = false
+            }
         )
     }
 }

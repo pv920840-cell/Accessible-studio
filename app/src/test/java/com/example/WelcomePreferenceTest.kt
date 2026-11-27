@@ -69,8 +69,8 @@ class WelcomePreferenceTest {
         // What's New inside About must show ONLY the current version's changes (older versions removed)
         val whatsNewCombined = "${StudioUserGuideContent.WHATS_NEW_ENGLISH}\n${StudioUserGuideContent.WHATS_NEW_HINDI}"
         assertTrue(whatsNewCombined.contains(com.example.BuildConfig.VERSION_NAME))
-        assertTrue(whatsNewCombined.contains("Uninstall Old Build"))
-        assertTrue(whatsNewCombined.contains("Open App Info to Uninstall"))
+        assertTrue(whatsNewCombined.contains("Audio Editor"))
+        assertTrue(whatsNewCombined.contains("Batch Processing"))
         assertFalse(whatsNewCombined.contains("Version 1.1"))
         assertFalse(whatsNewCombined.contains("Version 1.2 —"))
         assertFalse(whatsNewCombined.contains("Version 1.2.5"))
@@ -80,6 +80,7 @@ class WelcomePreferenceTest {
         assertFalse(whatsNewCombined.contains("Version 1.2.9"))
         assertFalse(whatsNewCombined.contains("Version 1.4.0"))
         assertFalse(whatsNewCombined.contains("Version 1.5.0"))
+        assertFalse(whatsNewCombined.contains("Version 1.5.1"))
     }
 
     @Test
@@ -155,7 +156,7 @@ class WelcomePreferenceTest {
 
         composeRule.onNodeWithTag("accessibility_settings_sheet").assertExists()
         composeRule.onNodeWithTag("card_about_accessible_studio").performScrollTo().assertExists()
-        assertEquals("1.5.1", com.example.BuildConfig.VERSION_NAME)
+        assertEquals("1.5.2", com.example.BuildConfig.VERSION_NAME)
         composeRule.onNodeWithText("Version ${com.example.BuildConfig.VERSION_NAME} • 100% Free & Open Accessible Studio • 100% Offline").performScrollTo().assertExists()
 
         // First button inside About: User Guide

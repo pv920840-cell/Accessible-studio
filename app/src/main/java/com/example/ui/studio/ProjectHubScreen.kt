@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Transform
@@ -85,11 +86,11 @@ fun ProjectHubScreen(
     onSaveProject: () -> Unit = {},
     modifier: Modifier = Modifier,
     positionFlow: StateFlow<Long>? = null,
-    onOpenVideoFeature: (VideoStudioFeatureButton) -> Unit = {}
+    onOpenVideoFeature: (VideoStudioFeatureButton) -> Unit = {},
+    onOpenBatchProcessing: () -> Unit = {}
 ) {
     val isHighContrast = LocalHighContrast.current
     val isVideo = project.mediaType == ProjectMediaType.VIDEO
-    val saveNeeded = hasUnsavedChanges || project.statusBadge != "Saved"
 
     Column(
         modifier = modifier
@@ -128,38 +129,36 @@ fun ProjectHubScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (saveNeeded) {
-                            Button(
-                                onClick = onSaveProject,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(48.dp)
-                                    .testTag("btn_hub_save")
-                                    .semantics {
-                                        contentDescription = "Save project"
-                                    },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                                    contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
-                                )
-                            ) {
-                                Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    text = "Save",
-                                    fontWeight = FontWeight.Black,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+                        Button(
+                            onClick = onSaveProject,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_hub_save")
+                                .semantics {
+                                    contentDescription = "Save Project"
+                                },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                            )
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = "Save Project",
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
 
                         OutlinedButton(
                             onClick = onBackToHome,
                             modifier = Modifier
-                                .weight(if (saveNeeded) 1f else 2f)
-                                .height(48.dp)
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
                                 .testTag("btn_hub_back_home")
                                 .semantics {
                                     contentDescription = "Go back to Home Screen"
@@ -261,7 +260,7 @@ fun ProjectHubScreen(
             }
 
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 160.dp),
+                columns = if (isVideo) GridCells.Adaptive(minSize = 160.dp) else GridCells.Fixed(1),
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
@@ -271,7 +270,7 @@ fun ProjectHubScreen(
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
-                        text = if (isVideo) "Video Editing Tools" else "Audio Editing Tools",
+                        text = if (isVideo) "Video Editing Tools" else "Audio Editor Tools",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Black,
                         modifier = Modifier
@@ -328,14 +327,46 @@ fun ProjectHubScreen(
                         }
                     }
                 } else {
-                    items(AudioFeatureTool.values().toList(), key = { it.name }) { tool ->
-                        FeatureHubCard(
+                    items(
+                        listOf(
+                            AudioFeatureTool.TRIM_CUT,
+                            AudioFeatureTool.MIX_TRACKS,
+                            AudioFeatureTool.EFFECTS_CLEANING
+                        ),
+                        key = { it.name }
+                    ) { tool ->
+                        AudioLinearFeatureButtonCard(
                             title = tool.title,
                             subtitle = tool.subtitle,
                             icon = audioToolIcon(tool),
                             tag = tool.tag,
                             isHighContrast = isHighContrast,
-                            accentPrimary = true,
+                            onClick = { onOpenAudioTool(tool) }
+                        )
+                    }
+                    item(key = "audio_batch_processing") {
+                        AudioLinearFeatureButtonCard(
+                            title = "Batch Processing",
+                            subtitle = "Apply normalization, trim & effects to multiple files at once",
+                            icon = Icons.Default.PlaylistAdd,
+                            tag = "hub_feature_audio_batch",
+                            isHighContrast = isHighContrast,
+                            onClick = onOpenBatchProcessing
+                        )
+                    }
+                    items(
+                        listOf(
+                            AudioFeatureTool.MUSIC_REBALANCE,
+                            AudioFeatureTool.RECORD_VOICE
+                        ),
+                        key = { it.name }
+                    ) { tool ->
+                        AudioLinearFeatureButtonCard(
+                            title = tool.title,
+                            subtitle = tool.subtitle,
+                            icon = audioToolIcon(tool),
+                            tag = tool.tag,
+                            isHighContrast = isHighContrast,
                             onClick = { onOpenAudioTool(tool) }
                         )
                     }
@@ -454,6 +485,74 @@ private fun FeatureHubCard(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+    }
+}
+
+@Composable
+private fun AudioLinearFeatureButtonCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    tag: String,
+    isHighContrast: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .testTag(tag)
+            .semantics(mergeDescendants = true) {
+                contentDescription = "$title. $subtitle. Tap to open."
+            },
+        shape = RoundedCornerShape(16.dp),
+        color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            if (isHighContrast) 2.dp else 1.dp,
+            if (isHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(44.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Black,
+                    color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }

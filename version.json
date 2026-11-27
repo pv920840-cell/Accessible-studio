@@ -1,10 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 26,
-  "versionName": "1.5.1",
-  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.1/AccessibleStudio_V1.5.1.apk",
+  "versionCode": 27,
+  "versionName": "1.5.2",
+  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.2/AccessibleStudio_V1.5.2.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 20688593,
-  "changelog": "Fixed the Uninstall Old Build button by adding REQUEST_DELETE_PACKAGES permission, background APK save before uninstall, and an Open App Info to Uninstall fallback button inside the Package Conflict card, plus GitHub Releases 404 asset fallback and Open Releases Page recovery.",
-  "releaseNotes": "Fixed the Uninstall Old Build button by adding REQUEST_DELETE_PACKAGES permission, background APK save before uninstall, and an Open App Info to Uninstall fallback button inside the Package Conflict card, plus GitHub Releases 404 asset fallback and Open Releases Page recovery."
+  "apkSizeBytes": 20770513,
+  "changelog": "Added accessible button-based Audio Editor & Video Editor categories on Home, separate linear Audio Editor feature buttons (Trim, Mix, Effects, Batch Processing, Music Rebalance, Voice Recorder), and an always-available Save Project action while keeping all existing processing and final export intact.",
+  "releaseNotes": "Added accessible button-based Audio Editor & Video Editor categories on Home, separate linear Audio Editor feature buttons (Trim, Mix, Effects, Batch Processing, Music Rebalance, Voice Recorder), and an always-available Save Project action while keeping all existing processing and final export intact."
 }

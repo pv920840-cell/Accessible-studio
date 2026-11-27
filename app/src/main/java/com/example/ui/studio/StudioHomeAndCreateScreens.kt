@@ -30,9 +30,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -47,6 +50,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -75,160 +82,248 @@ fun StudioHomeScreen(
     onOpenSettings: () -> Unit,
     onOpenWhatsNew: () -> Unit,
     onOpenHelp: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenAudioEditor: () -> Unit = {},
+    onOpenVideoEditor: () -> Unit = {},
+    hasActiveProject: Boolean = false,
+    activeProjectTitle: String? = null,
+    onSaveActiveProject: () -> Unit = {},
+    onResumeActiveProject: () -> Unit = {}
 ) {
     val isHighContrast = LocalHighContrast.current
+    var showExistingProjects by remember { mutableStateOf(true) }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .background(if (isHighContrast) Color.Black else MaterialTheme.colorScheme.background),
-        horizontalAlignment = Alignment.CenterHorizontally
+        contentAlignment = Alignment.TopCenter
     ) {
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 720.dp)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+                .testTag("home_projects_list"),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Hero Studio Banner
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("home_hero_card"),
-                shape = RoundedCornerShape(20.dp),
-                border = BorderStroke(
-                    if (isHighContrast) 2.dp else 1.dp,
-                    if (isHighContrast) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
-                ),
-                color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface
-            ) {
-                Box(
+            item(key = "home_hero") {
+                // Hero Studio Banner + Prominent Create Project CTA
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            if (isHighContrast) {
-                                Brush.linearGradient(listOf(Color.Black, Color(0xFF101010)))
-                            } else {
-                                Brush.linearGradient(
-                                    listOf(
-                                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
-                                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
-                                        MaterialTheme.colorScheme.surface
-                                    )
-                                )
-                            }
-                        )
-                        .padding(18.dp)
+                        .testTag("home_hero_card"),
+                    shape = RoundedCornerShape(18.dp),
+                    border = BorderStroke(
+                        if (isHighContrast) 2.dp else 1.dp,
+                        if (isHighContrast) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)
+                    ),
+                    color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                if (isHighContrast) {
+                                    Brush.linearGradient(listOf(Color.Black, Color(0xFF101010)))
+                                } else {
+                                    Brush.linearGradient(
+                                        listOf(
+                                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+                                            MaterialTheme.colorScheme.surface
+                                        )
+                                    )
+                                }
+                            )
+                            .padding(12.dp)
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
                                 Text(
-                                    text = "ACCESSIBLE STUDIO",
-                                    style = MaterialTheme.typography.labelMedium,
+                                    text = "ACCESSIBLE STUDIO • 100% OFFLINE",
+                                    style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Black,
-                                    letterSpacing = 1.2.sp,
+                                    letterSpacing = 1.sp,
                                     color = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
                                 )
                                 Text(
                                     text = "Create & Edit Audio or Video",
-                                    style = MaterialTheme.typography.headlineSmall,
+                                    style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Black,
                                     color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface,
                                     modifier = Modifier.semantics { heading() }
                                 )
+                            }
+
+                            // Prominent Create Project Primary CTA
+                            Button(
+                                onClick = onCreateNewProject,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("btn_home_create_project")
+                                    .semantics {
+                                        contentDescription = "Create Project. Start a new audio or video editing project."
+                                    },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+                                    contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
+                                )
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
                                 Text(
-                                    text = "100% offline • TalkBack ready • ${projects.size} saved project${if (projects.size == 1) "" else "s"}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Medium,
-                                    color = if (isHighContrast) Color(0xFFE2E8F0) else MaterialTheme.colorScheme.onSurfaceVariant
+                                    text = "Create Project",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Black
                                 )
                             }
                         }
+                    }
+                }
+            }
 
-                        // Prominent Create New Project Primary CTA
+            item(key = "home_categories") {
+                // Accessible Category Buttons: Audio Editor | Video Editor
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    HomeCategoryButton(
+                        title = "Audio Editor",
+                        subtitle = "Trim, Mix, Batch, Effects",
+                        icon = Icons.Default.Audiotrack,
+                        tag = "btn_home_audio_editor",
+                        isHighContrast = isHighContrast,
+                        spokenDescription = "Audio Editor. Open accessible buttons for Trim, Mix, Effects, Batch Processing, Music Rebalance, and Voice Recorder.",
+                        onClick = onOpenAudioEditor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    HomeCategoryButton(
+                        title = "Video Editor",
+                        subtitle = "Trim, Overlays, MP4",
+                        icon = Icons.Default.Movie,
+                        tag = "btn_home_video_editor",
+                        isHighContrast = isHighContrast,
+                        spokenDescription = "Video Editor. Open video editing features and projects.",
+                        onClick = onOpenVideoEditor,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            if (hasActiveProject) {
+                item(key = "home_active_project_actions") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Button(
-                            onClick = onCreateNewProject,
+                            onClick = onSaveActiveProject,
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp)
-                                .testTag("btn_home_create_project")
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_home_save_project")
                                 .semantics {
-                                    contentDescription = "Create New Project. Start a new audio or video editing project."
+                                    contentDescription = "Save Project ${activeProjectTitle ?: ""}".trim()
                                 },
-                            shape = RoundedCornerShape(14.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                                contentColor = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.onPrimary
-                            )
+                            shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(22.dp))
-                            Spacer(Modifier.width(8.dp))
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Save Project", fontWeight = FontWeight.Black, maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = onResumeActiveProject,
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp)
+                                .testTag("btn_home_resume_project")
+                                .semantics {
+                                    contentDescription = "Resume active project ${activeProjectTitle ?: ""}".trim()
+                                },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
                             Text(
-                                text = "Create New Project",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Black
+                                text = activeProjectTitle ?: "Open Active Project",
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
                 }
             }
 
-            // Secondary Navigation Row: Exports | Settings
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                HomeSecondaryNavButton(
-                    label = "Exports",
-                    icon = Icons.Default.FolderOpen,
-                    tag = "btn_home_exports",
-                    isHighContrast = isHighContrast,
-                    onClick = onOpenExports,
-                    modifier = Modifier.weight(1f)
-                )
-                HomeSecondaryNavButton(
-                    label = "Settings",
-                    icon = Icons.Default.Settings,
-                    tag = "btn_home_settings",
-                    isHighContrast = isHighContrast,
-                    onClick = onOpenSettings,
-                    modifier = Modifier.weight(1f)
-                )
+            item(key = "home_secondary_nav") {
+                // Secondary Navigation Row: Exports | Settings
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    HomeSecondaryNavButton(
+                        label = "Exports",
+                        icon = Icons.Default.FolderOpen,
+                        tag = "btn_home_exports",
+                        isHighContrast = isHighContrast,
+                        onClick = onOpenExports,
+                        modifier = Modifier.weight(1f)
+                    )
+                    HomeSecondaryNavButton(
+                        label = "Settings",
+                        icon = Icons.Default.Settings,
+                        tag = "btn_home_settings",
+                        isHighContrast = isHighContrast,
+                        onClick = onOpenSettings,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
-            // Section Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Existing Projects",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Black,
-                    color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.semantics { heading() }
-                )
+            item(key = "home_existing_projects_toggle") {
+                // Button-Based Existing Projects Toggle Header (Not Plain Heading Alone)
+                Surface(
+                    onClick = { showExistingProjects = !showExistingProjects },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_home_existing_projects")
+                        .semantics {
+                            contentDescription = "Existing Projects, ${projects.size} items. ${if (showExistingProjects) "Expanded, double tap to collapse" else "Collapsed, double tap to expand"}"
+                        },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Existing Projects (${projects.size})",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Black,
+                            color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onBackground
+                        )
+                        Icon(
+                            imageVector = if (showExistingProjects) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null
+                        )
+                    }
+                }
             }
 
-            // Scrollable Existing Projects List
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .testTag("home_projects_list"),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(bottom = 16.dp)
-            ) {
+            if (showExistingProjects) {
                 if (projects.isEmpty()) {
-                    item {
+                    item(key = "home_empty_projects") {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -245,15 +340,15 @@ fun StudioHomeScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(24.dp),
+                                    .padding(18.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Audiotrack,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(44.dp)
+                                    modifier = Modifier.size(36.dp)
                                 )
                                 Text(
                                     text = "No Existing Projects Yet",
@@ -261,7 +356,7 @@ fun StudioHomeScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Tap Create New Project above to pick an audio or video file and start editing.",
+                                    text = "Tap Create Project or Audio Editor / Video Editor above to get started.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -283,6 +378,74 @@ fun StudioHomeScreen(
 }
 
 @Composable
+private fun HomeCategoryButton(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tag: String,
+    isHighContrast: Boolean,
+    spokenDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .heightIn(min = 56.dp)
+            .testTag(tag)
+            .semantics(mergeDescendants = true) {
+                contentDescription = spokenDescription
+            },
+        shape = RoundedCornerShape(14.dp),
+        color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+        border = BorderStroke(
+            if (isHighContrast) 2.dp else 1.5.dp,
+            if (isHighContrast) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(34.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = if (isHighContrast) Color(0xFFE2E8F0) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun HomeSecondaryNavButton(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -294,7 +457,7 @@ private fun HomeSecondaryNavButton(
     Surface(
         onClick = onClick,
         modifier = modifier
-            .heightIn(min = 56.dp)
+            .heightIn(min = 48.dp)
             .testTag(tag)
             .semantics { contentDescription = label },
         shape = RoundedCornerShape(12.dp),
@@ -304,21 +467,21 @@ private fun HomeSecondaryNavButton(
             if (isHighContrast) Color.White else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
-        Column(
-            modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+        Row(
+            modifier = Modifier.padding(vertical = 8.dp, horizontal = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = if (isHighContrast) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.width(6.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis

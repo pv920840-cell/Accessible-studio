@@ -24,11 +24,13 @@ import com.example.ui.studio.ProjectHubScreen
 import com.example.ui.studio.ProjectMediaType
 import com.example.ui.studio.StudioHomeScreen
 import com.example.ui.studio.StudioProjectSummary
+import androidx.compose.ui.semantics.SemanticsProperties
 import com.example.ui.studio.StudioRootCoordinator
 import com.example.ui.studio.VideoFeatureTool
-import com.example.ui.studio.accessibleVideoTools
 import com.example.ui.theme.AccessibleStudioTheme
+import com.example.video.VideoStudioFeatureButton
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -152,7 +154,7 @@ class UiOverhaulFlowTest {
         var exportClicked = false
         var saveClicked = false
         var backClicked = false
-        var openedVideoTool: VideoFeatureTool? = null
+        var openedVideoFeature: VideoStudioFeatureButton? = null
 
         composeRule.setContent {
             AccessibleStudioTheme(isHighContrast = false) {
@@ -164,7 +166,8 @@ class UiOverhaulFlowTest {
                     hasUnsavedChanges = false,
                     onTogglePreviewPlay = {},
                     onOpenAudioTool = {},
-                    onOpenVideoTool = { openedVideoTool = it },
+                    onOpenVideoTool = {},
+                    onOpenVideoFeature = { openedVideoFeature = it },
                     onExportProject = { exportClicked = true },
                     onBackToHome = { backClicked = true },
                     onSaveProject = { saveClicked = true }
@@ -185,14 +188,18 @@ class UiOverhaulFlowTest {
         assertTrue(backClicked)
 
         composeRule.onNodeWithTag("hub_project_title").assertExists()
-        accessibleVideoTools().forEach { tool ->
-            composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag(tool.tag))
-            composeRule.onNodeWithTag(tool.tag).assertExists()
-        }
         composeRule.onNodeWithTag(VideoFeatureTool.FULL_VIDEO_STUDIO.tag).assertDoesNotExist()
-        composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag(VideoFeatureTool.OVERLAYS_VFX.tag))
-        composeRule.onNodeWithTag(VideoFeatureTool.OVERLAYS_VFX.tag).performClick()
-        assertEquals(VideoFeatureTool.OVERLAYS_VFX, openedVideoTool)
+        VideoStudioFeatureButton.entries.forEach { feat ->
+            val tag = "hub_video_feature_${feat.tag}"
+            composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag(tag))
+            val node = composeRule.onNodeWithTag(tag).assertExists().fetchSemanticsNode()
+            val descJoined = node.config.getOrElse(SemanticsProperties.ContentDescription) { emptyList() }.joinToString(" ")
+            assertFalse("Hub button $tag description must not contain 'open': $descJoined", descJoined.contains("open", ignoreCase = true))
+        }
+        val targetTag = "hub_video_feature_${VideoStudioFeatureButton.TEXT_OVERLAY.tag}"
+        composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag(targetTag))
+        composeRule.onNodeWithTag(targetTag).performClick()
+        assertEquals(VideoStudioFeatureButton.TEXT_OVERLAY, openedVideoFeature)
 
         composeRule.onNodeWithTag("btn_hub_export").assertExists().performClick()
         assertTrue(exportClicked)

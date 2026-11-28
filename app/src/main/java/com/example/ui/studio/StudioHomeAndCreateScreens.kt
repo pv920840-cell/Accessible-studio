@@ -207,7 +207,7 @@ fun StudioHomeScreen(
                         icon = Icons.Default.Movie,
                         tag = "btn_home_video_editor",
                         isHighContrast = isHighContrast,
-                        spokenDescription = "Video Editor. Open video editing features and projects.",
+                        spokenDescription = "Video Editor. Access video editing tools and projects.",
                         onClick = onOpenVideoEditor,
                         modifier = Modifier.weight(1f)
                     )
@@ -247,7 +247,7 @@ fun StudioHomeScreen(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                text = activeProjectTitle ?: "Open Active Project",
+                                text = activeProjectTitle ?: "Resume Active Project",
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis

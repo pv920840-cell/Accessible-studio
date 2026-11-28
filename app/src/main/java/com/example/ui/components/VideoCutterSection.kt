@@ -67,11 +67,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -299,6 +302,7 @@ fun VideoCutterSection(
     onOpenFeatureGuide: (() -> Unit)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    val view = LocalView.current
     var showGuide by remember { mutableStateOf(false) }
     val safeDuration = durationMs.coerceAtLeast(0L)
     val effectiveSpanDuration = safeDuration.coerceAtLeast(1000L)
@@ -436,7 +440,11 @@ fun VideoCutterSection(
                 label = "Step: ${stepOption.shortLabel}",
                 tooltip = "Change seek and marker step size (currently ${stepOption.spokenLabel})",
                 icon = Icons.Default.Timer,
-                onClick = { stepMs = VideoCutMath.nextStepOption(stepMs).stepMs },
+                onClick = {
+                    val nextStep = VideoCutMath.nextStepOption(stepMs)
+                    stepMs = nextStep.stepMs
+                    AccessibilityHelper.announceForAccessibility(view, "Step size set to ${nextStep.spokenLabel}")
+                },
                 tonal = true,
                 stateDesc = stepOption.spokenLabel,
                 testTag = "btn_cutter_step_toggle"
@@ -485,6 +493,7 @@ fun VideoCutterSection(
                     val (s, e) = VideoCutMath.clampStartCutMarker(cutStartMs - stepMs, cutEndMs, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
+                    AccessibilityHelper.announceForAccessibility(view, "Start cut marker ${AccessibilityHelper.formatTimeSpoken(s)}")
                 },
                 testTag = "btn_cutter_start_dec"
             )
@@ -496,6 +505,7 @@ fun VideoCutterSection(
                     val (s, e) = VideoCutMath.clampStartCutMarker(cutStartMs + stepMs, cutEndMs, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
+                    AccessibilityHelper.announceForAccessibility(view, "Start cut marker ${AccessibilityHelper.formatTimeSpoken(s)}")
                 },
                 testTag = "btn_cutter_start_inc"
             )
@@ -507,6 +517,7 @@ fun VideoCutterSection(
                     val (s, e) = VideoCutMath.clampStartCutMarker(0L, cutEndMs, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
+                    AccessibilityHelper.announceForAccessibility(view, "Start cut marker set to beginning")
                 },
                 testTag = "btn_cutter_start_beginning"
             )
@@ -523,6 +534,7 @@ fun VideoCutterSection(
                     val (s, e) = VideoCutMath.clampStartCutMarker(pos, cutEndMs, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
+                    AccessibilityHelper.announceForAccessibility(view, "Start cut marker set to ${AccessibilityHelper.formatTimeSpoken(s)}")
                 },
                 tonal = true,
                 testTag = "btn_cutter_start_playhead"
@@ -569,6 +581,7 @@ fun VideoCutterSection(
                     val (s, e) = VideoCutMath.clampEndCutMarker(cutStartMs, cutEndMs - stepMs, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
+                    AccessibilityHelper.announceForAccessibility(view, "End cut marker ${AccessibilityHelper.formatTimeSpoken(e)}")
                 },
                 testTag = "btn_cutter_end_dec"
             )
@@ -580,6 +593,7 @@ fun VideoCutterSection(
                     val (s, e) = VideoCutMath.clampEndCutMarker(cutStartMs, cutEndMs + stepMs, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
+                    AccessibilityHelper.announceForAccessibility(view, "End cut marker ${AccessibilityHelper.formatTimeSpoken(e)}")
                 },
                 testTag = "btn_cutter_end_inc"
             )
@@ -591,6 +605,7 @@ fun VideoCutterSection(
                     val (s, e) = VideoCutMath.clampEndCutMarker(cutStartMs, safeDuration, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
+                    AccessibilityHelper.announceForAccessibility(view, "End cut marker set to end of video")
                 },
                 testTag = "btn_cutter_end_finish"
             )
@@ -607,6 +622,7 @@ fun VideoCutterSection(
                     val (s, e) = VideoCutMath.clampEndCutMarker(cutStartMs, pos, safeDuration)
                     cutStartMs = s
                     cutEndMs = e
+                    AccessibilityHelper.announceForAccessibility(view, "End cut marker set to ${AccessibilityHelper.formatTimeSpoken(e)}")
                 },
                 tonal = true,
                 testTag = "btn_cutter_end_playhead"
@@ -876,7 +892,8 @@ private fun CutterTooltipActionButton(
             .defaultMinSize(minWidth = 48.dp, minHeight = 48.dp)
             .heightIn(min = 48.dp)
             .testTag(testTag)
-            .semantics {
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
                 contentDescription = tooltip
                 if (stateDesc != null) stateDescription = stateDesc
             }

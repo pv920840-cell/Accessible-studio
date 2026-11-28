@@ -320,7 +320,7 @@ object FeatureGuideCatalog {
             title = "Video Multi trim",
             overview = "Selects and collects multiple highlight clips from a single video so they are kept and joined together.",
             steps = listOf(
-                "1. Scrub to the opening moment of a clip and double-tap \"Move Start slider to now playing\".",
+                "1. Scrub to the starting moment of a clip and double-tap \"Move Start slider to now playing\".",
                 "2. Move playback to the clip ending and double-tap \"Move Finish slider to now playing\".",
                 "3. Tap Play to verify the clip span, or adjust via the Step slider and +/- buttons.",
                 "4. Tap \"Add clip\" to append that range to Clip list, then repeat for every extra clip.",

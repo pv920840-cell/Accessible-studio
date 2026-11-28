@@ -77,7 +77,8 @@ fun VideoTransformPanel(
     onToggleFlipV: (Boolean) -> Unit,
     reverseVideo: Boolean,
     onToggleReverseVideo: (Boolean) -> Unit,
-    initialFocusedFeature: VideoStudioFeatureButton? = null
+    initialFocusedFeature: VideoStudioFeatureButton? = null,
+    showSectionFeatureButtons: Boolean = true
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
@@ -87,12 +88,14 @@ fun VideoTransformPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        VideoFeatureButtonStrip(
-            features = VideoStudioFeatureButton.forSection(VideoToolSection.TRANSFORM),
-            selectedFeature = focusedFeature,
-            onSelectFeature = { focusedFeature = it },
-            isHighContrast = isHighContrast
-        )
+        if (showSectionFeatureButtons) {
+            VideoFeatureButtonStrip(
+                features = VideoStudioFeatureButton.forSection(VideoToolSection.TRANSFORM),
+                selectedFeature = focusedFeature,
+                onSelectFeature = { focusedFeature = it },
+                isHighContrast = isHighContrast
+            )
+        }
 
         // 1. Speed Changer (0.25x - 4.0x + Pitch Correction)
         if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.SPEED_CHANGER) {
@@ -289,7 +292,8 @@ fun VideoConvertAndMetaPanel(
     onExtractFrameAtPlayhead: () -> Unit,
     onBatchExtractFrames: (intervalSec: Int) -> Unit,
     onSaveMetadataTags: (title: String, artist: String, album: String, genre: String) -> Unit,
-    initialFocusedFeature: VideoStudioFeatureButton? = null
+    initialFocusedFeature: VideoStudioFeatureButton? = null,
+    showSectionFeatureButtons: Boolean = true
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
@@ -305,12 +309,14 @@ fun VideoConvertAndMetaPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        VideoFeatureButtonStrip(
-            features = VideoStudioFeatureButton.forSection(VideoToolSection.TOOLS),
-            selectedFeature = focusedFeature,
-            onSelectFeature = { focusedFeature = it },
-            isHighContrast = isHighContrast
-        )
+        if (showSectionFeatureButtons) {
+            VideoFeatureButtonStrip(
+                features = VideoStudioFeatureButton.forSection(VideoToolSection.TOOLS),
+                selectedFeature = focusedFeature,
+                onSelectFeature = { focusedFeature = it },
+                isHighContrast = isHighContrast
+            )
+        }
 
         // 1. Silence Remover
         if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.SILENCE_REMOVER) {

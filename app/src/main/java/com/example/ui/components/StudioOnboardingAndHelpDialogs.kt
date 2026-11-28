@@ -116,22 +116,24 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.5.4 — Sequential Audio Transport Controls & Cleaner Video Editor Navigation:\n\n" +
-            "1. Sequential Playback Transport Controls (Trim & Audio Editor):\n" +
-            "• Audio Trim and all Audio Editor workspaces now place playback buttons together right below the time readout in exact order: Rewind -> Play/Pause -> Forward -> Stop.\n\n" +
-            "2. Cleaner Video Editor & Project Hub Navigation:\n" +
-            "• Removed the cluttering Full Video Workspace option so Video Editor and Video Project Hub show only clean, dedicated feature buttons.\n\n" +
-            "3. All Audio Editor Features, Batch Processing & Export Preserved:\n" +
-            "• Trim, Mix, Voice Over & Auto-Ducking, Effects, Batch Processing, Music Rebalance, Voice Recorder, Tone/Silence/Cues/Stats, Save Project, and Final Export all remain intact."
+        "What's New in Version 1.5.4.0 — Direct Video Tools, Explicit Apply & TalkBack Announcement Fixes:\n\n" +
+            "1. Direct Individual Video Editor Buttons (No Nesting):\n" +
+            "• Every Video Editor feature (Trimmer, Multi trim, Splitter, Color Filters, VFX, Speed Changer, Compressor, Converter, GIF Extractor, Audio/Noise tools, and more) opens its own inline controls directly.\n" +
+            "• Sliders and markers never auto-apply edits—changes are applied only when you tap Apply, while Save Project and Final Export remain completely intact.\n\n" +
+            "2. TalkBack Focus & Action Announcement Fixes:\n" +
+            "• Fixed silent buttons and added reliable spoken announcements on Zoom In/Out/Fit, Loop Selection, Start/End/Finish markers, and playback/step controls.\n\n" +
+            "3. Existing Audio Editor, Batch Processing & Pro Audio Tools:\n" +
+            "• Kept Audio Editor workflow intact alongside Zero-Crossing Snap, Pre-Roll Preview, Silence Truncation, Crossfade Join, LUFS Normalization, 24-bit WAV tags, and Ringtones export."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.5.4 में नया क्या है — आसान प्लेबैक बटन क्रम और साफ़ Video Editor नेविगेशन:\n\n" +
-            "1. ऑडियो ट्रिम व एडिटर में नए क्रमबद्ध कंट्रोल बटन:\n" +
-            "• Audio Trim और Audio Editor स्क्रीन में प्लेबैक बटन अब एक साथ सही क्रम में मिलते हैं: पहले Rewind, फिर Play/Pause, फिर Forward और फिर Stop।\n\n" +
-            "2. Video Editor से Full Video Workspace विकल्प हटाया गया:\n" +
-            "• Video Editor और Video Project Hub में अब बिना किसी भारी वर्कस्पेस के सीधे अलग-अलग आसान फ़ीचर बटन दिखाई देते हैं।\n\n" +
-            "3. सभी Audio Editor फ़ीचर्स, Batch Processing, Save और Export सुरक्षित:\n" +
-            "• Trim, Mix, Voice Over, Effects, Batch Processing, Music Rebalance, Voice Recorder, Tone/Silence/Cues/Stats, Save Project और फाइनल Export पहले की तरह उपलब्ध हैं।"
+        "Version 1.5.4.0 में नया क्या है — सीधे Video Editor टूल बटन, Apply पुष्टि और बेहतर TalkBack:\n\n" +
+            "1. सीधे Video Editor फ़ीचर बटन और Apply नियंत्रण:\n" +
+            "• सभी 31 Video Editor टूल (Trimmer, Splitter, Color Filters, VFX, Speed Changer, Compressor, Converter आदि) सीधे अलग बटन के रूप में खुलते हैं।\n" +
+            "• स्लाइडर या मार्कर बदलने पर एडिट अपने आप लागू नहीं होते—Apply बटन दबाने पर ही प्रोजेक्ट में जुड़ते हैं, और Save Project व फाइनल Export पूरी तरह सुरक्षित हैं।\n\n" +
+            "2. TalkBack बटन व एनाउंसमेंट सुधार:\n" +
+            "• Start, End, Loop Selection, Zoom In/Out और मार्कर कंट्रोल पर अब तुरंत स्पष्ट TalkBack आवाज़ सुनाई देती है।\n\n" +
+            "3. Audio Editor, Batch Processing और प्रो ऑडियो टूल:\n" +
+            "• मौजूदा Audio Editor के साथ Zero-Crossing Snap, Pre-Roll Preview, Silence Truncation, Crossfade Join, LUFS Normalize और 24-bit WAV टैग्स भी उपलब्ध हैं।"
 }
 
 @Composable

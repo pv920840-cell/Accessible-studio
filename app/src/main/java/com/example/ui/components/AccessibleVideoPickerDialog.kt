@@ -337,7 +337,7 @@ fun AccessibleVideoPickerDialog(
                     ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Open file manager", fontWeight = FontWeight.Bold)
+                        Text("Browse device files", fontWeight = FontWeight.Bold)
                     }
                     OutlinedButton(
                         onClick = {
@@ -379,7 +379,7 @@ fun AccessibleVideoPickerDialog(
                         if (folderGroups.isEmpty()) {
                             item {
                                 Text(
-                                    text = "No folders found yet. Tap Open file manager to choose any video on your device.",
+                                    text = "No folders found yet. Tap Browse device files to choose any video on your device.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(12.dp)
@@ -447,7 +447,7 @@ fun AccessibleVideoPickerDialog(
                         if (filteredVideos.isEmpty()) {
                             item {
                                 Text(
-                                    text = "No matching videos shown here. Use Open file manager to browse all device videos.",
+                                    text = "No matching videos shown here. Use Browse device files to browse all device videos.",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.padding(12.dp)

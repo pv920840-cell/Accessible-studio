@@ -45,6 +45,24 @@ object AccessibilityHelper {
     }
 
     /**
+     * Announces a message to screen readers (TalkBack) directly via view.post { view.announceForAccessibility(...) }
+     */
+    fun announceForAccessibility(view: android.view.View?, message: String) {
+        if (message.isBlank() || view == null) return
+        try {
+            view.post {
+                try {
+                    view.announceForAccessibility(message)
+                } catch (_: Throwable) {
+                    announceForAccessibility(view.context, message)
+                }
+            }
+        } catch (_: Throwable) {
+            // Ignore
+        }
+    }
+
+    /**
      * Announces a message to screen readers (TalkBack) via accessibility event
      */
     fun announceForAccessibility(context: Context, message: String) {

@@ -47,11 +47,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -171,6 +173,7 @@ internal fun MovePlayMoveRow(
     onMoveFinishNow: () -> Unit,
     tagPrefix: String
 ) {
+    val view = LocalView.current
     val latestMoveStartNow by rememberUpdatedState(onMoveStartNow)
     val latestPlay by rememberUpdatedState(onPlay)
     val latestMoveFinishNow by rememberUpdatedState(onMoveFinishNow)
@@ -187,14 +190,22 @@ internal fun MovePlayMoveRow(
                 .testTag("btn_${tagPrefix}_move_start_now")
                 .combinedClickable(
                     role = Role.Button,
-                    onClick = { latestMoveStartNow() },
-                    onDoubleClick = { latestMoveStartNow() }
+                    onClick = {
+                        latestMoveStartNow()
+                        AccessibilityHelper.announceForAccessibility(view, "Start marker moved to now playing")
+                    },
+                    onDoubleClick = {
+                        latestMoveStartNow()
+                        AccessibilityHelper.announceForAccessibility(view, "Start marker moved to now playing")
+                    }
                 )
-                .semantics {
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
                     contentDescription = "Move Start slider to now playing. Double tap to place Start marker at current playback position."
                     customActions = listOf(
                         CustomAccessibilityAction("Place Start marker at now playing") {
                             latestMoveStartNow()
+                            AccessibilityHelper.announceForAccessibility(view, "Start marker moved to now playing")
                             true
                         }
                     )
@@ -219,10 +230,17 @@ internal fun MovePlayMoveRow(
             }
         }
         Button(
-            onClick = { latestPlay() },
+            onClick = {
+                latestPlay()
+                AccessibilityHelper.announceForAccessibility(view, "Playing selection")
+            },
             modifier = Modifier
                 .height(48.dp)
                 .testTag("btn_${tagPrefix}_play")
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = "Play selection from Start to Finish"
+                }
         ) {
             Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(4.dp))
@@ -235,14 +253,22 @@ internal fun MovePlayMoveRow(
                 .testTag("btn_${tagPrefix}_move_finish_now")
                 .combinedClickable(
                     role = Role.Button,
-                    onClick = { latestMoveFinishNow() },
-                    onDoubleClick = { latestMoveFinishNow() }
+                    onClick = {
+                        latestMoveFinishNow()
+                        AccessibilityHelper.announceForAccessibility(view, "Finish marker moved to now playing")
+                    },
+                    onDoubleClick = {
+                        latestMoveFinishNow()
+                        AccessibilityHelper.announceForAccessibility(view, "Finish marker moved to now playing")
+                    }
                 )
-                .semantics {
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
                     contentDescription = "Move Finish slider to now playing. Double tap to place Finish marker at current playback position."
                     customActions = listOf(
                         CustomAccessibilityAction("Place Finish marker at now playing") {
                             latestMoveFinishNow()
+                            AccessibilityHelper.announceForAccessibility(view, "Finish marker moved to now playing")
                             true
                         }
                     )
@@ -281,6 +307,7 @@ internal fun PrecisionMarkerSliderRow(
     onValueChange: (Long) -> Unit,
     testTagPrefix: String
 ) {
+    val view = LocalView.current
     val safeMin = minMs.coerceAtLeast(0L)
     val safeMax = maxMs.coerceAtLeast(safeMin + 1L)
     val clamped = valueMs.coerceIn(safeMin, safeMax)
@@ -331,12 +358,17 @@ internal fun PrecisionMarkerSliderRow(
         ) {
             IconButton(
                 onClick = {
-                    onValueChange(VideoCutMath.nudgeTimestamp(clamped, -1, stepMs, safeMin, safeMax))
+                    val next = VideoCutMath.nudgeTimestamp(clamped, -1, stepMs, safeMin, safeMax)
+                    onValueChange(next)
+                    AccessibilityHelper.announceForAccessibility(view, "$label moved to ${AccessibilityHelper.formatTimeSpoken(next)}")
                 },
                 modifier = Modifier
                     .size(48.dp)
                     .testTag("btn_${testTagPrefix}_minus_step")
-                    .semantics { contentDescription = "Move $label earlier by step" }
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        contentDescription = "Move $label earlier by step"
+                    }
             ) {
                 Icon(Icons.Default.Remove, contentDescription = null)
             }
@@ -405,12 +437,17 @@ internal fun PrecisionMarkerSliderRow(
             }
             IconButton(
                 onClick = {
-                    onValueChange(VideoCutMath.nudgeTimestamp(clamped, 1, stepMs, safeMin, safeMax))
+                    val next = VideoCutMath.nudgeTimestamp(clamped, 1, stepMs, safeMin, safeMax)
+                    onValueChange(next)
+                    AccessibilityHelper.announceForAccessibility(view, "$label moved to ${AccessibilityHelper.formatTimeSpoken(next)}")
                 },
                 modifier = Modifier
                     .size(48.dp)
                     .testTag("btn_${testTagPrefix}_plus_step")
-                    .semantics { contentDescription = "Move $label later by step" }
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        contentDescription = "Move $label later by step"
+                    }
             ) {
                 Icon(Icons.Default.Add, contentDescription = null)
             }

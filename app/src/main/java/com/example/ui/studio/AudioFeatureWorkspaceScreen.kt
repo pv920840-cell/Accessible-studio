@@ -91,9 +91,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -198,6 +201,7 @@ fun AudioFeatureWorkspaceScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
 
     var workingPcm by remember(session.projectId, tool) { mutableStateOf(session.pcm) }
@@ -224,6 +228,9 @@ fun AudioFeatureWorkspaceScreen(
     var currentAudioStats by remember { mutableStateOf<StudioAudioProcessor.AudioStats?>(null) }
     var showSpeedDeck by remember(session.projectId, tool) { mutableStateOf(false) }
     var visualMode by remember(session.projectId) { mutableStateOf(AudioVisualMode.WAVEFORM) }
+    var waveformViewStartMs by remember(session.projectId, tool) { mutableLongStateOf(0L) }
+    var waveformViewSpanMs by remember(session.projectId, tool) { mutableStateOf<Long?>(null) }
+    var waveformVerticalZoom by remember(session.projectId, tool) { mutableFloatStateOf(1.0f) }
 
     val undoHistory = remember(session.projectId, tool) { mutableStateListOf<ShortArray>() }
     val redoHistory = remember(session.projectId, tool) { mutableStateListOf<ShortArray>() }
@@ -690,8 +697,15 @@ fun AudioFeatureWorkspaceScreen(
                     onClick = {
                         isLoopSelection = false
                         playSelectionRange(loopSegment = false)
+                        AccessibilityHelper.announceForAccessibility(view, "Playing selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}")
                     },
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_play_selection")
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_workspace_play_selection")
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "Play Selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}"
+                        }
                 ) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
@@ -702,9 +716,15 @@ fun AudioFeatureWorkspaceScreen(
                         onClick = {
                             isLoopSelection = false
                             if (isPlaying) playerManager.pause()
-                            AccessibilityHelper.announceForAccessibility(context, "Selection loop turned off")
+                            AccessibilityHelper.announceForAccessibility(view, "Selection loop turned off")
                         },
-                        modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_loop_selection")
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("btn_workspace_loop_selection")
+                            .semantics(mergeDescendants = true) {
+                                role = Role.Button
+                                contentDescription = "Loop On. Tap to stop looping selection"
+                            }
                     ) {
                         Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
@@ -715,9 +735,15 @@ fun AudioFeatureWorkspaceScreen(
                         onClick = {
                             isLoopSelection = true
                             playSelectionRange(loopSegment = true)
-                            AccessibilityHelper.announceForAccessibility(context, "Looping selection")
+                            AccessibilityHelper.announceForAccessibility(view, "Looping selection")
                         },
-                        modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_loop_selection")
+                        modifier = Modifier
+                            .heightIn(min = 48.dp)
+                            .testTag("btn_workspace_loop_selection")
+                            .semantics(mergeDescendants = true) {
+                                role = Role.Button
+                                contentDescription = "Loop Selection. Plays selected range continuously"
+                            }
                     ) {
                         Icon(Icons.Default.Repeat, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
@@ -725,16 +751,34 @@ fun AudioFeatureWorkspaceScreen(
                     }
                 }
                 OutlinedButton(
-                    onClick = { playerManager.seekTo(0L) },
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_jump_start")
+                    onClick = {
+                        playerManager.seekTo(0L)
+                        AccessibilityHelper.announceForAccessibility(view, "Moved playhead to Start, 0 seconds")
+                    },
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_workspace_jump_start")
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "Start. Jump playhead to beginning of track"
+                        }
                 ) {
                     Icon(Icons.Default.SkipPrevious, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Start", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
                 OutlinedButton(
-                    onClick = { playerManager.seekTo(durationMs) },
-                    modifier = Modifier.heightIn(min = 48.dp).testTag("btn_workspace_jump_end")
+                    onClick = {
+                        playerManager.seekTo(durationMs)
+                        AccessibilityHelper.announceForAccessibility(view, "Moved playhead to End, ${AccessibilityHelper.formatTimeSpoken(durationMs)}")
+                    },
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .testTag("btn_workspace_jump_end")
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "End. Jump playhead to end of track"
+                        }
                 ) {
                     Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
@@ -838,7 +882,38 @@ fun AudioFeatureWorkspaceScreen(
                         onToggleVisualMode = {
                             val modes = AudioVisualMode.values()
                             visualMode = modes[(visualMode.ordinal + 1) % modes.size]
-                            AccessibilityHelper.announceForAccessibility(context, "Visual display switched to ${visualMode.displayName}")
+                            AccessibilityHelper.announceForAccessibility(view, "Visual display switched to ${visualMode.displayName}")
+                        },
+                        windowStartMsOverride = waveformViewStartMs,
+                        windowSpanMsOverride = waveformViewSpanMs,
+                        verticalZoom = waveformVerticalZoom,
+                        followCursor = followCursor,
+                        onVerticalZoomChange = { waveformVerticalZoom = it },
+                        onZoomInAction = {
+                            val safeDur = durationMs.coerceAtLeast(100L)
+                            val curSpan = (waveformViewSpanMs ?: safeDur).coerceIn(50L, safeDur)
+                            val nextSpan = (curSpan / 2L).coerceAtLeast(50L)
+                            val focusMs = playerManager.currentPositionMs.value
+                            waveformViewSpanMs = nextSpan
+                            waveformViewStartMs = (focusMs - nextSpan / 2L).coerceIn(0L, (safeDur - nextSpan).coerceAtLeast(0L))
+                        },
+                        onZoomOutAction = {
+                            val safeDur = durationMs.coerceAtLeast(100L)
+                            val curSpan = (waveformViewSpanMs ?: safeDur).coerceIn(50L, safeDur)
+                            val nextSpan = (curSpan * 2L).coerceAtMost(safeDur)
+                            if (nextSpan >= safeDur) {
+                                waveformViewSpanMs = null
+                                waveformViewStartMs = 0L
+                            } else {
+                                val focusMs = playerManager.currentPositionMs.value
+                                waveformViewSpanMs = nextSpan
+                                waveformViewStartMs = (focusMs - nextSpan / 2L).coerceIn(0L, (safeDur - nextSpan).coerceAtLeast(0L))
+                            }
+                        },
+                        onZoomFitAction = {
+                            waveformViewSpanMs = null
+                            waveformViewStartMs = 0L
+                            waveformVerticalZoom = 1.0f
                         },
                         visualModeEnabled = visualModeEnabled,
                         showWaveformDisplay = showWaveformDisplay,
@@ -933,12 +1008,84 @@ fun AudioFeatureWorkspaceScreen(
                                 trimStartMs = 0L
                                 trimEndMs = durationMs
                                 hasPendingTrimRange = false
+                                AccessibilityHelper.announceForAccessibility(view, "Selected full track from 0 seconds to ${AccessibilityHelper.formatTimeSpoken(durationMs)}")
                             },
-                            modifier = Modifier.height(48.dp).testTag("btn_workspace_select_all")
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("btn_workspace_select_all")
+                                .semantics(mergeDescendants = true) {
+                                    role = Role.Button
+                                    contentDescription = "Select All track duration"
+                                }
                         ) {
                             Icon(Icons.Default.SelectAll, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("Select All", fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (workingPcm.isNotEmpty()) {
+                                    val (snappedStart, snappedEnd) = StudioAudioProcessor.snapRangeToZeroCrossings(
+                                        workingPcm,
+                                        trimStartMs,
+                                        trimEndMs,
+                                        sampleRate
+                                    )
+                                    trimStartMs = snappedStart
+                                    trimEndMs = snappedEnd
+                                    hasPendingTrimRange = true
+                                    localModified = true
+                                    val msg = "Snapped selection to zero-crossings: ${AccessibilityHelper.formatTimeVisual(snappedStart)} to ${AccessibilityHelper.formatTimeVisual(snappedEnd)}"
+                                    AccessibilityHelper.announceForAccessibility(view, msg)
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("btn_workspace_snap_zero_crossing")
+                                .semantics(mergeDescendants = true) {
+                                    role = Role.Button
+                                    contentDescription = "Snap trim markers to nearest zero crossings to prevent clicks"
+                                }
+                        ) {
+                            Text("Snap Zero-Cross", fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (workingPcm.isNotEmpty()) {
+                                    val preStart = (trimStartMs - 1500L).coerceAtLeast(0L)
+                                    val preEnd = (trimStartMs + 2000L).coerceAtMost(durationMs)
+                                    playerManager.stop()
+                                    playerManager.seekTo(preStart)
+                                    playerManager.play(startFromMs = preStart, endLimitMs = preEnd)
+                                    AccessibilityHelper.announceForAccessibility(view, "Pre-roll preview playing around ${AccessibilityHelper.formatTimeSpoken(trimStartMs)}")
+                                }
+                            },
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("btn_workspace_pre_roll")
+                                .semantics(mergeDescendants = true) {
+                                    role = Role.Button
+                                    contentDescription = "Pre-Roll Preview. Plays 1.5 seconds before trim start marker"
+                                }
+                        ) {
+                            Text("Pre-Roll 1.5s", fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                pushUndoAndApply("Truncated silent gaps") { pcm ->
+                                    StudioAudioProcessor.truncateSilence(pcm, sampleRate = sampleRate)
+                                }
+                            },
+                            modifier = Modifier
+                                .height(48.dp)
+                                .testTag("btn_workspace_truncate_silence")
+                                .semantics(mergeDescendants = true) {
+                                    role = Role.Button
+                                    contentDescription = "Truncate Silence. Trims dead air and tightens long silent pauses"
+                                }
+                        ) {
+                            Text("Truncate Silence", fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -1083,14 +1230,53 @@ fun AudioFeatureWorkspaceScreen(
                                     Text("Cue Points (${cuePoints.size})", fontWeight = FontWeight.Bold)
                                 }
                                 OutlinedButton(
-                                    onClick = { playerManager.seekTo(trimStartMs) },
-                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_go_sel_start")
+                                    onClick = {
+                                        val clip = clipboardPcm
+                                        if (clip == null || clip.isEmpty()) {
+                                            Toast.makeText(context, "Clipboard is empty. Copy or Cut audio first.", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            pushUndoAndApply("Crossfade joined clipboard at end", allowEmptyInput = true) { pcm ->
+                                                StudioAudioProcessor.crossfadeJoin(pcm, clip, crossfadeMs = 45L, sampleRate = sampleRate)
+                                            }
+                                        }
+                                    },
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                        .testTag("btn_workspace_crossfade_paste")
+                                        .semantics(mergeDescendants = true) {
+                                            role = Role.Button
+                                            contentDescription = "Crossfade Paste clipboard smoothly onto end of track"
+                                        }
+                                ) {
+                                    Text("Crossfade Join", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        playerManager.seekTo(trimStartMs)
+                                        AccessibilityHelper.announceForAccessibility(view, "Moved playhead to selection start, ${AccessibilityHelper.formatTimeSpoken(trimStartMs)}")
+                                    },
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                        .testTag("btn_workspace_go_sel_start")
+                                        .semantics(mergeDescendants = true) {
+                                            role = Role.Button
+                                            contentDescription = "Go Selection Start. Seek playhead to ${AccessibilityHelper.formatTimeSpoken(trimStartMs)}"
+                                        }
                                 ) {
                                     Text("Go Sel Start", fontWeight = FontWeight.Bold)
                                 }
                                 OutlinedButton(
-                                    onClick = { playerManager.seekTo(trimEndMs) },
-                                    modifier = Modifier.height(48.dp).testTag("btn_workspace_go_sel_end")
+                                    onClick = {
+                                        playerManager.seekTo(trimEndMs)
+                                        AccessibilityHelper.announceForAccessibility(view, "Moved playhead to selection end, ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}")
+                                    },
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                        .testTag("btn_workspace_go_sel_end")
+                                        .semantics(mergeDescendants = true) {
+                                            role = Role.Button
+                                            contentDescription = "Go Selection End. Seek playhead to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}"
+                                        }
                                 ) {
                                     Text("Go Sel End", fontWeight = FontWeight.Bold)
                                 }
@@ -1462,9 +1648,19 @@ fun AudioFeatureWorkspaceScreen(
                                     modifier = Modifier.height(48.dp).testTag("btn_fx_custom_gain")
                                 ) { Text("Custom Gain ±dB", fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
-                                    onClick = { pushUndoAndApply("Normalized Loudness (-16 LUFS / RMS)") { StudioAudioProcessor.normalizeRms(it, -16f) } },
+                                    onClick = { pushUndoAndApply("Normalized Loudness (-16 RMS)") { StudioAudioProcessor.normalizeRms(it, -16f) } },
                                     modifier = Modifier.height(48.dp).testTag("btn_fx_normalize_rms")
                                 ) { Text("Normalize RMS", fontWeight = FontWeight.Bold) }
+                                OutlinedButton(
+                                    onClick = { pushUndoAndApply("Normalized Integrated Loudness (-16 LUFS)") { StudioAudioProcessor.normalizeLufs(it, -16f, sampleRate) } },
+                                    modifier = Modifier
+                                        .height(48.dp)
+                                        .testTag("btn_fx_normalize_lufs")
+                                        .semantics(mergeDescendants = true) {
+                                            role = Role.Button
+                                            contentDescription = "Normalize Loudness to minus 16 LUFS"
+                                        }
+                                ) { Text("Normalize -16 LUFS", fontWeight = FontWeight.Bold) }
                                 OutlinedButton(
                                     onClick = { pushUndoAndApply("Applied Dynamic Expander") { StudioAudioProcessor.applyExpander(it, -28f, 2.0f) } },
                                     modifier = Modifier.height(48.dp).testTag("btn_fx_expander")
@@ -3205,7 +3401,10 @@ fun WorkspaceHeaderBar(
                     modifier = Modifier
                         .size(48.dp)
                         .testTag("btn_workspace_guide")
-                        .semantics { contentDescription = "Open Feature Guide and Studio Quality Help" }
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "Feature Guide and Studio Quality Help"
+                        }
                 ) {
                     Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null)
                 }

@@ -1,10 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 29,
-  "versionName": "1.5.4",
-  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.4/AccessibleStudio_V1.5.4.apk",
+  "versionCode": 30,
+  "versionName": "1.5.4.0",
+  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.4.0/AccessibleStudio_V1.5.4.0.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 20868813,
-  "changelog": "Upgraded Audio Trim & Editor playback transport controls to exact sequential order (Rewind -> Play/Pause -> Forward -> Stop), removed Full Video Workspace clutter from Video Editor & Project Hub, and kept all Audio/Video tools, Save Project, and Final Export intact.",
-  "releaseNotes": "Upgraded Audio Trim & Editor playback transport controls to exact sequential order (Rewind -> Play/Pause -> Forward -> Stop), removed Full Video Workspace clutter from Video Editor & Project Hub, and kept all Audio/Video tools, Save Project, and Final Export intact."
+  "apkSizeBytes": 21153860,
+  "changelog": "Upgraded to 1.5.4.0: Exposed all 31 Video Editor tools as direct non-nested buttons without using the word Open, added explicit Apply confirmation so video sliders/markers never auto-apply before Apply, fixed TalkBack announcements and button semantics across Start/End/Loop/Zoom/marker controls, and added pro audio DSP/WAV export tools while keeping existing Audio Editing workflow unchanged.",
+  "releaseNotes": "Upgraded to 1.5.4.0: Exposed all 31 Video Editor tools as direct non-nested buttons without using the word Open, added explicit Apply confirmation so video sliders/markers never auto-apply before Apply, fixed TalkBack announcements and button semantics across Start/End/Loop/Zoom/marker controls, and added pro audio DSP/WAV export tools while keeping existing Audio Editing workflow unchanged."
 }

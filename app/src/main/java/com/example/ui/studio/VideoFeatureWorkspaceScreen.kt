@@ -51,7 +51,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -118,9 +123,11 @@ fun VideoFeatureWorkspaceScreen(
     onNavigateToExports: () -> Unit,
     multiMusicPreview: MultiMusicPreviewController? = null,
     modifier: Modifier = Modifier,
-    initialFeature: VideoStudioFeatureButton? = null
+    initialFeature: VideoStudioFeatureButton? = null,
+    onApplyEdits: (VideoProjectSessionState) -> Unit = onSaveAndReturn
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
     val isHighContrast = LocalHighContrast.current
 
@@ -428,8 +435,18 @@ fun VideoFeatureWorkspaceScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { if (isPlaying) videoPlayer.pause() else videoPlayer.play() },
-                    modifier = Modifier.height(48.dp).testTag("btn_video_workspace_play")
+                    onClick = {
+                        val nextPlay = !isPlaying
+                        if (nextPlay) videoPlayer.play() else videoPlayer.pause()
+                        AccessibilityHelper.announceForAccessibility(view, if (nextPlay) "Playing video preview" else "Paused video preview")
+                    },
+                    modifier = Modifier
+                        .height(48.dp)
+                        .testTag("btn_video_workspace_play")
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = if (isPlaying) "Pause video preview" else "Play video preview"
+                        }
                 ) {
                     Icon(if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
@@ -635,7 +652,8 @@ fun VideoFeatureWorkspaceScreen(
                         videoPlayer.seekTo(startMs)
                         videoPlayer.play(startMs = startMs, endLimitMs = endMs)
                     },
-                    onOpenFeatureGuide = { showFeatureGuide = true }
+                    onOpenFeatureGuide = { showFeatureGuide = true },
+                    showSectionFeatureButtons = (initialFeature == null)
                 )
 
                 VideoFeatureTool.AUDIO_MUSIC -> VideoAudioMusicPanel(
@@ -746,7 +764,8 @@ fun VideoFeatureWorkspaceScreen(
                             null
                         }
                     },
-                    initialFocusedFeature = initialFeature
+                    initialFocusedFeature = initialFeature,
+                    showSectionFeatureButtons = (initialFeature == null)
                 )
 
                 VideoFeatureTool.OVERLAYS_VFX -> VideoOverlaysVfxPanel(
@@ -792,7 +811,8 @@ fun VideoFeatureWorkspaceScreen(
                     selectedVfx = draft.selectedVfx,
                     onSelectFilter = { draft = draft.copy(selectedFilter = it, hasUnsavedChanges = true) },
                     onSelectVfx = { draft = draft.copy(selectedVfx = it, hasUnsavedChanges = true) },
-                    initialFocusedFeature = initialFeature
+                    initialFocusedFeature = initialFeature,
+                    showSectionFeatureButtons = (initialFeature == null)
                 )
 
                 VideoFeatureTool.TRANSFORM_SPEED -> VideoTransformPanel(
@@ -819,7 +839,8 @@ fun VideoFeatureWorkspaceScreen(
                     onToggleFlipV = { draft = draft.copy(flipV = it, hasUnsavedChanges = true) },
                     reverseVideo = draft.reverseVideo,
                     onToggleReverseVideo = { draft = draft.copy(reverseVideo = it, hasUnsavedChanges = true) },
-                    initialFocusedFeature = initialFeature
+                    initialFocusedFeature = initialFeature,
+                    showSectionFeatureButtons = (initialFeature == null)
                 )
 
                 VideoFeatureTool.CONVERT_TOOLS -> VideoConvertAndMetaPanel(
@@ -880,10 +901,32 @@ fun VideoFeatureWorkspaceScreen(
                             hasUnsavedChanges = true
                         )
                     },
-                    initialFocusedFeature = initialFeature
+                    initialFocusedFeature = initialFeature,
+                    showSectionFeatureButtons = (initialFeature == null)
                 )
 
                 VideoFeatureTool.FULL_VIDEO_STUDIO -> Unit
+            }
+
+            Button(
+                onClick = {
+                    val committed = draft.copy(durationMs = effectiveDuration, hasUnsavedChanges = true)
+                    onApplyEdits(committed)
+                    val featureLabel = initialFeature?.title ?: tool.title
+                    AccessibilityHelper.announceForAccessibility(view, "Applied $featureLabel edits to project")
+                    Toast.makeText(context, "Applied $featureLabel edits", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .testTag("btn_video_workspace_apply")
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        contentDescription = "Apply ${initialFeature?.title ?: tool.title} edits to active project"
+                    },
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text("Apply", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
             }
         }
     }

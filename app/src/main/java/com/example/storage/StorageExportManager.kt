@@ -282,7 +282,10 @@ object StorageExportManager {
         context: Context,
         sourceFile: File,
         targetFileName: String,
-        mimeType: String = getAudioMimeType(targetFileName)
+        mimeType: String = getAudioMimeType(targetFileName),
+        titleTag: String? = null,
+        artistTag: String? = null,
+        albumTag: String? = null
     ): File {
         val targetDir = getAudioExportDirectory(context)
         val destinationFile = File(targetDir, targetFileName)
@@ -301,8 +304,9 @@ object StorageExportManager {
                 relativePath = "${Environment.DIRECTORY_MUSIC}/$AUDIO_SUBDIRECTORY",
                 subDirForDelete = AUDIO_SUBDIRECTORY
             ) {
-                put(MediaStore.Audio.Media.TITLE, targetFileName.substringBeforeLast('.'))
-                put(MediaStore.Audio.Media.ALBUM, "Audio Studio")
+                put(MediaStore.Audio.Media.TITLE, titleTag?.takeIf { it.isNotBlank() } ?: targetFileName.substringBeforeLast('.'))
+                if (!artistTag.isNullOrBlank()) put(MediaStore.Audio.Media.ARTIST, artistTag)
+                put(MediaStore.Audio.Media.ALBUM, albumTag?.takeIf { it.isNotBlank() } ?: "Audio Studio")
             }
         } else null
 
@@ -317,6 +321,62 @@ object StorageExportManager {
             targetFileName = targetFileName
         )
 
+        scanFile(context, resultFile, mimeType)
+        return resultFile
+    }
+
+    /**
+     * Zero-permission Scoped Storage save into the public Ringtones folder so the user can assign
+     * exported audio directly as a ringtone/notification sound in Android Sound Settings.
+     */
+    fun saveAudioToRingtones(
+        context: Context,
+        sourceFile: File,
+        targetFileName: String = sourceFile.name,
+        mimeType: String = getAudioMimeType(targetFileName),
+        titleTag: String? = null
+    ): File {
+        val publicRingtonesDir = try {
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_RINGTONES), AUDIO_SUBDIRECTORY)
+        } catch (_: Throwable) { null }
+        val appRingtones = try {
+            context.getExternalFilesDir(Environment.DIRECTORY_RINGTONES)?.let { File(it, AUDIO_SUBDIRECTORY) }
+        } catch (_: Throwable) { null }
+        val internalRingtones = File(context.filesDir, "Exports/Ringtones")
+        val targetDir = resolveWritableDirectory(listOf(publicRingtonesDir, appRingtones, internalRingtones))
+        val destinationFile = File(targetDir, targetFileName)
+
+        if (destinationFile.exists() && sourceFile.absolutePath != destinationFile.absolutePath) {
+            try { destinationFile.delete() } catch (_: Throwable) {}
+        }
+
+        val mediaStorePath = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            saveViaMediaStoreQ(
+                context = context,
+                collectionUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                sourceFile = sourceFile,
+                targetFileName = targetFileName,
+                mimeType = mimeType,
+                relativePath = "${Environment.DIRECTORY_RINGTONES}/$AUDIO_SUBDIRECTORY",
+                subDirForDelete = AUDIO_SUBDIRECTORY
+            ) {
+                put(MediaStore.Audio.Media.IS_RINGTONE, 1)
+                put(MediaStore.Audio.Media.IS_NOTIFICATION, 1)
+                put(MediaStore.Audio.Media.TITLE, titleTag?.takeIf { it.isNotBlank() } ?: targetFileName.substringBeforeLast('.'))
+                put(MediaStore.Audio.Media.ALBUM, "Accessible Studio Ringtones")
+            }
+        } else null
+
+        val resultFile = ensureReadableDestinationFile(
+            context = context,
+            sourceFile = sourceFile,
+            preferredFile = destinationFile,
+            mediaStoreDataPath = mediaStorePath,
+            envType = Environment.DIRECTORY_RINGTONES,
+            subDir = AUDIO_SUBDIRECTORY,
+            fallbackSubDir = "Ringtones",
+            targetFileName = targetFileName
+        )
         scanFile(context, resultFile, mimeType)
         return resultFile
     }

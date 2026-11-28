@@ -128,7 +128,8 @@ fun VideoTimelineToolsPanel(
     autoSplitTargetSizeMb: Float = 25f,
     onUpdateAutoSplitConfig: (AutoSplitMode, Long, Int, Float) -> Unit = { _, _, _, _ -> },
     onPlayRange: (Long, Long) -> Unit = { s, _ -> onSeekTo(s) },
-    onOpenFeatureGuide: (() -> Unit)? = null
+    onOpenFeatureGuide: (() -> Unit)? = null,
+    showSectionFeatureButtons: Boolean = true
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
@@ -182,89 +183,25 @@ fun VideoTimelineToolsPanel(
             )
         }
 
-        // Top Timeline Feature Buttons (clicking any button opens that tool in its own dedicated dialog)
-        VideoFeatureButtonStrip(
-            features = VideoStudioFeatureButton.forSection(VideoToolSection.TIMELINE),
-            selectedFeature = focusedFeature,
-            onSelectFeature = { next ->
-                selectFeature(if (next == focusedFeature) null else next)
-            },
-            isHighContrast = isHighContrast,
-            showAllButton = false,
-            titlePrefix = "Open "
-        )
+        if (showSectionFeatureButtons) {
+            // Top Timeline Feature Buttons
+            VideoFeatureButtonStrip(
+                features = VideoStudioFeatureButton.forSection(VideoToolSection.TIMELINE),
+                selectedFeature = focusedFeature,
+                onSelectFeature = { next ->
+                    selectFeature(if (next == focusedFeature) null else next)
+                },
+                isHighContrast = isHighContrast,
+                showAllButton = false,
+                titlePrefix = ""
+            )
+        }
     }
 
     val activeFeature = focusedFeature
-    if (activeFeature != null) {
-        Dialog(
-            onDismissRequest = { selectFeature(null) },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            BackHandler { selectFeature(null) }
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth(0.95f)
-                    .heightIn(max = 660.dp)
-                    .testTag("dialog_video_timeline_feature"),
-                shape = RoundedCornerShape(20.dp),
-                color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.background,
-                border = if (isHighContrast) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-                tonalElevation = 8.dp
-            ) {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = activeFeature.title,
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Black,
-                                color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.testTag("txt_timeline_dialog_title")
-                            )
-                            Text(
-                                text = "Timeline Tool",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(
-                            onClick = {
-                                localGuideTopic = FeatureGuideCatalog.forVideoFeature(activeFeature)
-                            },
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_timeline_feature_guide")
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "Open ${activeFeature.title} Feature Guide")
-                        }
-                        IconButton(
-                            onClick = { selectFeature(null) },
-                            modifier = Modifier
-                                .size(48.dp)
-                                .testTag("btn_close_timeline_feature_dialog")
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close ${activeFeature.title}")
-                        }
-                    }
-
-                    HorizontalDivider()
-
-                    Column(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .verticalScroll(rememberScrollState())
-                            .padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        when (activeFeature) {
-                            VideoStudioFeatureButton.TRIMMER -> {
+    val renderActiveTimelineFeature: @Composable (VideoStudioFeatureButton) -> Unit = { feat ->
+        when (feat) {
+            VideoStudioFeatureButton.TRIMMER -> {
                                 SectionToolCard(
                                     title = "Video Trimmer",
                                     subtitle = "Set Start and Finish around the part to keep",
@@ -600,21 +537,95 @@ fun VideoTimelineToolsPanel(
 
                             else -> Unit
                         }
-                    }
+    }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Button(
-                            onClick = { selectFeature(null) },
+    if (activeFeature != null) {
+        if (!showSectionFeatureButtons) {
+            renderActiveTimelineFeature(activeFeature)
+        } else {
+            Dialog(
+                onDismissRequest = { selectFeature(null) },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                BackHandler { selectFeature(null) }
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth(0.95f)
+                        .heightIn(max = 660.dp)
+                        .testTag("dialog_video_timeline_feature"),
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.background,
+                    border = if (isHighContrast) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+                    tonalElevation = 8.dp
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
                             modifier = Modifier
-                                .height(48.dp)
-                                .testTag("btn_done_timeline_feature_dialog")
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Done", fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = activeFeature.title,
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.testTag("txt_timeline_dialog_title")
+                                )
+                                Text(
+                                    text = "Timeline Tool",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = {
+                                    localGuideTopic = FeatureGuideCatalog.forVideoFeature(activeFeature)
+                                },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("btn_timeline_feature_guide")
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = "${activeFeature.title} Feature Guide")
+                            }
+                            IconButton(
+                                onClick = { selectFeature(null) },
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .testTag("btn_close_timeline_feature_dialog")
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Close ${activeFeature.title}")
+                            }
+                        }
+
+                        HorizontalDivider()
+
+                        Column(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .verticalScroll(rememberScrollState())
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            renderActiveTimelineFeature(activeFeature)
+                        }
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            Button(
+                                onClick = { selectFeature(null) },
+                                modifier = Modifier
+                                    .height(48.dp)
+                                    .testTag("btn_done_timeline_feature_dialog")
+                            ) {
+                                Text("Done", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -707,7 +718,7 @@ fun VideoFeatureButtonStrip(
                             modifier = Modifier
                                 .heightIn(min = 48.dp)
                                 .testTag("btn_video_feature_${feat.tag}")
-                                .semantics { contentDescription = "Open ${feat.title} feature" }
+                                .semantics { contentDescription = "${feat.title} tool" }
                         ) {
                             Text(buttonText, fontWeight = FontWeight.SemiBold)
                         }

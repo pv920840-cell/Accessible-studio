@@ -80,7 +80,8 @@ fun VideoOverlaysVfxPanel(
     selectedVfx: VideoVfx,
     onSelectFilter: (VideoFilter) -> Unit,
     onSelectVfx: (VideoVfx) -> Unit,
-    initialFocusedFeature: VideoStudioFeatureButton? = null
+    initialFocusedFeature: VideoStudioFeatureButton? = null,
+    showSectionFeatureButtons: Boolean = true
 ) {
     val isHighContrast = LocalHighContrast.current
     var focusedFeature by remember(initialFocusedFeature) { mutableStateOf(initialFocusedFeature) }
@@ -106,12 +107,14 @@ fun VideoOverlaysVfxPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        VideoFeatureButtonStrip(
-            features = VideoStudioFeatureButton.forSection(VideoToolSection.OVERLAYS),
-            selectedFeature = focusedFeature,
-            onSelectFeature = { focusedFeature = it },
-            isHighContrast = isHighContrast
-        )
+        if (showSectionFeatureButtons) {
+            VideoFeatureButtonStrip(
+                features = VideoStudioFeatureButton.forSection(VideoToolSection.OVERLAYS),
+                selectedFeature = focusedFeature,
+                onSelectFeature = { focusedFeature = it },
+                isHighContrast = isHighContrast
+            )
+        }
 
         // 1. Text Overlay Studio (Static, Scrolling News Ticker, Typing Animation)
         if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.TEXT_OVERLAY) {

@@ -521,7 +521,7 @@ fun VideoStudioScreen(
                                     }
                             },
                             modifier = Modifier.size(48.dp).testTag("btn_video_studio_guide")
-                                .semantics { contentDescription = "Open Feature Guide" }
+                                .semantics { contentDescription = "Feature Guide" }
                         ) {
                             Icon(Icons.AutoMirrored.Filled.HelpOutline, contentDescription = null)
                         }
@@ -827,15 +827,15 @@ fun VideoStudioScreen(
                     }
                     VideoStudioFeatureButton.entries.forEach { feat ->
                         val isSelected = focusedFeature == feat
-                        val openFeature: () -> Unit = {
+                        val selectFeatureAction: () -> Unit = {
                             activeSection = feat.section
                             focusedFeature = if (isSelected) null else feat
                             if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
-                            AccessibilityHelper.announceForAccessibility(context, "Opened ${feat.title}")
+                            AccessibilityHelper.announceForAccessibility(context, "Showing ${feat.title}")
                         }
                         if (isSelected) {
                             Button(
-                                onClick = openFeature,
+                                onClick = selectFeatureAction,
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
                                     .testTag("btn_studio_video_feat_${feat.tag}")
@@ -845,11 +845,11 @@ fun VideoStudioScreen(
                             }
                         } else {
                             OutlinedButton(
-                                onClick = openFeature,
+                                onClick = selectFeatureAction,
                                 modifier = Modifier
                                     .heightIn(min = 48.dp)
                                     .testTag("btn_studio_video_feat_${feat.tag}")
-                                    .semantics { contentDescription = "Open ${feat.title} video feature" }
+                                    .semantics { contentDescription = "${feat.title} video tool" }
                             ) {
                                 Text(feat.title, fontWeight = FontWeight.SemiBold)
                             }

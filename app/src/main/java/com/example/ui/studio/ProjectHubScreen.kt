@@ -60,9 +60,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -282,28 +284,6 @@ fun ProjectHubScreen(
                 }
 
                 if (isVideo) {
-                    items(accessibleVideoTools(), key = { it.name }) { tool ->
-                        FeatureHubCard(
-                            title = tool.title,
-                            subtitle = tool.subtitle,
-                            icon = videoToolIcon(tool),
-                            tag = tool.tag,
-                            isHighContrast = isHighContrast,
-                            accentPrimary = false,
-                            onClick = { onOpenVideoTool(tool) }
-                        )
-                    }
-                    item(span = { GridItemSpan(maxLineSpan) }) {
-                        Text(
-                            text = "Video Studio Feature Buttons",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Black,
-                            modifier = Modifier
-                                .padding(top = 6.dp, bottom = 2.dp)
-                                .testTag("heading_hub_video_features")
-                                .semantics { heading() }
-                        )
-                    }
                     items(VideoStudioFeatureButton.entries, key = { "vid_feat_${it.name}" }) { feat ->
                         OutlinedButton(
                             onClick = { onOpenVideoFeature(feat) },
@@ -316,8 +296,9 @@ fun ProjectHubScreen(
                                 .fillMaxWidth()
                                 .heightIn(min = 52.dp)
                                 .testTag("hub_video_feature_${feat.tag}")
-                                .semantics {
-                                    contentDescription = "Open ${feat.title} video feature"
+                                .semantics(mergeDescendants = true) {
+                                    role = Role.Button
+                                    contentDescription = "${feat.title} video tool"
                                 }
                         ) {
                             Text(
@@ -445,7 +426,7 @@ private fun FeatureHubCard(
             .testTag(tag)
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) {
-                contentDescription = "$title. $subtitle. Tap to open workspace."
+                contentDescription = "$title. $subtitle. Tap to select."
             },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(

@@ -47,11 +47,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -77,6 +79,7 @@ fun StandardizedStepSlider(
     testTagPrefix: String = "step"
 ) {
     val isHighContrast = LocalHighContrast.current
+    val view = LocalView.current
     val options = VideoCutMath.STANDARDIZED_STEP_OPTIONS
     val currentIndex = VideoCutMath.standardizedStepIndexFor(stepMs)
     val currentOption = VideoCutMath.standardizedStepAt(currentIndex)
@@ -165,12 +168,19 @@ fun StandardizedStepSlider(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 IconButton(
-                    onClick = { onStepChange(VideoCutMath.stepDown(stepMs).stepMs) },
+                    onClick = {
+                        val next = VideoCutMath.stepDown(stepMs)
+                        onStepChange(next.stepMs)
+                        AccessibilityHelper.announceForAccessibility(view, "Step decreased to ${next.spokenLabel}")
+                    },
                     enabled = currentIndex > 0,
                     modifier = Modifier
                         .size(48.dp)
                         .testTag("${testTagPrefix}_btn_down")
-                        .semantics { contentDescription = "Decrease step toward milliseconds" }
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "Decrease step toward milliseconds"
+                        }
                 ) {
                     Icon(Icons.Default.Remove, contentDescription = null)
                 }
@@ -203,12 +213,19 @@ fun StandardizedStepSlider(
                 )
 
                 IconButton(
-                    onClick = { onStepChange(VideoCutMath.stepUp(stepMs).stepMs) },
+                    onClick = {
+                        val next = VideoCutMath.stepUp(stepMs)
+                        onStepChange(next.stepMs)
+                        AccessibilityHelper.announceForAccessibility(view, "Step increased to ${next.spokenLabel}")
+                    },
                     enabled = currentIndex < options.lastIndex,
                     modifier = Modifier
                         .size(48.dp)
                         .testTag("${testTagPrefix}_btn_up")
-                        .semantics { contentDescription = "Increase step toward seconds and minutes" }
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "Increase step toward seconds and minutes"
+                        }
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
                 }
@@ -231,6 +248,7 @@ fun VideoSplitterPanel(
     currentPositionMsProvider: (() -> Long)? = null,
     onOpenFeatureGuide: (() -> Unit)? = null
 ) {
+    val view = LocalView.current
     val safeDuration = durationMs.coerceAtLeast(1000L)
     var stepMs by remember { mutableStateOf(1000L) }
     var showGuide by remember { mutableStateOf(false) }
@@ -243,6 +261,7 @@ fun VideoSplitterPanel(
     val latestSafeDuration by rememberUpdatedState(safeDuration)
     val movePointToNow = {
         pointMs = (latestPosProvider?.invoke() ?: latestCurrentPos).coerceIn(0L, latestSafeDuration)
+        AccessibilityHelper.announceForAccessibility(view, "Split point moved to ${AccessibilityHelper.formatTimeSpoken(pointMs)}")
     }
 
     val resultingParts = remember(trimStartMs, trimEndMs, splitPointsMs) {
@@ -293,15 +312,16 @@ fun VideoSplitterPanel(
                         onClick = { movePointToNow() },
                         onDoubleClick = { movePointToNow() }
                     )
-                    .semantics {
-                        contentDescription = "Move Point slider to now playing. Double tap to place Point at current playback position."
-                        customActions = listOf(
-                            CustomAccessibilityAction("Place Point marker at now playing") {
-                                movePointToNow()
-                                true
-                            }
-                        )
-                    },
+                    .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = "Move Point slider to now playing. Double tap to place Point at current playback position."
+                    customActions = listOf(
+                        CustomAccessibilityAction("Place Point marker at now playing") {
+                            movePointToNow()
+                            true
+                        }
+                    )
+                },
                 shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surface,
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
@@ -322,10 +342,17 @@ fun VideoSplitterPanel(
                 }
             }
             Button(
-                onClick = { onPlayFrom(pointMs) },
+                onClick = {
+                    onPlayFrom(pointMs)
+                    AccessibilityHelper.announceForAccessibility(view, "Playing from split point")
+                },
                 modifier = Modifier
                     .height(48.dp)
                     .testTag("btn_splitter_play")
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
+                        contentDescription = "Play from split point"
+                    }
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = null)
                 Spacer(Modifier.width(4.dp))
@@ -599,13 +626,15 @@ fun VideoAutoSplitterPanel(
             }
         )
 
-        // Split every button: tap cycles preset intervals; double-tap opens custom dialog (length / count / size)
+        val autoSplitterView = LocalView.current
+        // Split every button: tap cycles preset intervals; double-tap activates custom dialog (length / count / size)
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(54.dp)
                 .testTag("btn_auto_split_every")
                 .combinedClickable(
+                    role = Role.Button,
                     onClick = {
                         val presets = listOf(10_000L, 30_000L, 60_000L, 120_000L, 300_000L)
                         val idx = presets.indexOf(autoSplitIntervalMs)
@@ -616,10 +645,15 @@ fun VideoAutoSplitterPanel(
                             autoSplitFileCount,
                             autoSplitTargetSizeMb
                         )
+                        AccessibilityHelper.announceForAccessibility(
+                            autoSplitterView,
+                            "Split every set to ${nextInterval / 1000L} seconds interval"
+                        )
                     },
                     onDoubleClick = { showCustomDialog = true }
                 )
-                .semantics {
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
                     contentDescription = "Split every: $splitEverySummary. Tap to cycle interval, double tap for custom length, file count, or size."
                     customActions = listOf(
                         CustomAccessibilityAction("Custom split length, count, or size") {
@@ -697,6 +731,7 @@ private fun AutoSplitterOptionSlider(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    val view = LocalView.current
     val options = VideoCutMath.AUTO_SPLIT_SLIDER_OPTIONS
     val currentIndex = VideoCutMath.autoSplitOptionIndexFor(
         mode = autoSplitMode,
@@ -784,13 +819,18 @@ private fun AutoSplitterOptionSlider(
             ) {
                 IconButton(
                     onClick = {
-                        onSelectOption(VideoCutMath.autoSplitOptionDown(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount))
+                        val next = VideoCutMath.autoSplitOptionDown(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount)
+                        onSelectOption(next)
+                        AccessibilityHelper.announceForAccessibility(view, "Auto splitter set to ${next.spokenLabel}")
                     },
                     enabled = currentIndex > 0,
                     modifier = Modifier
                         .size(48.dp)
                         .testTag("btn_auto_splitter_slider_down")
-                        .semantics { contentDescription = "Decrease auto splitter split option" }
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "Decrease auto splitter split option"
+                        }
                 ) {
                     Icon(Icons.Default.Remove, contentDescription = null)
                 }
@@ -824,13 +864,18 @@ private fun AutoSplitterOptionSlider(
 
                 IconButton(
                     onClick = {
-                        onSelectOption(VideoCutMath.autoSplitOptionUp(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount))
+                        val next = VideoCutMath.autoSplitOptionUp(autoSplitMode, autoSplitIntervalMs, autoSplitFileCount)
+                        onSelectOption(next)
+                        AccessibilityHelper.announceForAccessibility(view, "Auto splitter set to ${next.spokenLabel}")
                     },
                     enabled = currentIndex < options.lastIndex,
                     modifier = Modifier
                         .size(48.dp)
                         .testTag("btn_auto_splitter_slider_up")
-                        .semantics { contentDescription = "Increase auto splitter split option" }
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
+                            contentDescription = "Increase auto splitter split option"
+                        }
                 ) {
                     Icon(Icons.Default.Add, contentDescription = null)
                 }

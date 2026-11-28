@@ -115,7 +115,8 @@ fun VideoAudioMusicPanel(
     videoDurationMs: Long = 0L,
     isPlaying: Boolean = false,
     positionFlow: StateFlow<Long>? = null,
-    initialFocusedFeature: VideoStudioFeatureButton? = null
+    initialFocusedFeature: VideoStudioFeatureButton? = null,
+    showSectionFeatureButtons: Boolean = true
 ) {
     val context = LocalContext.current
     val isHighContrast = LocalHighContrast.current
@@ -155,12 +156,14 @@ fun VideoAudioMusicPanel(
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
 
-        VideoFeatureButtonStrip(
-            features = VideoStudioFeatureButton.forSection(VideoToolSection.AUDIO_MUSIC),
-            selectedFeature = focusedFeature,
-            onSelectFeature = { focusedFeature = it },
-            isHighContrast = isHighContrast
-        )
+        if (showSectionFeatureButtons) {
+            VideoFeatureButtonStrip(
+                features = VideoStudioFeatureButton.forSection(VideoToolSection.AUDIO_MUSIC),
+                selectedFeature = focusedFeature,
+                onSelectFeature = { focusedFeature = it },
+                isHighContrast = isHighContrast
+            )
+        }
 
         // 1. Narration Recorder
         if (focusedFeature == null || focusedFeature == VideoStudioFeatureButton.NARRATION) {

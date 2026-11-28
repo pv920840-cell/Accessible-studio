@@ -89,7 +89,8 @@ class FeatureButtonsAndSlowScrubTest {
         composeRule.onNodeWithTag("btn_hub_save").assertExists()
         composeRule.onNodeWithTag("btn_hub_back_home").assertExists()
         composeRule.onNodeWithTag("btn_hub_export").assertExists()
-        composeRule.onNodeWithTag("hub_feature_video_trim").assertExists()
+        composeRule.onNodeWithTag("hub_feature_video_trim").assertDoesNotExist()
+        composeRule.onNodeWithTag("hub_feature_video_full").assertDoesNotExist()
 
         composeRule.onNodeWithTag("hub_features_grid")
             .performScrollToNode(hasTestTag("hub_video_feature_trimmer"))
@@ -101,11 +102,10 @@ class FeatureButtonsAndSlowScrubTest {
         composeRule.onNodeWithTag("hub_video_feature_color_filters").assertIsDisplayed().performClick()
         assertEquals(VideoStudioFeatureButton.COLOR_FILTERS, openedFeature)
 
-        composeRule.onNodeWithTag("hub_feature_video_full").assertDoesNotExist()
         composeRule.onNodeWithTag("hub_features_grid")
-            .performScrollToNode(hasTestTag("hub_feature_video_trim"))
-        composeRule.onNodeWithTag("hub_feature_video_trim").performClick()
-        assertEquals(VideoFeatureTool.TRIM_TIMELINE, openedTool)
+            .performScrollToNode(hasTestTag("hub_video_feature_gif_frame_extractor"))
+        composeRule.onNodeWithTag("hub_video_feature_gif_frame_extractor").assertIsDisplayed().performClick()
+        assertEquals(VideoStudioFeatureButton.GIF_FRAME_EXTRACTOR, openedFeature)
     }
 
     @Test

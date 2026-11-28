@@ -113,6 +113,15 @@ enum class EqPreset(val displayName: String) {
     RADIO_LOFI("Retro Lo-Fi Radio")
 }
 
+data class AudioExportOptions(
+    val sampleRate: Int = 44100,
+    val bitDepth: Int = 16,
+    val stereoOutput: Boolean = false,
+    val title: String = "",
+    val artist: String = "",
+    val album: String = ""
+)
+
 data class StereoPcmData(
     val left: ShortArray,
     val right: ShortArray,
@@ -1446,6 +1455,26 @@ class WavAudioProcessor(private val context: Context? = null) {
         outputFileName: String,
         format: String = "WAV",
         onProgress: (Float) -> Unit
+    ): File = exportSingleAudioFile(
+        mainPcm = mainPcm,
+        bgTrackConfig = bgTrackConfig,
+        bgPcm = bgPcm,
+        settings = settings,
+        outputFileName = outputFileName,
+        format = format,
+        exportOptions = AudioExportOptions(sampleRate = sampleRate, bitDepth = 16, stereoOutput = channels > 1),
+        onProgress = onProgress
+    )
+
+    suspend fun exportSingleAudioFile(
+        mainPcm: ShortArray,
+        bgTrackConfig: AudioTrackConfig?,
+        bgPcm: ShortArray?,
+        settings: AudioEditSettings,
+        outputFileName: String,
+        format: String = "WAV",
+        exportOptions: AudioExportOptions,
+        onProgress: (Float) -> Unit
     ): File = withContext(Dispatchers.IO) {
         onProgress(0.05f)
 
@@ -1505,6 +1534,26 @@ class WavAudioProcessor(private val context: Context? = null) {
             mixedSamples[i] = mixed.toShort()
         }
 
+        val targetSampleRate = exportOptions.sampleRate.coerceIn(8000, 96000)
+        val resampledSamples = if (targetSampleRate != sampleRate) {
+            resamplePcm(mixedSamples, sampleRate, targetSampleRate)
+        } else {
+            mixedSamples
+        }
+        val outChannels = if (exportOptions.stereoOutput) 2 else 1
+        val channelFormattedSamples = if (outChannels == 2 && channels == 1) {
+            ShortArray(resampledSamples.size * 2).also { stereo ->
+                for (i in resampledSamples.indices) {
+                    val s = resampledSamples[i]
+                    stereo[i * 2] = s
+                    stereo[i * 2 + 1] = s
+                }
+            }
+        } else {
+            resampledSamples
+        }
+        val outBitDepth = if (exportOptions.bitDepth == 24) 24 else 16
+
         onProgress(0.85f)
 
         // 4. Write audio file directly to Internal Storage / Music / Audio Studio
@@ -1524,12 +1573,15 @@ class WavAudioProcessor(private val context: Context? = null) {
         val finalDestFile = if (context != null) {
             val tempFile = File(context.cacheDir, "export_tmp_${System.currentTimeMillis()}.wav")
             try {
-                writeWavFile(tempFile, mixedSamples, sampleRate, channels)
+                writeWavFile(tempFile, channelFormattedSamples, targetSampleRate, outChannels, outBitDepth, exportOptions)
                 com.example.storage.StorageExportManager.saveAudioFile(
                     context = context,
                     sourceFile = tempFile,
                     targetFileName = cleanName,
-                    mimeType = com.example.storage.StorageExportManager.getAudioMimeType(cleanName)
+                    mimeType = com.example.storage.StorageExportManager.getAudioMimeType(cleanName),
+                    titleTag = exportOptions.title.ifBlank { cleanBase },
+                    artistTag = exportOptions.artist,
+                    albumTag = exportOptions.album.ifBlank { "Audio Studio" }
                 )
             } finally {
                 try {
@@ -1539,20 +1591,56 @@ class WavAudioProcessor(private val context: Context? = null) {
         } else {
             val musicPublic = File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MUSIC), com.example.storage.StorageExportManager.AUDIO_SUBDIRECTORY)
             if (!musicPublic.exists()) musicPublic.mkdirs()
-            File(musicPublic, cleanName).also { writeWavFile(it, mixedSamples, sampleRate, channels) }
+            File(musicPublic, cleanName).also {
+                writeWavFile(it, channelFormattedSamples, targetSampleRate, outChannels, outBitDepth, exportOptions)
+            }
         }
         onProgress(1.0f)
 
         finalDestFile
     }
 
+    fun resamplePcm(input: ShortArray, sourceRate: Int, targetRate: Int): ShortArray {
+        if (input.isEmpty() || sourceRate <= 0 || targetRate <= 0 || sourceRate == targetRate) return input
+        val ratio = sourceRate.toDouble() / targetRate.toDouble()
+        val newLength = ((input.size.toDouble() / ratio).toInt()).coerceAtLeast(1)
+        val out = ShortArray(newLength)
+        for (i in 0 until newLength) {
+            val pos = i * ratio
+            val idx0 = pos.toInt().coerceIn(0, input.lastIndex)
+            val idx1 = (idx0 + 1).coerceIn(0, input.lastIndex)
+            val frac = pos - idx0
+            out[i] = ((input[idx0] * (1.0 - frac) + input[idx1] * frac).toInt()).coerceIn(-32767, 32767).toShort()
+        }
+        return out
+    }
+
     /**
-     * Writes ShortArray PCM samples into standard RIFF WAV format
+     * Writes ShortArray PCM samples into standard RIFF WAV format (16-bit PCM).
      */
     fun writeWavFile(file: File, samples: ShortArray, sampleRate: Int, channels: Int) {
-        val totalAudioLen = samples.size.toLong() * 2L
-        val totalDataLen = totalAudioLen + 36L
-        val byteRate = (16L * sampleRate * channels) / 8L
+        writeWavFile(file, samples, sampleRate, channels, 16, null)
+    }
+
+    /**
+     * Writes ShortArray PCM samples into standard RIFF WAV format with configurable bit depth (16 or 24-bit)
+     * and optional RIFF LIST/INFO metadata tags (Title/INAM, Artist/IART, Album/IPRD).
+     */
+    fun writeWavFile(
+        file: File,
+        samples: ShortArray,
+        sampleRate: Int,
+        channels: Int,
+        bitDepth: Int,
+        metadata: AudioExportOptions?
+    ) {
+        val safeBits = if (bitDepth == 24) 24 else 16
+        val bytesPerSample = safeBits / 8
+        val totalAudioLen = samples.size.toLong() * bytesPerSample.toLong()
+        val infoChunk = buildRiffInfoChunk(metadata)
+        val infoSize = infoChunk?.size?.toLong() ?: 0L
+        val totalDataLen = totalAudioLen + 36L + infoSize
+        val byteRate = (safeBits.toLong() * sampleRate * channels) / 8L
 
         val header = ByteArray(44)
         header[0] = 'R'.code.toByte()
@@ -1587,9 +1675,9 @@ class WavAudioProcessor(private val context: Context? = null) {
         header[29] = ((byteRate shr 8) and 0xff).toByte()
         header[30] = ((byteRate shr 16) and 0xff).toByte()
         header[31] = ((byteRate shr 24) and 0xff).toByte()
-        header[32] = (channels * 16 / 8).toByte()
+        header[32] = (channels * safeBits / 8).toByte()
         header[33] = 0
-        header[34] = 16
+        header[34] = safeBits.toByte()
         header[35] = 0
         header[36] = 'd'.code.toByte()
         header[37] = 'a'.code.toByte()
@@ -1603,19 +1691,72 @@ class WavAudioProcessor(private val context: Context? = null) {
         FileOutputStream(file).use { fos ->
             fos.write(header)
             val chunkSamples = 16384
-            val chunkBytes = ByteArray(chunkSamples * 2)
-            val chunkBuf = ByteBuffer.wrap(chunkBytes).order(ByteOrder.LITTLE_ENDIAN)
-            var idx = 0
-            while (idx < samples.size) {
-                val count = minOf(chunkSamples, samples.size - idx)
-                chunkBuf.clear()
-                for (k in 0 until count) {
-                    chunkBuf.putShort(samples[idx + k])
+            if (safeBits == 24) {
+                val chunkBytes = ByteArray(chunkSamples * 3)
+                var idx = 0
+                while (idx < samples.size) {
+                    val count = minOf(chunkSamples, samples.size - idx)
+                    var bIdx = 0
+                    for (k in 0 until count) {
+                        val v24 = samples[idx + k].toInt() shl 8
+                        chunkBytes[bIdx++] = (v24 and 0xff).toByte()
+                        chunkBytes[bIdx++] = ((v24 shr 8) and 0xff).toByte()
+                        chunkBytes[bIdx++] = ((v24 shr 16) and 0xff).toByte()
+                    }
+                    fos.write(chunkBytes, 0, bIdx)
+                    idx += count
                 }
-                fos.write(chunkBytes, 0, count * 2)
-                idx += count
+            } else {
+                val chunkBytes = ByteArray(chunkSamples * 2)
+                val chunkBuf = ByteBuffer.wrap(chunkBytes).order(ByteOrder.LITTLE_ENDIAN)
+                var idx = 0
+                while (idx < samples.size) {
+                    val count = minOf(chunkSamples, samples.size - idx)
+                    chunkBuf.clear()
+                    for (k in 0 until count) {
+                        chunkBuf.putShort(samples[idx + k])
+                    }
+                    fos.write(chunkBytes, 0, count * 2)
+                    idx += count
+                }
+            }
+            if (infoChunk != null) {
+                fos.write(infoChunk)
             }
             fos.flush()
         }
+    }
+
+    private fun buildRiffInfoChunk(metadata: AudioExportOptions?): ByteArray? {
+        if (metadata == null) return null
+        val fields = buildList {
+            if (metadata.title.isNotBlank()) add("INAM" to metadata.title.trim())
+            if (metadata.artist.isNotBlank()) add("IART" to metadata.artist.trim())
+            if (metadata.album.isNotBlank()) add("IPRD" to metadata.album.trim())
+        }
+        if (fields.isEmpty()) return null
+        val subOut = ByteArrayOutputStream()
+        subOut.write("INFO".toByteArray(Charsets.US_ASCII))
+        for ((tag, value) in fields) {
+            val strBytes = value.toByteArray(Charsets.UTF_8) + byteArrayOf(0)
+            subOut.write(tag.toByteArray(Charsets.US_ASCII))
+            val len = strBytes.size
+            subOut.write(len and 0xff)
+            subOut.write((len shr 8) and 0xff)
+            subOut.write((len shr 16) and 0xff)
+            subOut.write((len shr 24) and 0xff)
+            subOut.write(strBytes)
+            if (len % 2 != 0) subOut.write(0)
+        }
+        val payload = subOut.toByteArray()
+        val listOut = ByteArrayOutputStream(8 + payload.size)
+        listOut.write("LIST".toByteArray(Charsets.US_ASCII))
+        val pSize = payload.size
+        listOut.write(pSize and 0xff)
+        listOut.write((pSize shr 8) and 0xff)
+        listOut.write((pSize shr 16) and 0xff)
+        listOut.write((pSize shr 24) and 0xff)
+        listOut.write(payload)
+        return listOut.toByteArray()
     }
 }

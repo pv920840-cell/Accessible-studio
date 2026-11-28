@@ -1,6 +1,7 @@
 package com.example
 
 import android.content.Context
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -14,7 +15,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.MediaRepository
 import com.example.ui.studio.StudioRootCoordinator
 import com.example.ui.theme.AccessibleStudioTheme
+import com.example.video.VideoStudioFeatureButton
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -95,15 +98,26 @@ class HomeCategoryNavigationTest {
         assertTrue(composeRule.onAllNodesWithText("File Size:", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Length:", substring = true).fetchSemanticsNodes().isEmpty())
 
-        // Navigate Home -> Video Editor and verify Full Video Workspace is removed while Trim & Timeline remains
+        // Navigate Home -> Video Editor and verify flat non-nested 31 features, no Full Video Workspace, no Export, and zero "Open" text
         composeRule.onNodeWithTag("btn_audio_editor_back").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("btn_home_video_editor").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("video_editor_title").assertIsDisplayed()
-        composeRule.onNodeWithTag("btn_video_editor_trim_timeline").assertExists()
         composeRule.onNodeWithTag("btn_video_editor_full_video_studio").assertDoesNotExist()
+        composeRule.onNodeWithTag("btn_video_editor_trim_timeline").assertDoesNotExist()
         assertTrue(composeRule.onAllNodesWithText("Full Video Workspace", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
+        assertTrue(composeRule.onAllNodesWithText("Open", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
+        VideoStudioFeatureButton.entries.forEach { feat ->
+            val tag = "btn_video_editor_feature_${feat.tag}"
+            composeRule.onNodeWithTag("video_editor_tools_list").performScrollToNode(hasTestTag(tag))
+            val node = composeRule.onNodeWithTag(tag).assertExists().fetchSemanticsNode()
+            val textJoined = node.config.getOrElse(SemanticsProperties.Text) { emptyList() }.joinToString(" ") { it.text }
+            val descJoined = node.config.getOrElse(SemanticsProperties.ContentDescription) { emptyList() }.joinToString(" ")
+            assertFalse("Video button $tag text must not contain 'open': $textJoined", textJoined.contains("open", ignoreCase = true))
+            assertFalse("Video button $tag description must not contain 'open': $descJoined", descJoined.contains("open", ignoreCase = true))
+            assertFalse("Video feature list must not include Export: ${feat.title}", feat.title.equals("Export", ignoreCase = true))
+        }
     }
 
     @Test

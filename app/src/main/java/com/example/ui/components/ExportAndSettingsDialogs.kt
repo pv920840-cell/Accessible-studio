@@ -90,7 +90,10 @@ fun AccessibleExportDialog(
     initialVideoFormat: VideoFormatOption = VideoFormatOption.MP4,
     initialVideoQualityPreset: VideoResolutionPreset = VideoResolutionPreset.ORIGINAL,
     initialCompressorQuality: CompressorQuality = CompressorQuality.HIGH,
-    onConfirmVideoExport: ((fileName: String, format: VideoFormatOption, resolution: VideoResolutionPreset, quality: CompressorQuality) -> Unit)? = null
+    onConfirmVideoExport: ((fileName: String, format: VideoFormatOption, resolution: VideoResolutionPreset, quality: CompressorQuality) -> Unit)? = null,
+    initialAudioExportOptions: com.example.audio.AudioExportOptions = com.example.audio.AudioExportOptions(),
+    onConfirmAudioExportExtended: ((fileName: String, format: String, options: com.example.audio.AudioExportOptions) -> Unit)? = null,
+    onSaveAsRingtone: ((File) -> Unit)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
     var fileName by remember(defaultFileName) { mutableStateOf(defaultFileName) }
@@ -98,6 +101,13 @@ fun AccessibleExportDialog(
     var selectedVideoFormat by remember(initialVideoFormat) { mutableStateOf(initialVideoFormat) }
     var selectedVideoResolution by remember(initialVideoQualityPreset) { mutableStateOf(initialVideoQualityPreset) }
     var selectedCompressorQuality by remember(initialCompressorQuality) { mutableStateOf(initialCompressorQuality) }
+    var selectedSampleRate by remember(initialAudioExportOptions) { mutableStateOf(initialAudioExportOptions.sampleRate) }
+    var selectedBitDepth by remember(initialAudioExportOptions) { mutableStateOf(initialAudioExportOptions.bitDepth) }
+    var selectedStereo by remember(initialAudioExportOptions) { mutableStateOf(initialAudioExportOptions.stereoOutput) }
+    var metaTitle by remember(initialAudioExportOptions) { mutableStateOf(initialAudioExportOptions.title) }
+    var metaArtist by remember(initialAudioExportOptions) { mutableStateOf(initialAudioExportOptions.artist) }
+    var metaAlbum by remember(initialAudioExportOptions) { mutableStateOf(initialAudioExportOptions.album) }
+    var showAudioMetadata by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = { if (!isExporting) onDismiss() },
@@ -192,6 +202,21 @@ fun AccessibleExportDialog(
                             Text("Share")
                         }
                     }
+
+                    if (!isVideo && onSaveAsRingtone != null) {
+                        OutlinedButton(
+                            onClick = { onSaveAsRingtone(exportedFile) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(48.dp)
+                                .testTag("btn_save_exported_ringtone")
+                                .semantics {
+                                    contentDescription = "Save audio to Ringtones folder"
+                                }
+                        ) {
+                            Text("Save to Ringtones Folder", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 } else if (isExporting) {
                     // Exporting in progress
                     val percent = (exportProgress * 100).toInt()
@@ -237,7 +262,9 @@ fun AccessibleExportDialog(
                             listOf("AAC" to "AAC Audio", "OPUS" to "Opus Audio", "M4A" to "M4A AAC")
                         )
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState()),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             audioFormatRows.forEach { rowFormats ->
@@ -272,6 +299,112 @@ fun AccessibleExportDialog(
                                             )
                                         }
                                     }
+                                }
+                            }
+
+                            if (onConfirmAudioExportExtended != null) {
+                                Text(
+                                    text = "Sample Rate & Bit Depth",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isHighContrast) Color.White else MaterialTheme.colorScheme.onSurface
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    listOf(22050, 44100, 48000).forEach { sr ->
+                                        val isSelected = selectedSampleRate == sr
+                                        OutlinedButton(
+                                            onClick = { selectedSampleRate = sr },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(48.dp)
+                                                .testTag("btn_export_sr_$sr")
+                                                .semantics {
+                                                    contentDescription = "Sample rate $sr Hertz. ${if (isSelected) "Selected" else "Not selected"}"
+                                                },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                                            )
+                                        ) {
+                                            Text(
+                                                text = "${sr / 1000}.${(sr % 1000) / 100}k",
+                                                fontSize = 12.sp,
+                                                fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium
+                                            )
+                                        }
+                                    }
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    listOf(16 to "16-bit", 24 to "24-bit").forEach { (bits, label) ->
+                                        val isSelected = selectedBitDepth == bits
+                                        OutlinedButton(
+                                            onClick = { selectedBitDepth = bits },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(48.dp)
+                                                .testTag("btn_export_bits_$bits")
+                                                .semantics {
+                                                    contentDescription = "Bit depth $label. ${if (isSelected) "Selected" else "Not selected"}"
+                                                },
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                                            )
+                                        ) {
+                                            Text(label, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium)
+                                        }
+                                    }
+                                    OutlinedButton(
+                                        onClick = { selectedStereo = !selectedStereo },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(48.dp)
+                                            .testTag("btn_export_channels")
+                                            .semantics {
+                                                contentDescription = "Output channels: ${if (selectedStereo) "Stereo" else "Mono"}. Tap to toggle."
+                                            },
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (selectedStereo) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
+                                        )
+                                    ) {
+                                        Text(if (selectedStereo) "Stereo" else "Mono", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                                OutlinedButton(
+                                    onClick = { showAudioMetadata = !showAudioMetadata },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("btn_export_toggle_tags")
+                                ) {
+                                    Text(if (showAudioMetadata) "Hide ID3 / RIFF Tags" else "Edit Title, Artist & Album Tags")
+                                }
+                                if (showAudioMetadata) {
+                                    OutlinedTextField(
+                                        value = metaTitle,
+                                        onValueChange = { metaTitle = it },
+                                        label = { Text("Track Title Tag") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("input_export_tag_title")
+                                    )
+                                    OutlinedTextField(
+                                        value = metaArtist,
+                                        onValueChange = { metaArtist = it },
+                                        label = { Text("Artist Tag") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("input_export_tag_artist")
+                                    )
+                                    OutlinedTextField(
+                                        value = metaAlbum,
+                                        onValueChange = { metaAlbum = it },
+                                        label = { Text("Album Tag") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("input_export_tag_album")
+                                    )
                                 }
                             }
                         }
@@ -425,6 +558,19 @@ fun AccessibleExportDialog(
                                 selectedVideoFormat,
                                 selectedVideoResolution,
                                 selectedCompressorQuality
+                            )
+                        } else if (!isVideo && onConfirmAudioExportExtended != null) {
+                            onConfirmAudioExportExtended(
+                                base,
+                                selectedFormat,
+                                com.example.audio.AudioExportOptions(
+                                    sampleRate = selectedSampleRate,
+                                    bitDepth = selectedBitDepth,
+                                    stereoOutput = selectedStereo,
+                                    title = metaTitle.trim(),
+                                    artist = metaArtist.trim(),
+                                    album = metaAlbum.trim()
+                                )
                             )
                         } else {
                             onConfirmExport(base, if (isVideo) selectedVideoFormat.extension.uppercase() else selectedFormat)

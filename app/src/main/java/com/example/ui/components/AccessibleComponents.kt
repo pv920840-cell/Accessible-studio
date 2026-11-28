@@ -80,6 +80,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -261,6 +262,7 @@ fun AccessibleAudioWaveform(
     positionFlow: StateFlow<Long>? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    val view = LocalView.current
     val livePosMs = if (positionFlow != null) positionFlow.collectAsState().value else currentMs
     val safeDuration = durationMs.coerceAtLeast(100L)
     val numBars = 64
@@ -537,16 +539,40 @@ fun AccessibleAudioWaveform(
                     ) {
                         if (showZoomControls) {
                             OutlinedButton(
-                                onClick = { onZoomInAction?.invoke() ?: updateFallbackZoom(activeZoom * 2f) },
+                                onClick = {
+                                    val newZoom = (activeZoom * 2f).coerceIn(1.0f, 128.0f)
+                                    val expectedSpanMs = (safeDuration.toDouble() / newZoom.toDouble()).toLong().coerceAtLeast(50L)
+                                    onZoomInAction?.invoke() ?: updateFallbackZoom(newZoom)
+                                    val winLabel = WaveformViewportMath.formatWindowLabel(expectedSpanMs, safeDuration)
+                                    AccessibilityHelper.announceForAccessibility(
+                                        view,
+                                        "Zoomed in to ${"%.1f".format(Locale.US, newZoom)}x, showing $winLabel"
+                                    )
+                                },
                                 modifier = Modifier.height(48.dp).testTag("btn_zoom_in")
-                                    .semantics { contentDescription = "Zoom In waveform view horizontally" },
+                                    .semantics(mergeDescendants = true) {
+                                        role = Role.Button
+                                        contentDescription = "Zoom In waveform view horizontally"
+                                    },
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
                             ) { Text("Zoom +", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
 
                             OutlinedButton(
-                                onClick = { onZoomOutAction?.invoke() ?: updateFallbackZoom(activeZoom / 2f) },
+                                onClick = {
+                                    val newZoom = (activeZoom / 2f).coerceIn(1.0f, 128.0f)
+                                    val expectedSpanMs = (safeDuration.toDouble() / newZoom.toDouble()).toLong().coerceAtLeast(50L)
+                                    onZoomOutAction?.invoke() ?: updateFallbackZoom(newZoom)
+                                    val winLabel = WaveformViewportMath.formatWindowLabel(expectedSpanMs, safeDuration)
+                                    AccessibilityHelper.announceForAccessibility(
+                                        view,
+                                        "Zoomed out to ${"%.1f".format(Locale.US, newZoom)}x, showing $winLabel"
+                                    )
+                                },
                                 modifier = Modifier.height(48.dp).testTag("btn_zoom_out")
-                                    .semantics { contentDescription = "Zoom Out waveform view horizontally" },
+                                    .semantics(mergeDescendants = true) {
+                                        role = Role.Button
+                                        contentDescription = "Zoom Out waveform view horizontally"
+                                    },
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
                             ) { Text("Zoom -", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
 
@@ -558,18 +584,34 @@ fun AccessibleAudioWaveform(
                                         updateFallbackZoom(1.0f)
                                         updateVerticalZoom(1.0f)
                                     }
+                                    AccessibilityHelper.announceForAccessibility(
+                                        view,
+                                        "Zoom reset to Fit All, showing full track"
+                                    )
                                 },
                                 modifier = Modifier.height(48.dp).testTag("btn_zoom_full")
-                                    .semantics { contentDescription = "Fit All. Resets horizontal and vertical zoom" },
+                                    .semantics(mergeDescendants = true) {
+                                        role = Role.Button
+                                        contentDescription = "Fit All. Resets horizontal and vertical zoom"
+                                    },
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
                             ) { Text("Fit", fontWeight = FontWeight.Bold, fontSize = 11.sp) }
                         }
 
                         if (canRenderWaveform && onToggleVisualMode != null) {
                             OutlinedButton(
-                                onClick = onToggleVisualMode,
+                                onClick = {
+                                    onToggleVisualMode()
+                                    AccessibilityHelper.announceForAccessibility(
+                                        view,
+                                        "Switched visual display mode"
+                                    )
+                                },
                                 modifier = Modifier.height(48.dp).testTag("btn_visual_mode")
-                                    .semantics { contentDescription = "Visual mode: ${visualMode.displayName}. Tap to switch." },
+                                    .semantics(mergeDescendants = true) {
+                                        role = Role.Button
+                                        contentDescription = "Visual mode: ${visualMode.displayName}. Tap to switch."
+                                    },
                                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
                             ) { Text(visualMode.displayName, fontWeight = FontWeight.Bold, fontSize = 11.sp) }
                         }
@@ -607,6 +649,7 @@ fun AccessibleTransportControls(
     modifier: Modifier = Modifier
 ) {
     val isHighContrast = LocalHighContrast.current
+    val view = LocalView.current
     var selectedJumpIntervalSec by remember { mutableIntStateOf(5) }
 
     Column(
@@ -651,8 +694,11 @@ fun AccessibleTransportControls(
             verticalAlignment = Alignment.CenterVertically
         ) {
             AccessibleIconButton(
-                onClick = onJumpStart,
-                icon = { Icon(Icons.Default.SkipPrevious, contentDescription = "Jump to beginning of track", modifier = Modifier.size(28.dp)) },
+                onClick = {
+                    onJumpStart()
+                    AccessibilityHelper.announceForAccessibility(view, "Jumped to start of track")
+                },
+                icon = { Icon(Icons.Default.SkipPrevious, contentDescription = null, modifier = Modifier.size(28.dp)) },
                 contentDescription = "Jump to beginning of track",
                 testTag = "btn_jump_start"
             )
@@ -671,6 +717,7 @@ fun AccessibleTransportControls(
                     } else {
                         onNudge(-selectedJumpIntervalSec * 1000L)
                     }
+                    AccessibilityHelper.announceForAccessibility(view, "Rewound $selectedJumpIntervalSec seconds")
                 },
                 testTag = "btn_rewind_5s",
                 isActiveScrub = activeScrubDirection == ScrubDirection.REWIND,
@@ -680,11 +727,19 @@ fun AccessibleTransportControls(
 
             // Large Center Play / Pause button (minimum 68dp for accessibility)
             Button(
-                onClick = onPlayPause,
+                onClick = {
+                    val wasPlaying = isPlaying
+                    onPlayPause()
+                    AccessibilityHelper.announceForAccessibility(
+                        view,
+                        if (wasPlaying) "Paused playback" else "Started playback"
+                    )
+                },
                 modifier = Modifier
                     .size(68.dp)
                     .testTag("btn_play_pause")
-                    .semantics {
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
                         contentDescription = if (isPlaying) "Pause playback" else "Start playback"
                     },
                 shape = CircleShape,
@@ -704,11 +759,15 @@ fun AccessibleTransportControls(
 
             if (onStop != null) {
                 Button(
-                    onClick = onStop,
+                    onClick = {
+                        onStop()
+                        AccessibilityHelper.announceForAccessibility(view, "Stopped playback")
+                    },
                     modifier = Modifier
                         .size(52.dp)
                         .testTag("btn_transport_stop")
-                        .semantics {
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
                             contentDescription = "Stop playback and reset to beginning"
                         },
                     shape = CircleShape,
@@ -740,6 +799,7 @@ fun AccessibleTransportControls(
                     } else {
                         onNudge(selectedJumpIntervalSec * 1000L)
                     }
+                    AccessibilityHelper.announceForAccessibility(view, "Forwarded $selectedJumpIntervalSec seconds")
                 },
                 testTag = "btn_forward_5s",
                 isActiveScrub = activeScrubDirection == ScrubDirection.FORWARD,
@@ -748,8 +808,11 @@ fun AccessibleTransportControls(
             )
 
             AccessibleIconButton(
-                onClick = onJumpEnd,
-                icon = { Icon(Icons.Default.SkipNext, contentDescription = "Jump to end of track", modifier = Modifier.size(28.dp)) },
+                onClick = {
+                    onJumpEnd()
+                    AccessibilityHelper.announceForAccessibility(view, "Jumped to end of track")
+                },
+                icon = { Icon(Icons.Default.SkipNext, contentDescription = null, modifier = Modifier.size(28.dp)) },
                 contentDescription = "Jump to end of track",
                 testTag = "btn_jump_end"
             )
@@ -763,12 +826,16 @@ fun AccessibleTransportControls(
         ) {
             if (onPlaySelection != null) {
                 OutlinedButton(
-                    onClick = onPlaySelection,
+                    onClick = {
+                        onPlaySelection()
+                        AccessibilityHelper.announceForAccessibility(view, "Playing selection")
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                         .testTag("btn_play_1_selection")
-                        .semantics {
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
                             contentDescription = "Play 1: Play Selection only. Auditions trimmed audio segment between start and end markers."
                         },
                     border = BorderStroke(
@@ -784,12 +851,16 @@ fun AccessibleTransportControls(
 
             if (onPlayContinuous != null) {
                 OutlinedButton(
-                    onClick = onPlayContinuous,
+                    onClick = {
+                        onPlayContinuous()
+                        AccessibilityHelper.announceForAccessibility(view, "Playing continuous")
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                         .testTag("btn_play_2_continuous")
-                        .semantics {
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
                             contentDescription = "Play 2: Play Continuous. Plays audio continuously from current playhead through to the end."
                         },
                     border = BorderStroke(
@@ -805,12 +876,16 @@ fun AccessibleTransportControls(
 
             if (onPlayLoop != null) {
                 OutlinedButton(
-                    onClick = onPlayLoop,
+                    onClick = {
+                        onPlayLoop()
+                        AccessibilityHelper.announceForAccessibility(view, "Loop selection playback started")
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                         .testTag("btn_play_3_loop")
-                        .semantics {
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
                             contentDescription = "Play 3: Loop Selection Playback continuously."
                         },
                     border = BorderStroke(
@@ -826,12 +901,20 @@ fun AccessibleTransportControls(
 
             if (onToggleLoop != null) {
                 OutlinedButton(
-                    onClick = onToggleLoop,
+                    onClick = {
+                        val nextLoop = !isLooping
+                        onToggleLoop()
+                        AccessibilityHelper.announceForAccessibility(
+                            view,
+                            if (nextLoop) "Loop selection turned on" else "Loop selection turned off"
+                        )
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                         .testTag("btn_toggle_loop")
-                        .semantics {
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
                             contentDescription = if (isLooping) "Repeat Loop is On. Tap to turn Off." else "Repeat Loop is Off. Tap to turn On."
                         },
                     colors = ButtonDefaults.outlinedButtonColors(
@@ -937,6 +1020,7 @@ fun NudgeButton(
     jumpActionLabel: String? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    val view = LocalView.current
     val primaryPressAction: () -> Unit = onToggleScrub ?: onClick
 
     val containerColor = when {
@@ -964,19 +1048,23 @@ fun NudgeButton(
             .widthIn(min = 54.dp)
             .clip(RoundedCornerShape(10.dp))
             .testTag(testTag)
-            .semantics {
+            .semantics(mergeDescendants = true) {
                 role = Role.Button
                 contentDescription = spokenDesc
                 if (onToggleScrub != null && jumpActionLabel != null) {
                     customActions = listOf(
                         CustomAccessibilityAction(jumpActionLabel) {
                             onClick()
+                            AccessibilityHelper.announceForAccessibility(view, jumpActionLabel)
                             true
                         }
                     )
                 }
             }
-            .clickable(onClick = primaryPressAction),
+            .clickable {
+                primaryPressAction()
+                AccessibilityHelper.announceForAccessibility(view, spokenDesc)
+            },
         shape = RoundedCornerShape(10.dp),
         border = borderStroke,
         color = containerColor,
@@ -1006,8 +1094,12 @@ fun AccessibleIconButton(
     testTag: String
 ) {
     val isHighContrast = LocalHighContrast.current
+    val view = LocalView.current
     IconButton(
-        onClick = onClick,
+        onClick = {
+            onClick()
+            AccessibilityHelper.announceForAccessibility(view, contentDescription)
+        },
         modifier = Modifier
             .size(48.dp)
             .testTag(testTag)
@@ -1016,7 +1108,10 @@ fun AccessibleIconButton(
                 if (isHighContrast) Color.White else Color.Transparent,
                 CircleShape
             )
-            .semantics { this.contentDescription = contentDescription }
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                this.contentDescription = contentDescription
+            }
     ) {
         icon()
     }
@@ -1038,6 +1133,7 @@ fun AccessibleTrimSection(
     currentPositionMsProvider: (() -> Long)? = null
 ) {
     val isHighContrast = LocalHighContrast.current
+    val view = LocalView.current
     val trimmedDuration = (trimEndMs - trimStartMs).coerceAtLeast(0L)
     val latestCurrentMs by rememberUpdatedState(currentMs)
     val latestPosProvider by rememberUpdatedState(currentPositionMsProvider)
@@ -1103,12 +1199,20 @@ fun AccessibleTrimSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { latestOnSetTrimStart(latestPosProvider?.invoke() ?: latestCurrentMs) },
+                    onClick = {
+                        val pos = latestPosProvider?.invoke() ?: latestCurrentMs
+                        latestOnSetTrimStart(pos)
+                        AccessibilityHelper.announceForAccessibility(
+                            view,
+                            "Trim start set to ${AccessibilityHelper.formatTimeSpoken(pos)}"
+                        )
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                         .testTag("btn_set_trim_start")
-                        .semantics {
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
                             contentDescription = "Set Trim Start Marker to playhead. Currently ${AccessibilityHelper.formatTimeSpoken(trimStartMs)}"
                         },
                     shape = RoundedCornerShape(10.dp),
@@ -1135,12 +1239,20 @@ fun AccessibleTrimSection(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Button(
-                    onClick = { latestOnSetTrimEnd(latestPosProvider?.invoke() ?: latestCurrentMs) },
+                    onClick = {
+                        val pos = latestPosProvider?.invoke() ?: latestCurrentMs
+                        latestOnSetTrimEnd(pos)
+                        AccessibilityHelper.announceForAccessibility(
+                            view,
+                            "Trim end set to ${AccessibilityHelper.formatTimeSpoken(pos)}"
+                        )
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .height(48.dp)
                         .testTag("btn_set_trim_end")
-                        .semantics {
+                        .semantics(mergeDescendants = true) {
+                            role = Role.Button
                             contentDescription = "Set Trim End Marker to playhead. Currently ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}"
                         },
                     shape = RoundedCornerShape(10.dp),
@@ -1162,12 +1274,19 @@ fun AccessibleTrimSection(
 
             // Preview Trimmed Section Button
             OutlinedButton(
-                onClick = onPreviewTrim,
+                onClick = {
+                    onPreviewTrim()
+                    AccessibilityHelper.announceForAccessibility(
+                        view,
+                        "Playing selection from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}"
+                    )
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(48.dp)
                     .testTag("btn_preview_trim")
-                    .semantics {
+                    .semantics(mergeDescendants = true) {
+                        role = Role.Button
                         contentDescription = "Play Selection. Preview only the trimmed range from ${AccessibilityHelper.formatTimeSpoken(trimStartMs)} to ${AccessibilityHelper.formatTimeSpoken(trimEndMs)}"
                     },
                 shape = RoundedCornerShape(10.dp),

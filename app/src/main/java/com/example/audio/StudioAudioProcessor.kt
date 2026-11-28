@@ -992,4 +992,263 @@ object StudioAudioProcessor {
         }
         return output
     }
+
+    /**
+     * Zero-Crossing Snap: finds the sample index closest to targetIndex where the waveform crosses 0
+     * (or hits minimum magnitude) within +/- searchWindowSamples to eliminate boundary clicks.
+     */
+    fun findNearestZeroCrossingIndex(
+        samples: ShortArray,
+        targetIndex: Int,
+        searchWindowSamples: Int = 2048
+    ): Int {
+        if (samples.size < 2) return targetIndex.coerceIn(0, (samples.size - 1).coerceAtLeast(0))
+        val clamped = targetIndex.coerceIn(0, samples.lastIndex)
+        val minIdx = (clamped - searchWindowSamples).coerceAtLeast(0)
+        val maxIdx = (clamped + searchWindowSamples).coerceAtMost(samples.lastIndex - 1)
+
+        var bestCrossingIdx = -1
+        var bestDist = Int.MAX_VALUE
+        for (i in minIdx..maxIdx) {
+            val a = samples[i].toInt()
+            val b = samples[i + 1].toInt()
+            if ((a <= 0 && b >= 0) || (a >= 0 && b <= 0)) {
+                val chosen = if (abs(a) <= abs(b)) i else i + 1
+                val dist = abs(chosen - clamped)
+                if (dist < bestDist) {
+                    bestDist = dist
+                    bestCrossingIdx = chosen
+                }
+            }
+        }
+        if (bestCrossingIdx >= 0) return bestCrossingIdx
+
+        var minMagIdx = clamped
+        var minMag = Int.MAX_VALUE
+        for (i in minIdx..maxIdx + 1) {
+            val mag = abs(samples[i].toInt())
+            if (mag < minMag) {
+                minMag = mag
+                minMagIdx = i
+            }
+        }
+        return minMagIdx
+    }
+
+    /**
+     * Snaps a [startMs, endMs] selection range to nearest zero crossings.
+     */
+    fun snapRangeToZeroCrossings(
+        samples: ShortArray,
+        startMs: Long,
+        endMs: Long,
+        sampleRate: Int = SAMPLE_RATE,
+        channels: Int = 1
+    ): Pair<Long, Long> {
+        if (samples.isEmpty() || sampleRate <= 0) return startMs to endMs
+        val ch = channels.coerceAtLeast(1)
+        val frameRate = sampleRate * ch
+        val windowSamples = (frameRate * 0.045f).toInt().coerceIn(64, 4096)
+        val startIdx = ((startMs.toDouble() / 1000.0) * frameRate).toInt().coerceIn(0, samples.lastIndex)
+        val endIdx = ((endMs.toDouble() / 1000.0) * frameRate).toInt().coerceIn(0, samples.lastIndex)
+
+        val snappedStartIdx = findNearestZeroCrossingIndex(samples, startIdx, windowSamples)
+        val snappedEndIdx = findNearestZeroCrossingIndex(samples, endIdx, windowSamples)
+
+        val newStartMs = kotlin.math.round((snappedStartIdx.toDouble() / frameRate.toDouble()) * 1000.0).toLong().coerceAtLeast(0L)
+        var newEndMs = kotlin.math.round((snappedEndIdx.toDouble() / frameRate.toDouble()) * 1000.0).toLong()
+        val totalMs = ((samples.size.toDouble() / frameRate.toDouble()) * 1000.0).toLong()
+        if (newEndMs <= newStartMs + 10L) {
+            newEndMs = (newStartMs + 100L).coerceAtMost(totalMs)
+        }
+        return newStartMs to newEndMs.coerceIn(newStartMs, totalMs.coerceAtLeast(newStartMs))
+    }
+
+    /**
+     * Auto-Trim Silence at Start & End: removes dead air at track boundaries while keeping small padding.
+     */
+    fun trimLeadingTrailingSilence(
+        samples: ShortArray,
+        thresholdDb: Float = -42f,
+        padMs: Long = 50L,
+        sampleRate: Int = SAMPLE_RATE
+    ): ShortArray {
+        if (samples.isEmpty()) return samples
+        val threshAmp = (32767.0 * 10.0.pow((thresholdDb / 20.0).toDouble())).toInt().coerceIn(20, 16000)
+        var firstActive = -1
+        var lastActive = -1
+        for (i in samples.indices) {
+            if (abs(samples[i].toInt()) >= threshAmp) {
+                if (firstActive < 0) firstActive = i
+                lastActive = i
+            }
+        }
+        if (firstActive < 0 || lastActive <= firstActive) return samples
+        val padSamples = ((padMs.toDouble() / 1000.0) * sampleRate).toInt().coerceAtLeast(0)
+        val start = (firstActive - padSamples).coerceAtLeast(0)
+        val end = (lastActive + padSamples + 1).coerceAtMost(samples.size)
+        return samples.copyOfRange(start, end)
+    }
+
+    /**
+     * Truncate Silence: trims boundary silence and tightens internal silent pauses longer than minSilenceMs
+     * down to targetGapMs with short crossfades to keep speech crisp and click-free.
+     */
+    fun truncateSilence(
+        samples: ShortArray,
+        thresholdDb: Float = -40f,
+        minSilenceMs: Long = 450L,
+        targetGapMs: Long = 160L,
+        sampleRate: Int = SAMPLE_RATE
+    ): ShortArray {
+        val trimmed = trimLeadingTrailingSilence(samples, thresholdDb, 40L, sampleRate)
+        if (trimmed.isEmpty()) return trimmed
+
+        val threshAmp = (32767.0 * 10.0.pow((thresholdDb / 20.0).toDouble())).toInt().coerceIn(20, 16000)
+        val minSilentSamples = ((minSilenceMs.toDouble() / 1000.0) * sampleRate).toInt().coerceAtLeast(64)
+        val targetGapSamples = ((targetGapMs.toDouble() / 1000.0) * sampleRate).toInt().coerceIn(16, minSilentSamples)
+        val fadeSamples = ((0.006 * sampleRate).toInt()).coerceIn(4, targetGapSamples / 2)
+
+        val out = ArrayList<Short>(trimmed.size)
+        var i = 0
+        while (i < trimmed.size) {
+            if (abs(trimmed[i].toInt()) < threshAmp) {
+                val silentStart = i
+                while (i < trimmed.size && abs(trimmed[i].toInt()) < threshAmp) {
+                    i++
+                }
+                val silentLen = i - silentStart
+                if (silentLen > minSilentSamples) {
+                    val half = targetGapSamples / 2
+                    for (k in 0 until half) {
+                        val s = trimmed[silentStart + k]
+                        val atten = if (k >= half - fadeSamples) {
+                            ((half - k).toFloat() / fadeSamples.toFloat()).coerceIn(0f, 1f)
+                        } else 1f
+                        out.add((s * atten).toInt().toShort())
+                    }
+                    val tailStart = (i - (targetGapSamples - half)).coerceAtLeast(silentStart)
+                    for (k in tailStart until i) {
+                        val pos = k - tailStart
+                        val s = trimmed[k]
+                        val ramp = if (pos < fadeSamples) {
+                            (pos.toFloat() / fadeSamples.toFloat()).coerceIn(0f, 1f)
+                        } else 1f
+                        out.add((s * ramp).toInt().toShort())
+                    }
+                } else {
+                    for (k in silentStart until i) out.add(trimmed[k])
+                }
+            } else {
+                out.add(trimmed[i])
+                i++
+            }
+        }
+        return out.toShortArray()
+    }
+
+    /**
+     * Crossfade Join: smoothly merges two PCM buffers using an equal-power cosine crossfade over crossfadeMs.
+     */
+    fun crossfadeJoin(
+        first: ShortArray,
+        second: ShortArray,
+        crossfadeMs: Long = 40L,
+        sampleRate: Int = SAMPLE_RATE
+    ): ShortArray {
+        if (first.isEmpty()) return second.copyOf()
+        if (second.isEmpty()) return first.copyOf()
+        val maxFade = min(first.size, second.size) / 2
+        val fadeSamples = (((crossfadeMs.toDouble() / 1000.0) * sampleRate).toInt()).coerceIn(1, maxFade.coerceAtLeast(1))
+        if (fadeSamples <= 1 || first.size < fadeSamples || second.size < fadeSamples) {
+            return first + second
+        }
+        val totalLen = first.size + second.size - fadeSamples
+        val out = ShortArray(totalLen)
+        val preLen = first.size - fadeSamples
+        System.arraycopy(first, 0, out, 0, preLen)
+        for (k in 0 until fadeSamples) {
+            val t = k.toDouble() / fadeSamples.toDouble()
+            val fadeOutGain = kotlin.math.cos(t * (PI / 2.0)).toFloat()
+            val fadeInGain = sin(t * (PI / 2.0)).toFloat()
+            val mixed = (first[preLen + k] * fadeOutGain + second[k] * fadeInGain).toInt()
+            out[preLen + k] = mixed.coerceIn(-32767, 32767).toShort()
+        }
+        System.arraycopy(second, fadeSamples, out, first.size, second.size - fadeSamples)
+        return out
+    }
+
+    /**
+     * Computes ITU-R BS.1770 style K-weighted gated Integrated Loudness in LUFS.
+     */
+    fun computeIntegratedLufs(samples: ShortArray, sampleRate: Int = SAMPLE_RATE): Float {
+        if (samples.isEmpty()) return -70f
+        // Stage 1 pre-filter shelf (+4 dB high-frequency weighting approximation via 1-pole high shelf)
+        // Stage 2 RLB high-pass (~38 Hz)
+        val filtered = DoubleArray(samples.size)
+        val hpRc = 1.0 / (2.0 * PI * 38.0)
+        val dt = 1.0 / sampleRate.coerceAtLeast(8000).toDouble()
+        val hpAlpha = hpRc / (hpRc + dt)
+        val shelfAlpha = (1.0 / (2.0 * PI * 1500.0)) / ((1.0 / (2.0 * PI * 1500.0)) + dt)
+        var prevIn = 0.0
+        var prevHp = 0.0
+        var prevLp = 0.0
+        for (i in samples.indices) {
+            val x = samples[i].toDouble() / 32768.0
+            val hp = hpAlpha * (prevHp + x - prevIn)
+            prevIn = x
+            prevHp = hp
+            prevLp += (1.0 - shelfAlpha) * (hp - prevLp)
+            val high = hp - prevLp
+            filtered[i] = hp + 0.585 * high // +4 dB high-shelf boost (~1.585x highs)
+        }
+
+        val blockSize = (sampleRate * 0.4).toInt().coerceIn(64, samples.size)
+        val hop = (blockSize / 4).coerceAtLeast(32)
+        val blockLoudnesses = ArrayList<Double>()
+        var idx = 0
+        while (idx + blockSize <= filtered.size || (idx == 0 && filtered.isNotEmpty())) {
+            val end = min(idx + blockSize, filtered.size)
+            var sumSq = 0.0
+            for (k in idx until end) {
+                val v = filtered[k]
+                sumSq += v * v
+            }
+            val meanSq = sumSq / (end - idx).coerceAtLeast(1)
+            if (meanSq > 1e-12) {
+                val lufs = -0.691 + 10.0 * kotlin.math.log10(meanSq)
+                if (lufs > -70.0) blockLoudnesses.add(meanSq)
+            }
+            if (end >= filtered.size) break
+            idx += hop
+        }
+        if (blockLoudnesses.isEmpty()) return -70f
+
+        val absMean = blockLoudnesses.average()
+        val absLufs = -0.691 + 10.0 * kotlin.math.log10(absMean.coerceAtLeast(1e-12))
+        val relThresholdPower = 10.0.pow((absLufs - 10.0 + 0.691) / 10.0)
+        val gated = blockLoudnesses.filter { it >= relThresholdPower }
+        val finalMean = (if (gated.isNotEmpty()) gated else blockLoudnesses).average()
+        return (-0.691 + 10.0 * kotlin.math.log10(finalMean.coerceAtLeast(1e-12))).toFloat()
+    }
+
+    /**
+     * Loudness Normalization (LUFS): scales track cleanly to target integrated LUFS (default -16.0 LUFS)
+     * followed by a -1.0 dB true-peak limiter to prevent clipping.
+     */
+    fun normalizeLufs(
+        samples: ShortArray,
+        targetLufs: Float = -16.0f,
+        sampleRate: Int = SAMPLE_RATE
+    ): ShortArray {
+        if (samples.isEmpty()) return samples
+        val currentLufs = computeIntegratedLufs(samples, sampleRate)
+        if (currentLufs <= -68f) return samples
+        val deltaDb = (targetLufs - currentLufs).coerceIn(-24f, 24f)
+        val gain = 10.0.pow((deltaDb / 20.0).toDouble()).toFloat()
+        val scaled = ShortArray(samples.size) { i ->
+            (samples[i] * gain).toInt().coerceIn(-32767, 32767).toShort()
+        }
+        return applyTruePeakLimiter(scaled, -1.0f)
+    }
 }

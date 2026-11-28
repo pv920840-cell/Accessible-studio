@@ -58,13 +58,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.ui.theme.LocalHighContrast
+import com.example.video.VideoStudioFeatureButton
+import com.example.video.VideoToolSection
 
 @Composable
 fun AudioEditorScreen(
@@ -321,7 +325,8 @@ fun VideoEditorScreen(
     onOpenVideoTool: (VideoFeatureTool) -> Unit,
     onSaveProject: () -> Unit,
     onExportVideo: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenVideoFeature: (VideoStudioFeatureButton) -> Unit = { onOpenVideoTool(it.toParentTool()) }
 ) {
     val isHighContrast = LocalHighContrast.current
 
@@ -416,21 +421,22 @@ fun VideoEditorScreen(
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = if (activeVideoProject == null) "Create or Pick Video Project" else "Open or Create Another Video Project",
+                            text = if (activeVideoProject == null) "Create or Pick Video Project" else "Switch or Create Another Video Project",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Black
                         )
                     }
                 }
 
-                items(accessibleVideoTools(), key = { it.name }) { tool ->
+                items(VideoStudioFeatureButton.entries, key = { it.name }) { feat ->
                     CategoryFeatureButton(
-                        title = tool.title,
-                        subtitle = tool.subtitle,
-                        icon = videoCategoryIcon(tool),
+                        title = feat.title,
+                        subtitle = feat.section.spokenSummary,
+                        icon = videoFeatureIcon(feat),
                         isHighContrast = isHighContrast,
-                        tag = "btn_video_editor_${tool.name.lowercase()}",
-                        onClick = { onOpenVideoTool(tool) }
+                        tag = "btn_video_editor_feature_${feat.tag}",
+                        spokenDescription = "${feat.title}. ${feat.section.title} video tool. Double tap to select.",
+                        onClick = { onOpenVideoFeature(feat) }
                     )
                 }
 
@@ -537,21 +543,23 @@ fun VideoToolSourcePromptDialog(
     selectedTool: VideoFeatureTool,
     onPickVideoFile: () -> Unit,
     onStartDemoVideo: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    selectedFeatureTitle: String? = null
 ) {
+    val label = selectedFeatureTitle ?: selectedTool.title
     AlertDialog(
         onDismissRequest = onDismiss,
         modifier = Modifier.testTag("dialog_video_source_prompt"),
         title = {
             Text(
-                text = "Open Video for ${selectedTool.title}",
+                text = "Select Video for $label",
                 fontWeight = FontWeight.Black
             )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Pick a video file from your device or start with a sample demo video clip to open ${selectedTool.title}.",
+                    text = "Pick a video file from your device or start with a sample demo video clip for $label.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Button(
@@ -683,6 +691,7 @@ private fun CategoryFeatureButton(
     icon: ImageVector,
     isHighContrast: Boolean,
     tag: String,
+    spokenDescription: String = "$title. $subtitle. Tap to select.",
     onClick: () -> Unit
 ) {
     Surface(
@@ -692,7 +701,8 @@ private fun CategoryFeatureButton(
             .heightIn(min = 64.dp)
             .testTag(tag)
             .semantics(mergeDescendants = true) {
-                contentDescription = "$title. $subtitle. Tap to open."
+                role = Role.Button
+                contentDescription = spokenDescription
             },
         shape = RoundedCornerShape(16.dp),
         color = if (isHighContrast) Color.Black else MaterialTheme.colorScheme.surface,
@@ -749,11 +759,10 @@ private fun CategoryFeatureButton(
     }
 }
 
-private fun videoCategoryIcon(tool: VideoFeatureTool): ImageVector = when (tool) {
-    VideoFeatureTool.TRIM_TIMELINE -> Icons.Default.ContentCut
-    VideoFeatureTool.AUDIO_MUSIC -> Icons.Default.Mic
-    VideoFeatureTool.OVERLAYS_VFX -> Icons.Default.AutoAwesome
-    VideoFeatureTool.TRANSFORM_SPEED -> Icons.Default.Speed
-    VideoFeatureTool.CONVERT_TOOLS -> Icons.Default.Transform
-    VideoFeatureTool.FULL_VIDEO_STUDIO -> Icons.Default.Movie
+private fun videoFeatureIcon(feat: VideoStudioFeatureButton): ImageVector = when (feat.section) {
+    VideoToolSection.TIMELINE -> Icons.Default.ContentCut
+    VideoToolSection.AUDIO_MUSIC -> Icons.Default.Mic
+    VideoToolSection.OVERLAYS -> Icons.Default.AutoAwesome
+    VideoToolSection.TRANSFORM -> Icons.Default.Speed
+    VideoToolSection.TOOLS -> Icons.Default.Transform
 }

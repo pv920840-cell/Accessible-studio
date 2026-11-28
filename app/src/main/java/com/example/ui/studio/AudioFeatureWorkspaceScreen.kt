@@ -1548,6 +1548,9 @@ fun AudioFeatureWorkspaceScreen(
                     var focusedEffectPanel by remember(session.projectId, tool) {
                         mutableStateOf<String?>(null)
                     }
+                    var fxProCategoryIndex by remember(session.projectId, tool) {
+                        mutableIntStateOf(0)
+                    }
 
                     // 1. Individual Quick Effects & Cleaning Buttons
                     Card(
@@ -1703,7 +1706,10 @@ fun AudioFeatureWorkspaceScreen(
                                     "distortion" to "Overdrive & Distortion",
                                     "eq7band" to "7-Band Graphic EQ",
                                     "pitch_polarity" to "Pitch & Polarity",
-                                    "pro_suite" to "Time Stretch, Pitch & Pro DSP"
+                                    "pro_suite" to "Time Stretch, Pitch & Pro DSP",
+                                    "pro_channels" to "Channels, Pan & Stereo",
+                                    "pro_filter" to "Parametric EQ & Filters",
+                                    "pro_volume" to "Volume Shaping & Loudness"
                                 ).forEach { (key, title) ->
                                     val selected = focusedEffectPanel == key
                                     val tag = "btn_fx_tab_${key ?: "all"}"
@@ -1714,7 +1720,15 @@ fun AudioFeatureWorkspaceScreen(
                                         ) { Text(title, fontWeight = FontWeight.Bold) }
                                     } else {
                                         OutlinedButton(
-                                            onClick = { focusedEffectPanel = key },
+                                            onClick = {
+                                                focusedEffectPanel = key
+                                                when (key) {
+                                                    "pro_suite" -> fxProCategoryIndex = 0
+                                                    "pro_channels" -> fxProCategoryIndex = 1
+                                                    "pro_filter" -> fxProCategoryIndex = 2
+                                                    "pro_volume" -> fxProCategoryIndex = 3
+                                                }
+                                            },
                                             modifier = Modifier.heightIn(min = 48.dp).testTag(tag)
                                         ) { Text(title, fontWeight = FontWeight.SemiBold) }
                                     }
@@ -2276,8 +2290,7 @@ fun AudioFeatureWorkspaceScreen(
                         }
                     )
 
-                    if (focusedEffectPanel == "pro_suite") {
-                        var fxProCategoryIndex by remember(session.projectId, tool) { mutableIntStateOf(0) }
+                    if (focusedEffectPanel == null || focusedEffectPanel in setOf("pro_suite", "pro_channels", "pro_filter", "pro_volume")) {
                         AccessibleProSuiteSection(
                             selectedCategoryIndex = fxProCategoryIndex,
                             onSelectCategoryIndex = { idx ->
@@ -3099,10 +3112,12 @@ fun AudioFeatureWorkspaceScreen(
                     }
                 }
 
-                AudioFeatureTool.AUDIO_GENERATORS_TOOLS -> {
-                    var toolsProCategoryIndex by remember(session.projectId, tool) { mutableIntStateOf(0) }
+                AudioFeatureTool.TONE_GENERATOR -> {
+                    var toneType by remember(session.projectId, tool) { mutableStateOf("Sine") }
+                    var frequencyHz by remember(session.projectId, tool) { mutableFloatStateOf(440f) }
+                    var durationSec by remember(session.projectId, tool) { mutableIntStateOf(5) }
                     Card(
-                        modifier = Modifier.fillMaxWidth().testTag("card_workspace_audio_tools"),
+                        modifier = Modifier.fillMaxWidth().testTag("card_workspace_tone_generator"),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                     ) {
                         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -3112,50 +3127,181 @@ fun AudioFeatureWorkspaceScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    "Tone Generator, Silence, Cues & Stats",
+                                    "Tone & Noise Generator",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Black,
                                     modifier = Modifier.weight(1f)
                                 )
                                 FeatureGuideButton(
-                                    featureTitle = "Tone, Silence, Cues & Stats",
-                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_CUE_POINTS },
-                                    testTag = "btn_feature_guide_audio_tools"
+                                    featureTitle = "Tone & Noise Generator",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_TONE_GENERATOR },
+                                    testTag = "btn_feature_guide_tone_generator"
                                 )
                             }
 
+                            Text("Waveform Type:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf("Sine", "Square", "Noise").forEach { type ->
+                                    FilterChip(
+                                        selected = toneType == type,
+                                        onClick = { toneType = type },
+                                        label = { Text(type, fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.testTag("chip_tone_type_${type.lowercase()}")
+                                    )
+                                }
+                            }
+
+                            if (toneType != "Noise") {
+                                AccessibleEffectSlider(
+                                    title = "Frequency",
+                                    value = frequencyHz,
+                                    onValueChange = { frequencyHz = it },
+                                    valueRange = 100f..2000f,
+                                    step = 20f,
+                                    displayValue = "%.0f Hz".format(frequencyHz),
+                                    spokenDescription = "%.0f Hertz frequency".format(frequencyHz),
+                                    testTag = "slider_workspace_tone_freq"
+                                )
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    listOf(220f, 440f, 880f, 1000f).forEach { freq ->
+                                        OutlinedButton(
+                                            onClick = { frequencyHz = freq },
+                                            modifier = Modifier.heightIn(min = 48.dp)
+                                        ) {
+                                            Text("%.0f Hz".format(freq), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+
+                            AccessibleEffectSlider(
+                                title = "Duration",
+                                value = durationSec.toFloat(),
+                                onValueChange = { durationSec = it.toInt().coerceIn(1, 15) },
+                                valueRange = 1f..15f,
+                                step = 1f,
+                                displayValue = "${durationSec}s",
+                                spokenDescription = "$durationSec seconds duration",
+                                testTag = "slider_workspace_tone_duration"
+                            )
+
                             Button(
-                                onClick = { showToneGeneratorDialog = true },
+                                onClick = {
+                                    pushUndoAndApply("Synthesized $toneType (${durationSec}s)", allowEmptyInput = true) { _ ->
+                                        StudioAudioProcessor.generateTone(toneType, frequencyHz, durationSec)
+                                    }
+                                    workingTitle = "Generated: $toneType (${durationSec}s)"
+                                    workingBaseName = null
+                                },
                                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_tone_generator")
                             ) {
                                 Icon(Icons.Default.Waves, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Synthesize Tone / Noise", fontWeight = FontWeight.Bold)
+                                Text("Synthesize Tone / Noise ($toneType, ${durationSec}s)", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                AudioFeatureTool.INSERT_SILENCE -> {
+                    var selectedSilenceSeconds by remember(session.projectId, tool) { mutableIntStateOf(2) }
+                    Card(
+                        modifier = Modifier.fillMaxWidth().testTag("card_workspace_insert_silence"),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Insert Digital Silence",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeatureGuideButton(
+                                    featureTitle = "Insert Silence",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_INSERT_SILENCE },
+                                    testTag = "btn_feature_guide_insert_silence"
+                                )
                             }
 
-                            OutlinedButton(
-                                onClick = { showInsertSilenceDialog = true },
+                            Text(
+                                text = "Insert clean silence at current playhead: ${AccessibilityHelper.formatTimeMMSS(currentPositionMs)}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                listOf(1, 2, 3, 5, 10).forEach { sec ->
+                                    FilterChip(
+                                        selected = selectedSilenceSeconds == sec,
+                                        onClick = { selectedSilenceSeconds = sec },
+                                        label = { Text("${sec}s", fontWeight = FontWeight.Bold) },
+                                        modifier = Modifier.testTag("chip_silence_sec_$sec")
+                                    )
+                                }
+                            }
+
+                            AccessibleEffectSlider(
+                                title = "Silence Duration",
+                                value = selectedSilenceSeconds.toFloat(),
+                                onValueChange = { selectedSilenceSeconds = it.toInt().coerceIn(1, 30) },
+                                valueRange = 1f..30f,
+                                step = 1f,
+                                displayValue = "${selectedSilenceSeconds}s",
+                                spokenDescription = "$selectedSilenceSeconds seconds of silence",
+                                testTag = "slider_workspace_silence_duration"
+                            )
+
+                            Button(
+                                onClick = {
+                                    val silenceInsertPosMs = playerManager.currentPositionMs.value
+                                    pushUndoAndApply("Inserted $selectedSilenceSeconds seconds of silence", allowEmptyInput = true) { pcm ->
+                                        StudioAudioProcessor.insertSilence(pcm, silenceInsertPosMs, selectedSilenceSeconds)
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_insert_silence")
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
-                                Text("Insert Digital Silence at Playhead", fontWeight = FontWeight.Bold)
+                                Text("Insert Digital Silence at Playhead (${selectedSilenceSeconds}s)", fontWeight = FontWeight.Bold)
                             }
+                        }
+                    }
+                }
 
-                            OutlinedButton(
-                                onClick = { showCuePointsDialog = true },
-                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_cue_points")
+                AudioFeatureTool.CUE_POINTS -> {
+                    Card(
+                        modifier = Modifier.fillMaxWidth().testTag("card_workspace_cue_points"),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.BookmarkAdd, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Cue Points & Bookmarks (${cuePoints.size})", fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Cue Points & Bookmarks (${cuePoints.size})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeatureGuideButton(
+                                    featureTitle = "Cue Points & Bookmarks",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_CUE_POINTS },
+                                    testTag = "btn_feature_guide_cue_points_workspace"
+                                )
                             }
 
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                OutlinedButton(
+                                Button(
                                     onClick = {
                                         val posMs = playerManager.currentPositionMs.value
                                         val cueNum = cuePoints.size + 1
@@ -3169,7 +3315,11 @@ fun AudioFeatureWorkspaceScreen(
                                         AccessibilityHelper.announceForAccessibility(context, "Dropped cue point $cueNum")
                                     },
                                     modifier = Modifier.height(48.dp).testTag("btn_tools_drop_cue")
-                                ) { Text("Drop Cue Here", fontWeight = FontWeight.Bold) }
+                                ) {
+                                    Icon(Icons.Default.BookmarkAdd, contentDescription = null)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Drop Cue Here", fontWeight = FontWeight.Bold)
+                                }
                                 OutlinedButton(
                                     onClick = {
                                         val posMs = playerManager.currentPositionMs.value
@@ -3193,12 +3343,112 @@ fun AudioFeatureWorkspaceScreen(
                             }
 
                             OutlinedButton(
+                                onClick = { showCuePointsDialog = true },
+                                modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_cue_points")
+                            ) {
+                                Icon(Icons.Default.BookmarkAdd, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Manage Cue Points & Bookmarks (${cuePoints.size})", fontWeight = FontWeight.Bold)
+                            }
+
+                            if (cuePoints.isEmpty()) {
+                                Text(
+                                    text = "No cue markers dropped yet. Play or scrub and tap Drop Cue Here.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                cuePoints.forEach { cue ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = cue.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedButton(
+                                            onClick = {
+                                                playerManager.seekTo(cue.positionMs)
+                                                AccessibilityHelper.announceForAccessibility(context, "Seeked to ${cue.name}")
+                                            },
+                                            modifier = Modifier.heightIn(min = 48.dp)
+                                        ) { Text("Seek") }
+                                        IconButton(
+                                            onClick = {
+                                                cuePoints = cuePoints.filter { it.id != cue.id }
+                                                localModified = true
+                                                AccessibilityHelper.announceForAccessibility(context, "Deleted ${cue.name}")
+                                            },
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .semantics { contentDescription = "Delete ${cue.name}" }
+                                        ) {
+                                            Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                AudioFeatureTool.AUDIO_STATS -> {
+                    val liveStats = remember(workingPcm) {
+                        if (workingPcm.isNotEmpty()) StudioAudioProcessor.computeStatistics(workingPcm) else null
+                    }
+                    Card(
+                        modifier = Modifier.fillMaxWidth().testTag("card_workspace_audio_stats"),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    "Peak & RMS Statistics",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                FeatureGuideButton(
+                                    featureTitle = "Peak & RMS Stats",
+                                    onClick = { activeWorkspaceGuideTopic = FeatureGuideTopic.AUDIO_STATS_INSPECTOR },
+                                    testTag = "btn_feature_guide_audio_stats"
+                                )
+                            }
+
+                            if (liveStats != null) {
+                                Text("Peak Level: %.1f dBFS (%d / 32767)".format(liveStats.peakDb, liveStats.peakValue), fontWeight = FontWeight.Bold)
+                                Text("RMS Power: %.1f dBFS".format(liveStats.rmsDb), fontWeight = FontWeight.SemiBold)
+                                Text("Total Duration: %.2f seconds (%d samples)".format(liveStats.durationSeconds, liveStats.sampleCount))
+                                Text("Sample Rate: $sampleRate Hz (16-bit Mono)")
+                                Text(
+                                    text = if (liveStats.isClipped) "WARNING: Peak Clipped (> 0 dBFS)" else "Headroom: Safe (No Clipping)",
+                                    color = if (liveStats.isClipped) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Text("Track is empty. Record, load audio, or generate a tone to inspect Peak and RMS statistics.")
+                            }
+
+                            Button(
                                 onClick = {
                                     if (workingPcm.isEmpty()) {
                                         Toast.makeText(context, "Track is empty.", Toast.LENGTH_SHORT).show()
                                     } else {
-                                        currentAudioStats = StudioAudioProcessor.computeStatistics(workingPcm)
+                                        val computed = StudioAudioProcessor.computeStatistics(workingPcm)
+                                        currentAudioStats = computed
                                         showStatsDialog = true
+                                        AccessibilityHelper.announceForAccessibility(
+                                            view,
+                                            "Peak %.1f decibels, RMS %.1f decibels, ${if (computed.isClipped) "clipping detected" else "headroom safe"}".format(computed.peakDb, computed.rmsDb)
+                                        )
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth().height(48.dp).testTag("btn_tools_audio_stats")
@@ -3209,30 +3459,6 @@ fun AudioFeatureWorkspaceScreen(
                             }
                         }
                     }
-
-                    AccessibleProSuiteSection(
-                        selectedCategoryIndex = toolsProCategoryIndex,
-                        onSelectCategoryIndex = { idx ->
-                            toolsProCategoryIndex = idx
-                            if (hapticsEnabled) AccessibilityHelper.vibrate(context, VibrationType.TICK)
-                        },
-                        hasClipboard = clipboardPcm != null && clipboardPcm!!.isNotEmpty(),
-                        trimStartMs = trimStartMs,
-                        trimEndMs = trimEndMs,
-                        currentPositionMs = playerManager.currentPositionMs.value,
-                        currentSampleRate = sampleRate,
-                        currentPlaybackRate = livePlaybackRate,
-                        clipboardPcm = clipboardPcm,
-                        onApplyPcmTransform = { msg, fn ->
-                            pushUndoAndApply(msg, transform = fn)
-                        },
-                        onSetSampleRate = { sr -> playerManager.setWorkingSampleRate(sr) },
-                        onSetPlaybackRate = { rate -> playerManager.setPlaybackRate(rate) },
-                        onOpenEchoReverbTab = {},
-                        onOpenNoiseTab = {},
-                        onOpenEqTab = {},
-                        onOpenGainDialog = { showGainDialog = true }
-                    )
                 }
 
                 AudioFeatureTool.FULL_DAW_STUDIO -> Unit

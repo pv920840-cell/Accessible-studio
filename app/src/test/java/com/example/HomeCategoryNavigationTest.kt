@@ -87,8 +87,16 @@ class HomeCategoryNavigationTest {
         composeRule.onNodeWithTag("btn_audio_editor_music_rebalance").assertExists()
         composeRule.onNodeWithTag("audio_editor_tools_list").performScrollToNode(hasTestTag("btn_audio_editor_record"))
         composeRule.onNodeWithTag("btn_audio_editor_record").assertExists()
-        composeRule.onNodeWithTag("audio_editor_tools_list").performScrollToNode(hasTestTag("btn_audio_editor_tools"))
-        composeRule.onNodeWithTag("btn_audio_editor_tools").assertExists()
+        composeRule.onNodeWithTag("audio_editor_tools_list").performScrollToNode(hasTestTag("btn_audio_editor_tone_generator"))
+        composeRule.onNodeWithTag("btn_audio_editor_tone_generator").assertExists()
+        composeRule.onNodeWithTag("audio_editor_tools_list").performScrollToNode(hasTestTag("btn_audio_editor_insert_silence"))
+        composeRule.onNodeWithTag("btn_audio_editor_insert_silence").assertExists()
+        composeRule.onNodeWithTag("audio_editor_tools_list").performScrollToNode(hasTestTag("btn_audio_editor_cue_points"))
+        composeRule.onNodeWithTag("btn_audio_editor_cue_points").assertExists()
+        composeRule.onNodeWithTag("audio_editor_tools_list").performScrollToNode(hasTestTag("btn_audio_editor_stats"))
+        composeRule.onNodeWithTag("btn_audio_editor_stats").assertExists()
+        composeRule.onNodeWithTag("btn_audio_editor_tools").assertDoesNotExist()
+        assertTrue(composeRule.onAllNodesWithText("Tone, Silence, Cues & Stats", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
 
         // Verify negative constraints: NO heavy desktop DAW, NO Full Video Workspace, NO Save fast/exact, NO Format/Size/Length file info
         assertTrue(composeRule.onAllNodesWithText("Full DAW Timeline", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
@@ -171,8 +179,16 @@ class HomeCategoryNavigationTest {
         composeRule.onNodeWithTag("hub_feature_audio_batch").assertExists()
         composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag("hub_feature_audio_voice_over"))
         composeRule.onNodeWithTag("hub_feature_audio_voice_over").assertExists()
-        composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag("hub_feature_audio_tools"))
-        composeRule.onNodeWithTag("hub_feature_audio_tools").assertExists()
+        composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag("hub_feature_audio_tone_generator"))
+        composeRule.onNodeWithTag("hub_feature_audio_tone_generator").assertExists()
+        composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag("hub_feature_audio_insert_silence"))
+        composeRule.onNodeWithTag("hub_feature_audio_insert_silence").assertExists()
+        composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag("hub_feature_audio_cue_points"))
+        composeRule.onNodeWithTag("hub_feature_audio_cue_points").assertExists()
+        composeRule.onNodeWithTag("hub_features_grid").performScrollToNode(hasTestTag("hub_feature_audio_stats"))
+        composeRule.onNodeWithTag("hub_feature_audio_stats").assertExists()
+        composeRule.onNodeWithTag("hub_feature_audio_tools").assertDoesNotExist()
+        assertTrue(composeRule.onAllNodesWithText("Tone, Silence, Cues & Stats", substring = true).fetchSemanticsNodes().isEmpty())
         assertTrue(composeRule.onAllNodesWithText("Full DAW Timeline", substring = true).fetchSemanticsNodes().isEmpty())
 
         // Final audio export dialog still opens and stays intact
@@ -268,7 +284,7 @@ class HomeCategoryNavigationTest {
                 composeRule.onNodeWithTag(tag).assertExists()
             }
 
-            // 3. EFFECTS_CLEANING exposes Fade In/Out, Custom Gain, Normalize RMS, Filters, Mechanize & Pro DSP tab
+            // 3. EFFECTS_CLEANING exposes Fade In/Out, Custom Gain, Normalize RMS, Filters, Mechanize & all Pro DSP categories
             composeRule.runOnUiThread { activeToolState.value = com.example.ui.studio.AudioFeatureTool.EFFECTS_CLEANING }
             composeRule.waitForIdle()
             listOf(
@@ -280,13 +296,31 @@ class HomeCategoryNavigationTest {
                 "btn_fx_lowpass",
                 "btn_fx_bandpass",
                 "btn_fx_mechanize",
-                "btn_fx_tab_pro_suite"
+                "btn_fx_tab_pro_suite",
+                "btn_fx_tab_pro_channels",
+                "btn_fx_tab_pro_filter",
+                "btn_fx_tab_pro_volume"
             ).forEach { tag ->
                 composeRule.onNodeWithTag(tag).assertExists()
             }
             composeRule.onNodeWithTag("btn_fx_tab_pro_suite").performScrollTo().performClick()
             composeRule.waitForIdle()
             composeRule.onNodeWithTag("card_pro_audio_suite").performScrollTo().assertExists()
+            composeRule.onNodeWithTag("btn_effect_censor").assertExists()
+            composeRule.onNodeWithTag("btn_effect_pitch").assertExists()
+            composeRule.onNodeWithTag("btn_effect_time").assertExists()
+
+            composeRule.onNodeWithTag("btn_fx_tab_pro_channels").performScrollTo().performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("btn_ch_mixer").assertExists()
+
+            composeRule.onNodeWithTag("btn_fx_tab_pro_filter").performScrollTo().performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("btn_filter_parametric_eq").assertExists()
+
+            composeRule.onNodeWithTag("btn_fx_tab_pro_volume").performScrollTo().performClick()
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("btn_vol_shape").assertExists()
 
             // 4. RECORD_VOICE exposes Replace, Append, Punch-In, Buffer chips & Mic Gain slider
             composeRule.runOnUiThread { activeToolState.value = com.example.ui.studio.AudioFeatureTool.RECORD_VOICE }
@@ -301,18 +335,33 @@ class HomeCategoryNavigationTest {
                 composeRule.onNodeWithTag(tag).assertExists()
             }
 
-            // 5. AUDIO_GENERATORS_TOOLS exposes Tone Generator, Insert Silence, Cue Points, Peak/RMS Stats & Pro Suite
-            composeRule.runOnUiThread { activeToolState.value = com.example.ui.studio.AudioFeatureTool.AUDIO_GENERATORS_TOOLS }
+            // 5. Separated utilities: TONE_GENERATOR, INSERT_SILENCE, CUE_POINTS, AUDIO_STATS (each with dedicated workspace & no bundled Pro DSP)
+            composeRule.runOnUiThread { activeToolState.value = com.example.ui.studio.AudioFeatureTool.TONE_GENERATOR }
             composeRule.waitForIdle()
-            listOf(
-                "btn_tools_tone_generator",
-                "btn_tools_insert_silence",
-                "btn_tools_cue_points",
-                "btn_tools_audio_stats",
-                "card_pro_audio_suite"
-            ).forEach { tag ->
-                composeRule.onNodeWithTag(tag).assertExists()
-            }
+            composeRule.onNodeWithTag("card_workspace_tone_generator").assertExists()
+            composeRule.onNodeWithTag("btn_tools_tone_generator").assertExists()
+            composeRule.onNodeWithTag("card_pro_audio_suite").assertDoesNotExist()
+
+            composeRule.runOnUiThread { activeToolState.value = com.example.ui.studio.AudioFeatureTool.INSERT_SILENCE }
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("card_workspace_insert_silence").assertExists()
+            composeRule.onNodeWithTag("btn_tools_insert_silence").assertExists()
+            composeRule.onNodeWithTag("card_pro_audio_suite").assertDoesNotExist()
+
+            composeRule.runOnUiThread { activeToolState.value = com.example.ui.studio.AudioFeatureTool.CUE_POINTS }
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("card_workspace_cue_points").assertExists()
+            composeRule.onNodeWithTag("btn_tools_drop_cue").assertExists()
+            composeRule.onNodeWithTag("btn_tools_prev_cue").assertExists()
+            composeRule.onNodeWithTag("btn_tools_next_cue").assertExists()
+            composeRule.onNodeWithTag("btn_tools_cue_points").assertExists()
+            composeRule.onNodeWithTag("card_pro_audio_suite").assertDoesNotExist()
+
+            composeRule.runOnUiThread { activeToolState.value = com.example.ui.studio.AudioFeatureTool.AUDIO_STATS }
+            composeRule.waitForIdle()
+            composeRule.onNodeWithTag("card_workspace_audio_stats").assertExists()
+            composeRule.onNodeWithTag("btn_tools_audio_stats").assertExists()
+            composeRule.onNodeWithTag("card_pro_audio_suite").assertDoesNotExist()
 
             assertTrue(composeRule.onAllNodesWithText("Full DAW Timeline", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())
             assertTrue(composeRule.onAllNodesWithText("Save fast", substring = true, ignoreCase = true).fetchSemanticsNodes().isEmpty())

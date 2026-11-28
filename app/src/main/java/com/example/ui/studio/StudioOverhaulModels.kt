@@ -66,7 +66,7 @@ enum class AudioFeatureTool(
     ),
     EFFECTS_CLEANING(
         title = "Effects",
-        subtitle = "Auto Gain, De-Noise, EQ, Filters, Fades, Compressor, Echo, Reverb & Pro DSP",
+        subtitle = "Speed, Pitch, Time Stretch, EQ, De-Noise, Filters, Channels, Compressor, Echo, Reverb & Pro DSP",
         tag = "hub_feature_audio_effects"
     ),
     MUSIC_REBALANCE(
@@ -79,10 +79,25 @@ enum class AudioFeatureTool(
         subtitle = "Record replacement, punch-in over selection, append to end & mic gain",
         tag = "hub_feature_audio_record"
     ),
-    AUDIO_GENERATORS_TOOLS(
-        title = "Tone, Silence, Cues & Stats",
-        subtitle = "Synthesize tone/noise, insert silence, cue markers, speed/pitch & RMS stats",
-        tag = "hub_feature_audio_tools"
+    TONE_GENERATOR(
+        title = "Tone & Noise Generator",
+        subtitle = "Synthesize sine, square tones or noise at any frequency and duration",
+        tag = "hub_feature_audio_tone_generator"
+    ),
+    INSERT_SILENCE(
+        title = "Insert Silence",
+        subtitle = "Insert clean digital silence at the current playhead position",
+        tag = "hub_feature_audio_insert_silence"
+    ),
+    CUE_POINTS(
+        title = "Cue Points & Bookmarks",
+        subtitle = "Drop timestamped cue markers and jump Previous or Next Cue",
+        tag = "hub_feature_audio_cue_points"
+    ),
+    AUDIO_STATS(
+        title = "Peak & RMS Stats",
+        subtitle = "Analyze peak dBFS, RMS loudness, headroom & clipping safety",
+        tag = "hub_feature_audio_stats"
     ),
     FULL_DAW_STUDIO(
         title = "Full DAW Timeline",
@@ -98,7 +113,10 @@ fun accessibleAudioTools(): List<AudioFeatureTool> = listOf(
     AudioFeatureTool.EFFECTS_CLEANING,
     AudioFeatureTool.MUSIC_REBALANCE,
     AudioFeatureTool.RECORD_VOICE,
-    AudioFeatureTool.AUDIO_GENERATORS_TOOLS
+    AudioFeatureTool.TONE_GENERATOR,
+    AudioFeatureTool.INSERT_SILENCE,
+    AudioFeatureTool.CUE_POINTS,
+    AudioFeatureTool.AUDIO_STATS
 )
 
 enum class VideoFeatureTool(

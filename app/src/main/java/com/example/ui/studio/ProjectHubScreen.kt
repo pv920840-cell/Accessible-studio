@@ -25,11 +25,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Mic
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Waves
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -342,7 +345,10 @@ fun ProjectHubScreen(
                         listOf(
                             AudioFeatureTool.MUSIC_REBALANCE,
                             AudioFeatureTool.RECORD_VOICE,
-                            AudioFeatureTool.AUDIO_GENERATORS_TOOLS
+                            AudioFeatureTool.TONE_GENERATOR,
+                            AudioFeatureTool.INSERT_SILENCE,
+                            AudioFeatureTool.CUE_POINTS,
+                            AudioFeatureTool.AUDIO_STATS
                         ),
                         key = { it.name }
                     ) { tool ->
@@ -549,7 +555,10 @@ private fun audioToolIcon(tool: AudioFeatureTool): ImageVector = when (tool) {
     AudioFeatureTool.EFFECTS_CLEANING -> Icons.Default.GraphicEq
     AudioFeatureTool.MUSIC_REBALANCE -> Icons.Default.Tune
     AudioFeatureTool.RECORD_VOICE -> Icons.Default.Mic
-    AudioFeatureTool.AUDIO_GENERATORS_TOOLS -> Icons.Default.Bookmarks
+    AudioFeatureTool.TONE_GENERATOR -> Icons.Default.Waves
+    AudioFeatureTool.INSERT_SILENCE -> Icons.Default.Add
+    AudioFeatureTool.CUE_POINTS -> Icons.Default.Bookmarks
+    AudioFeatureTool.AUDIO_STATS -> Icons.Default.Equalizer
     AudioFeatureTool.FULL_DAW_STUDIO -> Icons.Default.Audiotrack
 }
 

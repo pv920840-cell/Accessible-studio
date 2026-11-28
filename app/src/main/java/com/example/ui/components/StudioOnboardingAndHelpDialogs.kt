@@ -116,24 +116,22 @@ object StudioUserGuideContent {
             "• Settings में अपना Export Format (WAV, MP3, FLAC, M4A) सेव करें और Settings -> About में पूरी User Guide व What's New देखें।"
 
     const val WHATS_NEW_ENGLISH =
-        "What's New in Version 1.5.4.0 — Direct Video Tools, Explicit Apply & TalkBack Announcement Fixes:\n\n" +
-            "1. Direct Individual Video Editor Buttons (No Nesting):\n" +
-            "• Every Video Editor feature (Trimmer, Multi trim, Splitter, Color Filters, VFX, Speed Changer, Compressor, Converter, GIF Extractor, Audio/Noise tools, and more) opens its own inline controls directly.\n" +
-            "• Sliders and markers never auto-apply edits—changes are applied only when you tap Apply, while Save Project and Final Export remain completely intact.\n\n" +
-            "2. TalkBack Focus & Action Announcement Fixes:\n" +
-            "• Fixed silent buttons and added reliable spoken announcements on Zoom In/Out/Fit, Loop Selection, Start/End/Finish markers, and playback/step controls.\n\n" +
-            "3. Existing Audio Editor, Batch Processing & Pro Audio Tools:\n" +
-            "• Kept Audio Editor workflow intact alongside Zero-Crossing Snap, Pre-Roll Preview, Silence Truncation, Crossfade Join, LUFS Normalization, 24-bit WAV tags, and Ringtones export."
+        "What's New in Version 1.5.4.0.1 — Direct Video Tools, Effects Consolidation & Separate Audio Utility Buttons:\n\n" +
+            "1. Effects & Separate Audio Editor Buttons:\n" +
+            "• Consolidated Speed/Playback Rate, Pitch, Time Stretch, Channels, Filters, Volume Shaping & Pro DSP inside Effects, and added separate buttons for Tone & Noise Generator, Insert Silence, Cue Points & Bookmarks, and Peak & RMS Stats alongside Batch Processing.\n\n" +
+            "2. Direct Individual Video Editor Buttons & Apply Workflow:\n" +
+            "• Every Video Editor feature opens its own inline controls directly with explicit Apply confirmation, while Save Project and Final Export remain completely intact.\n\n" +
+            "3. TalkBack Focus & Action Announcement Fixes:\n" +
+            "• Fixed silent buttons and added reliable spoken announcements on Zoom In/Out/Fit, Loop Selection, Start/End/Finish markers, and playback/step controls."
 
     const val WHATS_NEW_HINDI =
-        "Version 1.5.4.0 में नया क्या है — सीधे Video Editor टूल बटन, Apply पुष्टि और बेहतर TalkBack:\n\n" +
-            "1. सीधे Video Editor फ़ीचर बटन और Apply नियंत्रण:\n" +
-            "• सभी 31 Video Editor टूल (Trimmer, Splitter, Color Filters, VFX, Speed Changer, Compressor, Converter आदि) सीधे अलग बटन के रूप में खुलते हैं।\n" +
-            "• स्लाइडर या मार्कर बदलने पर एडिट अपने आप लागू नहीं होते—Apply बटन दबाने पर ही प्रोजेक्ट में जुड़ते हैं, और Save Project व फाइनल Export पूरी तरह सुरक्षित हैं।\n\n" +
-            "2. TalkBack बटन व एनाउंसमेंट सुधार:\n" +
-            "• Start, End, Loop Selection, Zoom In/Out और मार्कर कंट्रोल पर अब तुरंत स्पष्ट TalkBack आवाज़ सुनाई देती है।\n\n" +
-            "3. Audio Editor, Batch Processing और प्रो ऑडियो टूल:\n" +
-            "• मौजूदा Audio Editor के साथ Zero-Crossing Snap, Pre-Roll Preview, Silence Truncation, Crossfade Join, LUFS Normalize और 24-bit WAV टैग्स भी उपलब्ध हैं।"
+        "Version 1.5.4.0.1 में नया क्या है — बेहतर Effects, अलग Audio टूल बटन और सीधे Video Editor कंट्रोल:\n\n" +
+            "1. Audio Effects, Batch Processing और अलग-अलग टूल बटन:\n" +
+            "• Speed/Playback Rate, Pitch, Time Stretch, Channels, Filters, Volume Shaping व Pro DSP को सीधे Audio Effects में जोड़ा गया है, और Tone & Noise Generator, Insert Silence, Cue Points & Bookmarks तथा Peak & RMS Stats के अलग-अलग बटन बनाए गए हैं।\n\n" +
+            "2. सीधे Video Editor फ़ीचर बटन और Apply पुष्टि:\n" +
+            "• सभी Video Editor टूल सीधे खुलते हैं और Apply बटन दबाने पर ही प्रोजेक्ट में जुड़ते हैं, जबकि Save Project व फाइनल Export पूरी तरह सुरक्षित हैं।\n\n" +
+            "3. TalkBack बटन व एनाउंसमेंट सुधार:\n" +
+            "• Start, End, Loop Selection, Zoom In/Out और मार्कर कंट्रोल पर अब तुरंत स्पष्ट TalkBack आवाज़ सुनाई देती है।"
 }
 
 @Composable

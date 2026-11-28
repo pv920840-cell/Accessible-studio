@@ -1,10 +1,10 @@
 {
   "appName": "Accessible Studio",
-  "versionCode": 30,
-  "versionName": "1.5.4.0",
-  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.4.0/AccessibleStudio_V1.5.4.0.apk",
+  "versionCode": 31,
+  "versionName": "1.5.4.0.1",
+  "apkUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/download/v1.5.4.0.1/AccessibleStudio_V1.5.4.0.1.apk",
   "pageUrl": "https://github.com/pv920840-cell/Accessible-studio/releases/latest",
-  "apkSizeBytes": 21153860,
-  "changelog": "Upgraded to 1.5.4.0: Exposed all 31 Video Editor tools as direct non-nested buttons without using the word Open, added explicit Apply confirmation so video sliders/markers never auto-apply before Apply, fixed TalkBack announcements and button semantics across Start/End/Loop/Zoom/marker controls, and added pro audio DSP/WAV export tools while keeping existing Audio Editing workflow unchanged.",
-  "releaseNotes": "Upgraded to 1.5.4.0: Exposed all 31 Video Editor tools as direct non-nested buttons without using the word Open, added explicit Apply confirmation so video sliders/markers never auto-apply before Apply, fixed TalkBack announcements and button semantics across Start/End/Loop/Zoom/marker controls, and added pro audio DSP/WAV export tools while keeping existing Audio Editing workflow unchanged."
+  "apkSizeBytes": 22376751,
+  "changelog": "Upgraded to 1.5.4.0.1: Consolidated all Speed/Pitch/Time Stretch/Channels/Filters/Volume/Pro DSP effects directly inside Audio Effects, split Tone & Noise Generator, Insert Silence, Cue Points & Bookmarks, and Peak & RMS Stats into separate buttons, and kept all 31 Video Editor tools, TalkBack fixes, Save Project & Final Export intact.",
+  "releaseNotes": "Upgraded to 1.5.4.0.1: Consolidated all Speed/Pitch/Time Stretch/Channels/Filters/Volume/Pro DSP effects directly inside Audio Effects, split Tone & Noise Generator, Insert Silence, Cue Points & Bookmarks, and Peak & RMS Stats into separate buttons, and kept all 31 Video Editor tools, TalkBack fixes, Save Project & Final Export intact."
 }

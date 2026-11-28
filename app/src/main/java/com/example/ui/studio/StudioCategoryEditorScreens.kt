@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Layers
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Transform
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Waves
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -261,14 +263,47 @@ fun AudioEditorScreen(
                     )
                 }
 
-                item(key = "audio_tool_generators_tools") {
+                item(key = "audio_tool_tone_generator") {
                     CategoryFeatureButton(
-                        title = "Tone, Silence, Cues & Stats",
-                        subtitle = AudioFeatureTool.AUDIO_GENERATORS_TOOLS.subtitle,
+                        title = AudioFeatureTool.TONE_GENERATOR.title,
+                        subtitle = AudioFeatureTool.TONE_GENERATOR.subtitle,
+                        icon = Icons.Default.Waves,
+                        isHighContrast = isHighContrast,
+                        tag = "btn_audio_editor_tone_generator",
+                        onClick = { onOpenAudioTool(AudioFeatureTool.TONE_GENERATOR) }
+                    )
+                }
+
+                item(key = "audio_tool_insert_silence") {
+                    CategoryFeatureButton(
+                        title = AudioFeatureTool.INSERT_SILENCE.title,
+                        subtitle = AudioFeatureTool.INSERT_SILENCE.subtitle,
+                        icon = Icons.Default.Add,
+                        isHighContrast = isHighContrast,
+                        tag = "btn_audio_editor_insert_silence",
+                        onClick = { onOpenAudioTool(AudioFeatureTool.INSERT_SILENCE) }
+                    )
+                }
+
+                item(key = "audio_tool_cue_points") {
+                    CategoryFeatureButton(
+                        title = AudioFeatureTool.CUE_POINTS.title,
+                        subtitle = AudioFeatureTool.CUE_POINTS.subtitle,
                         icon = Icons.Default.Bookmarks,
                         isHighContrast = isHighContrast,
-                        tag = "btn_audio_editor_tools",
-                        onClick = { onOpenAudioTool(AudioFeatureTool.AUDIO_GENERATORS_TOOLS) }
+                        tag = "btn_audio_editor_cue_points",
+                        onClick = { onOpenAudioTool(AudioFeatureTool.CUE_POINTS) }
+                    )
+                }
+
+                item(key = "audio_tool_audio_stats") {
+                    CategoryFeatureButton(
+                        title = AudioFeatureTool.AUDIO_STATS.title,
+                        subtitle = AudioFeatureTool.AUDIO_STATS.subtitle,
+                        icon = Icons.Default.Equalizer,
+                        isHighContrast = isHighContrast,
+                        tag = "btn_audio_editor_stats",
+                        onClick = { onOpenAudioTool(AudioFeatureTool.AUDIO_STATS) }
                     )
                 }
 

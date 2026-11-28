@@ -230,7 +230,10 @@ enum class FeatureGuideTopic {
     AUDIO_EFFECT_SPEED_REVERSE,
     AUDIO_PRO_DSP_SUITE,
     AUDIO_VOICE_OVER,
+    AUDIO_TONE_GENERATOR,
+    AUDIO_INSERT_SILENCE,
     AUDIO_CUE_POINTS,
+    AUDIO_STATS_INSPECTOR,
     AUDIO_BATCH_PROCESSING
 }
 
@@ -285,7 +288,10 @@ object FeatureGuideCatalog {
         AudioFeatureTool.EFFECTS_CLEANING -> FeatureGuideTopic.AUDIO_EFFECTS_CLEANING
         AudioFeatureTool.MUSIC_REBALANCE -> FeatureGuideTopic.AUDIO_MUSIC_REBALANCE
         AudioFeatureTool.RECORD_VOICE -> FeatureGuideTopic.AUDIO_VOICE_RECORDER
-        AudioFeatureTool.AUDIO_GENERATORS_TOOLS -> FeatureGuideTopic.AUDIO_CUE_POINTS
+        AudioFeatureTool.TONE_GENERATOR -> FeatureGuideTopic.AUDIO_TONE_GENERATOR
+        AudioFeatureTool.INSERT_SILENCE -> FeatureGuideTopic.AUDIO_INSERT_SILENCE
+        AudioFeatureTool.CUE_POINTS -> FeatureGuideTopic.AUDIO_CUE_POINTS
+        AudioFeatureTool.AUDIO_STATS -> FeatureGuideTopic.AUDIO_STATS_INSPECTOR
         AudioFeatureTool.FULL_DAW_STUDIO -> FeatureGuideTopic.AUDIO_TRIM_CUT
     }
 
@@ -930,6 +936,30 @@ object FeatureGuideCatalog {
             studioTip = "Enabling Auto-Duck lowers background music automatically whenever speech enters."
         )
 
+        FeatureGuideTopic.AUDIO_TONE_GENERATOR -> SingleFeatureGuideContent(
+            title = "Tone & Noise Generator",
+            overview = "Synthesizes clean Sine, Square, or Noise waveforms offline at your chosen frequency and duration.",
+            steps = listOf(
+                "1. Pick Sine, Square, or Noise as the waveform type.",
+                "2. Adjust Frequency (100–2000 Hz) and Duration (1–15 seconds).",
+                "3. Tap \"Synthesize Tone / Noise\" to generate the audio into your project."
+            ),
+            keyControls = "Waveform chips, Frequency slider & quick presets, Duration slider, Synthesize button.",
+            studioTip = "Use a 1000 Hz or 440 Hz tone for test calibration, or noise tracks for ambience beds."
+        )
+
+        FeatureGuideTopic.AUDIO_INSERT_SILENCE -> SingleFeatureGuideContent(
+            title = "Insert Silence",
+            overview = "Inserts clean digital silence at your current playhead position without losing existing audio.",
+            steps = listOf(
+                "1. Seek the playhead to where you want a pause.",
+                "2. Pick a duration (1–15 seconds).",
+                "3. Tap \"Insert Digital Silence at Playhead\" to insert cleanly with Undo support."
+            ),
+            keyControls = "Playhead position readout, Duration chips & slider, Insert Digital Silence button.",
+            studioTip = "Use Insert Silence before spoken intros or between podcast chapters to add breathing room."
+        )
+
         FeatureGuideTopic.AUDIO_CUE_POINTS -> SingleFeatureGuideContent(
             title = "Cue Points & Bookmarks",
             overview = "Drops timestamped cue markers across long audio sessions so you can jump backward, forward, or seek cleanly between sections.",
@@ -940,6 +970,17 @@ object FeatureGuideCatalog {
             ),
             keyControls = "Drop Cue Here, Prev/Next Cue navigation buttons, Cue list seek & delete actions.",
             studioTip = "Drop cues before retakes in long recordings to find edit points instantly."
+        )
+
+        FeatureGuideTopic.AUDIO_STATS_INSPECTOR -> SingleFeatureGuideContent(
+            title = "Peak & RMS Stats",
+            overview = "Inspects Peak Level (dBFS), RMS Power, Duration, Sample Rate, and Clipping Safety for mastering.",
+            steps = listOf(
+                "1. Read the live Peak, RMS, and Headroom metrics shown for your active track.",
+                "2. Tap \"Peak Level & RMS Statistics\" to re-analyze and announce the full summary."
+            ),
+            keyControls = "Peak dBFS readout, RMS Power readout, Headroom status, Peak Level & RMS Statistics button.",
+            studioTip = "If clipping is reported, use Peak Limiter or Normalize -16 LUFS inside Effects."
         )
 
         FeatureGuideTopic.AUDIO_BATCH_PROCESSING -> SingleFeatureGuideContent(
